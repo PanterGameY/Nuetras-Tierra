@@ -1,0 +1,53 @@
+[gd_scene load_steps=5 format=3 uid="uid://p7vitwm1vkdm"]
+
+[ext_resource type="PackedScene" uid="uid://b0x2ot5hlgfaa" path="res://Player.tscn" id="1_ig7tw"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_ig7tw"]
+sky_top_color = Color(0.31753406, 0.44054702, 0.70369416, 1)
+sky_horizon_color = Color(0.5457981, 0.6855234, 0.69520205, 1)
+
+[sub_resource type="Sky" id="Sky_0xm2m"]
+sky_material = SubResource("ProceduralSkyMaterial_ig7tw")
+process_mode = 1
+
+[sub_resource type="Environment" id="Environment_h2yge"]
+background_mode = 2
+sky = SubResource("Sky_0xm2m")
+sky_custom_fov = 104.1
+
+[node name="Main" type="Node3D"]
+
+[node name="CSGBox3D" type="CSGBox3D" parent="."]
+transform = Transform3D(21.43612, 0, 0, 0, 0.15434884, 0, 0, 0, 3.8927622, 0.43309313, 0.044304967, 0.78401065)
+use_collision = true
+size = Vector3(1.1582031, 1, 4.9466553)
+
+[node name="CSGBox3D2" type="CSGBox3D" parent="."]
+transform = Transform3D(0.17439133, 0, 0, 0, 0.8908638, 0, 0, 0, 1.0691324, -5.127053, 0.5424248, 2.0392168)
+use_collision = true
+size = Vector3(1.1582031, 1, 7.294739)
+
+[node name="CSGBox3D3" type="CSGBox3D" parent="."]
+transform = Transform3D(0.15590164, 0, 0.2088364, 0, 1.8401406, 0, -0.014673907, 0, 2.218764, 9.036999, 3.2433991, 0.19676816)
+use_collision = true
+size = Vector3(1.1582031, 3.9956055, 6.160187)
+
+[node name="CSGBox3D4" type="CSGBox3D" parent="."]
+transform = Transform3D(0.15590164, 0, 0.2088364, 0, 1.8401406, 0, -0.014673907, 0, 2.218764, 5.6873465, -2.8345804, 0.19676816)
+use_collision = true
+size = Vector3(1.1582031, 3.9956055, 6.160187)
+
+[node name="CSGBox3D5" type="CSGBox3D" parent="."]
+transform = Transform3D(0.15590164, 0, 0.2088364, 0, 1.8401406, 0, -0.014673907, 0, 2.218764, 4.273237, -2.8345804, 0.19676816)
+use_collision = true
+size = Vector3(1.1582031, 3.9956055, 6.160187)
+
+[node name="Player" parent="." instance=ExtResource("1_ig7tw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.3698835, 0, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_h2yge")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.7545721, 0.65621716, 0, -0.65621716, 0.7545721, 0, 0, 0)
+shadow_enabled = true
