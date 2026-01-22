@@ -1,0 +1,39 @@
+[gd_scene load_steps=6 format=3 uid="uid://b0x2ot5hlgfaa"]
+
+[ext_resource type="Script" uid="uid://dr0uw55v7npfs" path="res://player.gd" id="1_xhfnw"]
+[ext_resource type="Shader" uid="uid://txobj0o3vl87" path="res://Player.gdshader" id="2_kpjcp"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_kpjcp"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_kne1u"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_kne1u"]
+shader = ExtResource("2_kpjcp")
+shader_parameter/blur_amount = 0.0
+shader_parameter/radius = 0.2
+shader_parameter/softness = 0.8
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("1_xhfnw")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("CapsuleShape3D_kpjcp")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="CollisionShape3D"]
+mesh = SubResource("CapsuleMesh_kne1u")
+
+[node name="CameraPivot" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.9360658, 0.35182536, 0, -0.35182536, 0.9360658, 0, 1.6576178, 0)
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.9965149, -0.08341697, 0, 0.08341697, 0.9965149, 0, 0.054285407, 0.052162062)
+
+[node name="ColorRect" type="ColorRect" parent="CameraPivot/Camera3D"]
+material = SubResource("ShaderMaterial_kne1u")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
