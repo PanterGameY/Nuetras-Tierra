@@ -1,0 +1,93 @@
+[gd_scene load_steps=3 format=3 uid="uid://cfery6qq4jsym"]
+
+[ext_resource type="Script" uid="uid://cpeqjxpxr33fk" path="res://main_menu.gd" id="1_eiy7p"]
+[ext_resource type="Texture2D" uid="uid://gnw0cu5viffa" path="res://canvas.jpg" id="1_i26rj"]
+
+[node name="CanvasLayer" type="CanvasLayer"]
+
+[node name="MainMenu" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+script = ExtResource("1_eiy7p")
+
+[node name="TextureRect" type="TextureRect" parent="MainMenu"]
+layout_mode = 0
+offset_right = 1153.0
+offset_bottom = 648.0
+texture = ExtResource("1_i26rj")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+offset_left = 298.0
+offset_top = 301.0
+offset_right = 906.0
+offset_bottom = 402.0
+alignment = 1
+
+[node name="BtnIniciar" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "INICIAR"
+
+[node name="BtnConfig" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "CONFIGURACION
+"
+
+[node name="BtnSalir" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+text = "SALIR
+"
+
+[node name="Configuraciones" type="Panel" parent="."]
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 1154.0
+offset_bottom = 650.0
+
+[node name="Label" type="Label" parent="Configuraciones"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_left = 4.0
+offset_top = 45.0
+offset_right = 4.0
+offset_bottom = 104.0
+grow_horizontal = 2
+text = "CONFIGURACIONES"
+horizontal_alignment = 1
+language = "ESPAÑOL"
+
+[node name="HSlider" type="HSlider" parent="Configuraciones"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -289.0
+offset_top = -135.0
+offset_right = 347.0
+offset_bottom = -115.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="OptionButton" type="OptionButton" parent="Configuraciones"]
+layout_mode = 0
+offset_left = 290.0
+offset_top = 235.0
+offset_right = 918.0
+offset_bottom = 293.0
+
+[node name="Button" type="Button" parent="Configuraciones"]
+layout_mode = 0
+offset_left = 1013.0
+offset_top = 16.0
+offset_right = 1115.0
+offset_bottom = 58.0
+text = "VOLVER
+"
+
+[connection signal="pressed" from="VBoxContainer/BtnIniciar" to="MainMenu" method="_on_btn_iniciar_pressed"]
+[connection signal="pressed" from="VBoxContainer/BtnConfig" to="MainMenu" method="_on_btn_config_pressed"]
+[connection signal="pressed" from="VBoxContainer/BtnSalir" to="MainMenu" method="_on_btn_salir_pressed"]

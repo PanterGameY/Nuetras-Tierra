@@ -13,8 +13,7 @@ var t_bob = 0.0
 
 @onready var camera_pivot: Node3D = $CameraPivot
 @onready var camera: Camera3D = $CameraPivot/Camera3D # Necesitamos esta referencia
-@onready var blur_rect = $CameraPivot/Camera3D/ColorRect # Ajusta la ruta a tu nodo
-
+@onready var blur_rect = $CameraPivot/Camera3D/ColorRect
 
 var mouse_sensitivity = 0.002 # Bajé un poco esto para que sea más controlable
 
@@ -23,7 +22,11 @@ func _ready():
 
 func _process(_delta):
 	if Input.is_action_just_pressed("quit"):
-		get_tree().quit()
+		# 1. Hacemos visible el mouse para poder interactuar con el menú
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		
+		# 2. Cambiamos a la escena del menú principal
+		get_tree().change_scene_to_file("res://MainMenu.tscn")
 
 func _input(event):
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
