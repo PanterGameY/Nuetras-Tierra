@@ -1,0 +1,23 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://b8m5lanqx4wyr"]
+
+[ext_resource type="Shader" uid="uid://dpx7m3nqv6wts" path="res://Vehiculos/materiales/cristal.gdshader" id="1_cristal_shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_cristal_shader")
+shader_parameter/glass_color = Color(0.01579934, 0.027802957, 0.034568794, 1)
+shader_parameter/transparency = 0.15
+shader_parameter/tint_strength = 0.3
+shader_parameter/metallic = 0.0
+shader_parameter/roughness = 0.05
+shader_parameter/specular = 0.9
+shader_parameter/fresnel_power = 3.0
+shader_parameter/fresnel_intensity = 0.6
+shader_parameter/use_dirt_texture = false
+shader_parameter/dirt_intensity = 0.0
+shader_parameter/dirt_color = Color(0.4, 0.35, 0.3, 1)
+shader_parameter/use_normal_map = false
+shader_parameter/normal_strength = 0.3
+shader_parameter/reflection_intensity = 1.0
+shader_parameter/tinted_glass = false
+shader_parameter/tint_color = Color(0.2, 0.2, 0.25, 1)

@@ -32,6 +32,9 @@ var consejos := [
 	"Consejo: Ajusta tu línea para salir más rápido de cada curva."
 ]
 
+var spinner_chars := ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+var spinner_index := 0
+
 func _ready():
 	progreso = 0.0
 	progreso_visual = 0.0
@@ -106,7 +109,9 @@ func actualizar_carga_real() -> void:
 
 func animar_spinner(delta: float) -> void:
 	if spinner:
-		spinner.rotation += delta * 3.6
+		var velocidad := 12.0 # Frames por segundo
+		spinner_index = int(floor(tiempo_anim * velocidad)) % spinner_chars.size()
+		spinner.text = spinner_chars[spinner_index]
 
 func animar_fondo(_delta: float) -> void:
 	if brillo_a:

@@ -69,18 +69,29 @@ func _al_cambiar_camara(id: int) -> void:
 	match id:
 		0:
 			# Cámara externa fija en Cams_pivot
-			cam_externa.make_current()
-			spring_arm.set_process(false)
+			if cam_externa:
+				cam_externa.make_current()
+				spring_arm.set_process(false)
+			else:
+				push_warning("coche.gd: cam_externa no existe, usando cámara alternativa")
+				if cam_interna:
+					cam_interna.make_current()
 
 		1:
 			# Cámara interna del conductor
-			cam_interna.make_current()
-			spring_arm.set_process(false)
+			if cam_interna:
+				cam_interna.make_current()
+				spring_arm.set_process(false)
+			else:
+				push_warning("coche.gd: cam_interna no existe")
 
 		2:
 			# Cámara del BrazoCamara con SpringArm (orbital)
-			cam_brazo.make_current()
-			spring_arm.set_process(true)
+			if cam_brazo and spring_arm:
+				cam_brazo.make_current()
+				spring_arm.set_process(true)
+			else:
+				push_warning("coche.gd: cam_brazo o spring_arm no existe")
 
 func _on_camara_movida(relative: Vector2) -> void:
 	if not activo: return

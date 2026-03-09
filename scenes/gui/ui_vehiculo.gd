@@ -8,6 +8,11 @@ var vehiculo: RigidBody3D
 var _motor_ref: Node
 const COOLDOWN_CAMARA_MS: int = 180
 var _ultimo_cambio_camara_ms: int = -10000
+var _motor_activo: bool = false
+var _freno_mano_activo: bool = false
+var _menu_desplegado: bool = false
+var _ultimo_toggle_menu_ms: int = 0
+const COOLDOWN_MENU_MS: int = 400
 
 # --- NODOS DE UI ---
 @onready var label_marcha     = get_node_or_null("SafeArea/Interface/DisplayMarcha")
@@ -16,6 +21,10 @@ var _ultimo_cambio_camara_ms: int = -10000
 @onready var boton_freno_mano = %BotonFrenoMano
 @onready var boton_salir      = %BotonSalir
 @onready var boton_camara     = %BotonCamara
+
+# Menú desplegable
+@onready var tab_menu         = %TabMenu
+@onready var panel_contenido  = %PanelContenido
 
 # Nuevo selector de marchas con 4 botones
 @onready var selector_marchas = $SafeArea/Interface/SelectorMarchas
@@ -26,6 +35,9 @@ var _ultimo_cambio_camara_ms: int = -10000
 @export var color_boton_activo: Color = Color.YELLOW
 @export var color_boton_inactivo: Color = Color.WHITE
 @export var brillo_boton_activo: float = 1.4
+
+# Configuración del menú desplegable
+@export var duracion_animacion: float = 0.25
 
 # ════════════════════════════════════════════════════════════════════
 #  INICIALIZACIÓN
@@ -47,43 +59,37 @@ func _ready() -> void:
 
 	# Aplicar shader a los botones
 	_aplicar_shader_botones()
+	_sincronizar_estado_motor()
+	_motor_activo = true
 
-	# Conectar botones
+	# Conectar controles táctiles/click
 	if boton_camara:
-		if not boton_camara.pressed.is_connected(_on_cambiar_camara):
-			boton_camara.pressed.connect(_on_cambiar_camara)
+		if not boton_camara.gui_input.is_connected(_on_boton_camara_input):
+			boton_camara.gui_input.connect(_on_boton_camara_input)
 
 	if boton_motor:
-		if not boton_motor.toggled.is_connected(_on_boton_motor_toggle):
-			boton_motor.toggled.connect(_on_boton_motor_toggle)
+		# Encendido desactivado temporalmente: ocultar control para evitar confusión.
+		boton_motor.visible = false
+		boton_motor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	if boton_freno_mano:
-		if not boton_freno_mano.button_down.is_connected(_on_freno_mano_down):
-			boton_freno_mano.button_down.connect(_on_freno_mano_down)
-		if not boton_freno_mano.button_up.is_connected(_on_freno_mano_up):
-			boton_freno_mano.button_up.connect(_on_freno_mano_up)
+		if not boton_freno_mano.gui_input.is_connected(_on_boton_freno_mano_input):
+			boton_freno_mano.gui_input.connect(_on_boton_freno_mano_input)
 
 	if boton_salir:
-		if not boton_salir.pressed.is_connected(_on_boton_salir):
-			boton_salir.pressed.connect(_on_boton_salir)
+		if not boton_salir.gui_input.is_connected(_on_boton_salir_input):
+			boton_salir.gui_input.connect(_on_boton_salir_input)
 	
 	# Conectar botón de centrar volante
 	if boton_centrar:
 		if not boton_centrar.pressed.is_connected(_on_centrar_volante):
 			boton_centrar.pressed.connect(_on_centrar_volante)
+	
+	# Configurar menú desplegable
+	_configurar_menu_desplegable()
 
 func _aplicar_shader_botones() -> void:
-	# Crear y aplicar shader al botón de motor
-	if boton_motor:
-		var material = ShaderMaterial.new()
-		material.shader = load("res://scenes/gui/BotonVehiculo.gdshader")
-		material.set_shader_parameter("color_activo", color_boton_activo)
-		material.set_shader_parameter("color_inactivo", color_boton_inactivo)
-		material.set_shader_parameter("brillo_activo", brillo_boton_activo)
-		material.set_shader_parameter("activo", false)
-		# Aplicar a través de custom theme o modulate
-		boton_motor.self_modulate = Color.WHITE
-	
+	# El botón de motor se maneja con MotorSwitch.gd (visual+toggle propio).
 	if boton_freno_mano:
 		boton_freno_mano.self_modulate = Color.WHITE
 
@@ -92,6 +98,8 @@ func _aplicar_shader_botones() -> void:
 # ════════════════════════════════════════════════════════════════════
 
 func _process(_delta: float) -> void:
+	_sincronizar_estado_motor()
+
 	if not visible or not vehiculo:
 		return
 
@@ -120,9 +128,33 @@ func _on_cambiar_camara() -> void:
 		GameManager.cambiar_camara_global()
 
 func _on_boton_motor_toggle(activo: bool) -> void:
+	_motor_activo = true
 	if not is_instance_valid(InputVehiculo):
 		return
-	InputVehiculo.set_motor_encendido(activo)
+	InputVehiculo.set_motor_encendido(true)
+
+func _on_boton_camara_input(event: InputEvent) -> void:
+	if not _es_presion_primaria(event):
+		return
+	_on_cambiar_camara()
+	get_viewport().set_input_as_handled()
+
+func _on_boton_salir_input(event: InputEvent) -> void:
+	if not _es_presion_primaria(event):
+		return
+	_on_boton_salir()
+	get_viewport().set_input_as_handled()
+
+func _on_boton_freno_mano_input(event: InputEvent) -> void:
+	if _es_inicio_presion(event):
+		_freno_mano_activo = true
+		_on_freno_mano_down()
+		get_viewport().set_input_as_handled()
+		return
+	if _es_fin_presion(event):
+		_freno_mano_activo = false
+		_on_freno_mano_up()
+		get_viewport().set_input_as_handled()
 
 func _on_freno_mano_down() -> void:
 	if not is_instance_valid(InputVehiculo):
@@ -154,16 +186,114 @@ func _on_centrar_volante() -> void:
 # ════════════════════════════════════════════════════════════════════
 
 func _actualizar_color_botones() -> void:
-	# Actualizar shader del botón de motor
-	if boton_motor and boton_motor.material is ShaderMaterial:
-		boton_motor.material.set_shader_parameter("activo", boton_motor.button_pressed)
+	# Actualizar estado visual del nuevo MotorSwitch
+	if boton_motor and boton_motor.has_method("set_activo"):
+		boton_motor.set_activo(_motor_activo)
 	
 	# Actualizar shader del botón de freno mano
 	if boton_freno_mano and boton_freno_mano.material is ShaderMaterial:
-		boton_freno_mano.material.set_shader_parameter("activo", boton_freno_mano.button_pressed)
+		boton_freno_mano.material.set_shader_parameter("activo", _freno_mano_activo)
+
+func _es_presion_primaria(event: InputEvent) -> bool:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		return mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed
+	if event is InputEventScreenTouch:
+		return (event as InputEventScreenTouch).pressed
+	return false
+
+func _es_inicio_presion(event: InputEvent) -> bool:
+	return _es_presion_primaria(event)
+
+func _es_fin_presion(event: InputEvent) -> bool:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		return mb.button_index == MOUSE_BUTTON_LEFT and not mb.pressed
+	if event is InputEventScreenTouch:
+		return not (event as InputEventScreenTouch).pressed
+	return false
 
 func _get_texto_marcha() -> String:
 	if not is_instance_valid(InputVehiculo):
 		return "N"
 	return InputVehiculo.marcha
+
+func _sincronizar_estado_motor() -> void:
+	if is_instance_valid(InputVehiculo):
+		_motor_activo = true
+		InputVehiculo.motor_encendido = true
+
+# ════════════════════════════════════════════════════════════════════
+#  MENÚ DESPLEGABLE
+# ════════════════════════════════════════════════════════════════════
+
+func _configurar_menu_desplegable() -> void:
+	if not panel_contenido or not tab_menu:
+		push_warning("UIVehiculo: No se encontraron los nodos del menú desplegable.")
+		return
+	
+	print("UIVehiculo: Configurando menú desplegable...")
+	print("  - TabMenu encontrado: ", tab_menu != null)
+	print("  - PanelContenido encontrado: ", panel_contenido != null)
+	
+	# Inicialmente ocultar el panel
+	panel_contenido.visible = false
+	panel_contenido.modulate.a = 0.0
+	panel_contenido.scale = Vector2(0.8, 0.8)
+	_menu_desplegado = false
+	
+	# Conectar el evento de clic en el tab
+	if not tab_menu.gui_input.is_connected(_on_tab_menu_input):
+		tab_menu.gui_input.connect(_on_tab_menu_input)
+		print("  - Evento gui_input conectado al TabMenu")
+
+func _on_tab_menu_input(event: InputEvent) -> void:
+	# Solo procesar cuando se PRESIONA, no cuando se suelta
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed:
+			var ahora_ms = Time.get_ticks_msec()
+			if ahora_ms - _ultimo_toggle_menu_ms < COOLDOWN_MENU_MS:
+				print("UIVehiculo: Cooldown activo, ignorando click")
+				return
+			_ultimo_toggle_menu_ms = ahora_ms
+			print("UIVehiculo: Tab menu presionado! Estado actual: ", _menu_desplegado)
+			_toggle_menu()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventScreenTouch:
+		var touch := event as InputEventScreenTouch
+		if touch.pressed:
+			var ahora_ms = Time.get_ticks_msec()
+			if ahora_ms - _ultimo_toggle_menu_ms < COOLDOWN_MENU_MS:
+				print("UIVehiculo: Cooldown activo, ignorando toque")
+				return
+			_ultimo_toggle_menu_ms = ahora_ms
+			print("UIVehiculo: Tab menu tocado! Estado actual: ", _menu_desplegado)
+			_toggle_menu()
+			get_viewport().set_input_as_handled()
+
+func _toggle_menu() -> void:
+	_menu_desplegado = not _menu_desplegado
+	print("UIVehiculo: Cambiando estado del menú a: ", "ABIERTO" if _menu_desplegado else "CERRADO")
+	_animar_menu()
+
+func _animar_menu() -> void:
+	if not panel_contenido:
+		return
+	
+	var tween = create_tween()
+	tween.set_ease(Tween.EASE_OUT)
+	tween.set_trans(Tween.TRANS_BACK)
+	tween.set_parallel(true)
+	
+	if _menu_desplegado:
+		# Mostrar el menú con animación
+		panel_contenido.visible = true
+		tween.tween_property(panel_contenido, "modulate:a", 1.0, duracion_animacion)
+		tween.tween_property(panel_contenido, "scale", Vector2(1.0, 1.0), duracion_animacion)
+	else:
+		# Ocultar el menú con animación
+		tween.tween_property(panel_contenido, "modulate:a", 0.0, duracion_animacion)
+		tween.tween_property(panel_contenido, "scale", Vector2(0.8, 0.8), duracion_animacion)
+		tween.chain().tween_callback(func(): panel_contenido.visible = false)
 

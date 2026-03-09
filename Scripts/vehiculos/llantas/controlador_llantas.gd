@@ -134,14 +134,15 @@ func aplicar_freno(intensidad: float) -> void:
 	var freno_mano_activo = InputVehiculo.freno_mano
 
 	for l in llantas_todas:
-		# Calcular torque de frenado según eje
+		# Reparto por eje en intensidad normalizada (0..1).
+		# set_brake() ya convierte intensidad a torque interno de la llanta.
 		var bias = bias_delantero if l.es_directriz else bias_trasero
-		var torque_freno = intensidad * fuerza_freno_max * bias
+		var intensidad_rueda = clamp(intensidad * bias, 0.0, 1.0)
 		
 		# Si la rueda tiene freno de mano, aplicamos bloqueo total o extra
 		var usar_freno_mano = freno_mano_activo and l.es_freno_mano
 		
-		l.set_brake(torque_freno, usar_freno_mano)
+		l.set_brake(intensidad_rueda, usar_freno_mano)
 
 # Función de utilidad si el coche cambia de configuración en tiempo real (ej. entrar a boxes)
 func refrescar_configuracion() -> void:

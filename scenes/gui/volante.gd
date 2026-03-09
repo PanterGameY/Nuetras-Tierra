@@ -38,6 +38,8 @@ func _gui_input(event: InputEvent) -> void:
             if event.index == dedo_activo:
                 tocando = false
                 dedo_activo = -1
+                if is_instance_valid(InputVehiculo) and InputVehiculo.has_method("liberar_direccion_tactil"):
+                    InputVehiculo.liberar_direccion_tactil()
 
     if event is InputEventScreenDrag and tocando and event.index == dedo_activo:
         var angulo_nuevo = _obtener_angulo(event.position)
@@ -59,6 +61,10 @@ func _obtener_angulo(pos: Vector2) -> float:
     return (pos - size / 2.0).angle()
 
 func _process(delta: float) -> void:
+    # Mantener la direccion mientras se sostiene el volante, incluso si no hay drag nuevo.
+    if tocando and is_instance_valid(InputVehiculo):
+        InputVehiculo.set_direccion(rotacion_actual)
+
     if retorno_automatico and not tocando and abs(rotacion_actual) > 0.001:
         rotacion_actual = move_toward(rotacion_actual, 0.0, velocidad_retorno * delta)
         _actualizar_visual_y_fisica()
@@ -68,9 +74,8 @@ func _process(delta: float) -> void:
 
 func _actualizar_visual_y_fisica():
     if material is ShaderMaterial:
-        # El shader suele esperar radianes. 
-        # Multiplicamos por PI para que 1.0 sea media vuelta, por vueltas_totales.
-        var rotacion_shader = rotacion_actual * PI * vueltas_totales
+        # Invertimos solo la visual del volante para corregir la percepcion de giro.
+        var rotacion_shader = -rotacion_actual * PI * vueltas_totales
         material.set_shader_parameter("rotacion", rotacion_shader)
     
     if is_instance_valid(InputVehiculo):

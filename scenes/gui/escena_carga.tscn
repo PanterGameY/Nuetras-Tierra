@@ -43,20 +43,30 @@ color = Color(0.03, 0.11, 0.2, 0.62)
 [node name="BrilloA" type="ColorRect" parent="Fondo" unique_id=19100177]
 layout_mode = 1
 anchors_preset = 0
-offset_left = 84.0
-offset_top = 74.0
-offset_right = 624.0
-offset_bottom = 414.0
+anchor_right = 0.3
+anchor_bottom = 0.35
+offset_left = 40.0
+offset_top = 40.0
+offset_right = -20.0
+offset_bottom = -20.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
 color = Color(0.18, 0.78, 0.95, 0.12)
 
 [node name="BrilloB" type="ColorRect" parent="Fondo" unique_id=184400191]
 layout_mode = 1
 anchors_preset = 0
-offset_left = 1032.0
-offset_top = 418.0
-offset_right = 1602.0
-offset_bottom = 864.0
+anchor_left = 0.7
+anchor_top = 0.65
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -40.0
+offset_bottom = -40.0
+grow_horizontal = 0
+grow_vertical = 0
 mouse_filter = 2
 color = Color(0.05, 0.5, 0.8, 0.1)
 
@@ -116,7 +126,7 @@ alignment = 1
 [node name="Spinner" type="Label" parent="UI/Centro/Marco/PanelCarga/Contenido/HBoxEstado" unique_id=905531921]
 layout_mode = 2
 theme_override_font_sizes/font_size = 24
-text = "◌"
+text = "⠋"
 
 [node name="Estado" type="Label" parent="UI/Centro/Marco/PanelCarga/Contenido/HBoxEstado" unique_id=541966882]
 modulate = Color(0.8, 0.87, 1, 0.9)

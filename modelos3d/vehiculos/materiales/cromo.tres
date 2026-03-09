@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://bibety73fn7s1"]
+
+[ext_resource type="Shader" uid="uid://cw5gf8pqr3yxo" path="res://modelos3d/vehiculos/materiales/cromo.gdshader" id="1_8ofxe"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_8ofxe")
+shader_parameter/metallic = 1.0
+shader_parameter/roughness = 0.1
+shader_parameter/specular = 0.8
+shader_parameter/chrome_tint = Color(0.95, 0.95, 1, 1)
+shader_parameter/rim_intensity = 0.5
+shader_parameter/reflection_intensity = 1.5
+shader_parameter/use_environment_map = false

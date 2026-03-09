@@ -16,13 +16,7 @@
 [ext_resource type="Script" uid="uid://cvirh4yiym25d" path="res://scenes/gui/SelectorMarchasNuevo.gd" id="13_mgtqw"]
 [ext_resource type="Shader" uid="uid://cmjo27h7imy4q" path="res://scenes/gui/MarchaBotonUniversal.gdshader" id="15_marchas"]
 [ext_resource type="Shader" uid="uid://8q2065qb8j33" path="res://scenes/gui/BotonVehiculo.gdshader" id="16_boton"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_motor"]
-shader = ExtResource("16_boton")
-shader_parameter/activo = false
-shader_parameter/color_activo = Vector4(1, 1, 0, 1)
-shader_parameter/color_inactivo = Vector4(1, 1, 1, 1)
-shader_parameter/brillo_activo = 1.4
+[ext_resource type="Script" uid="uid://dodehpnrhvlly" path="res://scenes/gui/UIVehiculo/Scripts/MotorSwitch.gd" id="17_motor_switch"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_freno"]
 shader = ExtResource("16_boton")
@@ -32,6 +26,13 @@ shader_parameter/color_inactivo = Vector4(1, 1, 1, 1)
 shader_parameter/brillo_activo = 1.4
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_salir"]
+shader = ExtResource("16_boton")
+shader_parameter/activo = false
+shader_parameter/color_activo = Vector4(1, 1, 0, 1)
+shader_parameter/color_inactivo = Vector4(1, 1, 1, 1)
+shader_parameter/brillo_activo = 1.4
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_camara"]
 shader = ExtResource("16_boton")
 shader_parameter/activo = false
 shader_parameter/color_activo = Vector4(1, 1, 0, 1)
@@ -60,37 +61,38 @@ shader_parameter/es_freno = false
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_p"]
 shader = ExtResource("15_marchas")
 shader_parameter/activo = false
-shader_parameter/color_activo = Color(0, 0.8, 1, 1)
-shader_parameter/color_inactivo = Color(0.3, 0.35, 0.4, 1)
-shader_parameter/opacidad = 0.9
+shader_parameter/color_activo = Color(1, 0.55, 0.12, 1)
+shader_parameter/color_inactivo = Color(1, 1, 1, 1)
+shader_parameter/opacidad_activo = 1.0
+shader_parameter/opacidad_inactivo = 0.62
+shader_parameter/rugosidad = 0.24
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_r"]
 shader = ExtResource("15_marchas")
 shader_parameter/activo = false
-shader_parameter/color_activo = Color(0, 0.8, 1, 1)
-shader_parameter/color_inactivo = Color(0.3, 0.35, 0.4, 1)
-shader_parameter/opacidad = 0.9
+shader_parameter/color_activo = Color(1, 0.55, 0.12, 1)
+shader_parameter/color_inactivo = Color(1, 1, 1, 1)
+shader_parameter/opacidad_activo = 1.0
+shader_parameter/opacidad_inactivo = 0.62
+shader_parameter/rugosidad = 0.24
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_n"]
 shader = ExtResource("15_marchas")
 shader_parameter/activo = true
-shader_parameter/color_activo = Color(0, 0.8, 1, 1)
-shader_parameter/color_inactivo = Color(0.3, 0.35, 0.4, 1)
-shader_parameter/opacidad = 0.9
+shader_parameter/color_activo = Color(1, 0.55, 0.12, 1)
+shader_parameter/color_inactivo = Color(1, 1, 1, 1)
+shader_parameter/opacidad_activo = 1.0
+shader_parameter/opacidad_inactivo = 0.62
+shader_parameter/rugosidad = 0.24
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_d"]
 shader = ExtResource("15_marchas")
 shader_parameter/activo = false
-shader_parameter/color_activo = Color(0, 0.8, 1, 1)
-shader_parameter/color_inactivo = Color(0.3, 0.35, 0.4, 1)
-shader_parameter/opacidad = 0.9
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_camara"]
-shader = ExtResource("16_boton")
-shader_parameter/activo = false
-shader_parameter/color_activo = Vector4(1, 1, 0, 1)
-shader_parameter/color_inactivo = Vector4(1, 1, 1, 1)
-shader_parameter/brillo_activo = 1.4
+shader_parameter/color_activo = Color(1, 0.55, 0.12, 1)
+shader_parameter/color_inactivo = Color(1, 1, 1, 1)
+shader_parameter/opacidad_activo = 1.0
+shader_parameter/opacidad_inactivo = 0.62
+shader_parameter/rugosidad = 0.24
 
 [node name="UIVehiculo" type="CanvasLayer" unique_id=1389448761]
 layer = 10
@@ -140,46 +142,158 @@ theme_override_font_sizes/font_size = 40
 text = "0 km/h"
 horizontal_alignment = 1
 
-[node name="BotonesIzquierda" type="VBoxContainer" parent="SafeArea/Interface" unique_id=260574272]
-custom_minimum_size = Vector2(30, 90)
+[node name="MenuDesplegable" type="Control" parent="SafeArea/Interface" unique_id=260574272]
 layout_mode = 1
 anchors_preset = 4
 anchor_top = 0.5
 anchor_bottom = 0.5
-offset_left = -16.0
-offset_top = -73.0
-offset_right = 14.0
-offset_bottom = 87.0
+offset_left = 0.0
+offset_top = -140.0
+offset_right = 100.0
+offset_bottom = 140.0
+grow_vertical = 2
 mouse_filter = 2
-theme_override_constants/separation = 20
 
-[node name="BotonMotor" type="Button" parent="SafeArea/Interface/BotonesIzquierda" unique_id=1756396090]
+[node name="TabMenu" type="ColorRect" parent="SafeArea/Interface/MenuDesplegable" unique_id=100000200]
 unique_name_in_owner = true
-material = SubResource("ShaderMaterial_motor")
-custom_minimum_size = Vector2(30, 30)
-layout_mode = 2
-toggle_mode = true
-icon = ExtResource("2_1tylv")
-flat = true
-expand_icon = true
+custom_minimum_size = Vector2(30, 90)
+layout_mode = 0
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -45.0
+offset_right = 30.0
+offset_bottom = 45.0
+mouse_filter = 0
+color = Color(0.15, 0.18, 0.22, 0.95)
 
-[node name="BotonFrenoMano" type="Button" parent="SafeArea/Interface/BotonesIzquierda" unique_id=1246151773]
+[node name="IconoMenu" type="Label" parent="SafeArea/Interface/MenuDesplegable/TabMenu" unique_id=100000201]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -10.0
+offset_top = -15.0
+offset_right = 10.0
+offset_bottom = 15.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_font_sizes/font_size = 26
+text = "☰"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="PanelContenido" type="Panel" parent="SafeArea/Interface/MenuDesplegable" unique_id=100000202]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(75, 260)
+layout_mode = 0
+offset_left = 30.0
+offset_top = 10.0
+offset_right = 105.0
+offset_bottom = 270.0
+mouse_filter = 2
+
+[node name="BotonesVehiculo" type="VBoxContainer" parent="SafeArea/Interface/MenuDesplegable/PanelContenido" unique_id=100000203]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+
+[node name="BotonMotor" type="Control" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo" unique_id=1756396090]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(55, 55)
+layout_mode = 2
+script = ExtResource("17_motor_switch")
+
+[node name="Fondo" type="ColorRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo/BotonMotor" unique_id=100000100]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.22, 0.25, 0.3, 0.92)
+
+[node name="Icono" type="TextureRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo/BotonMotor/Fondo" unique_id=100000101]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_1tylv")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BotonFrenoMano" type="ColorRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo" unique_id=1246151773]
 unique_name_in_owner = true
 material = SubResource("ShaderMaterial_freno")
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
-icon = ExtResource("3_sicxr")
-flat = true
-expand_icon = true
+mouse_filter = 1
 
-[node name="BotonSalir" type="Button" parent="SafeArea/Interface/BotonesIzquierda" unique_id=1926483195]
+[node name="Icono" type="TextureRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo/BotonFrenoMano" unique_id=100000102]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3_sicxr")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BotonSalir" type="ColorRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo" unique_id=1926483195]
 unique_name_in_owner = true
 material = SubResource("ShaderMaterial_salir")
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(50, 50)
 layout_mode = 2
-icon = ExtResource("4_dxb63")
-flat = true
-expand_icon = true
+mouse_filter = 1
+
+[node name="Icono" type="TextureRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo/BotonSalir" unique_id=100000103]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("4_dxb63")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="BotonCamara" type="ColorRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo" unique_id=50956515]
+unique_name_in_owner = true
+material = SubResource("ShaderMaterial_camara")
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Icono" type="TextureRect" parent="SafeArea/Interface/MenuDesplegable/PanelContenido/BotonesVehiculo/BotonCamara" unique_id=100000104]
+custom_minimum_size = Vector2(50, 50)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("12_sicxr")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="PanelVolante" type="Control" parent="SafeArea/Interface" unique_id=2085006919]
 layout_mode = 1
@@ -194,13 +308,17 @@ mouse_filter = 2
 
 [node name="Volante" type="TextureRect" parent="SafeArea/Interface/PanelVolante" unique_id=1195809318]
 material = SubResource("ShaderMaterial_dxb63")
+custom_minimum_size = Vector2(300, 300)
 layout_mode = 1
 anchors_preset = -1
-anchor_top = 0.446
-anchor_right = 0.5
-anchor_bottom = 1.0
-offset_top = -57.782005
-offset_right = 62.0
+anchor_left = 0.31500003
+anchor_top = -0.093
+anchor_right = 1.0
+anchor_bottom = 0.72200006
+offset_left = -64.90001
+offset_top = -57.819008
+offset_right = 57.0
+offset_bottom = 65.32599
 grow_horizontal = 2
 grow_vertical = 2
 pivot_offset = Vector2(150, 150)
@@ -208,6 +326,8 @@ mouse_filter = 0
 texture = ExtResource("10_sicxr")
 expand_mode = 1
 script = ExtResource("10_1tylv")
+sensibilidad = 0.3
+vueltas_totales = 0.6
 
 [node name="PedalesDerecha" type="HBoxContainer" parent="SafeArea/Interface" unique_id=1126106034]
 layout_mode = 1
@@ -260,52 +380,95 @@ anchors_preset = -1
 anchor_left = -2.9780002
 anchor_right = 1.8160001
 anchor_bottom = 1.988
-offset_left = 715.7737
-offset_top = 33.5104
-offset_right = -232.19406
-offset_bottom = -180.13144
+offset_left = 591.42236
+offset_top = 12.495423
+offset_right = -199.03368
+offset_bottom = -159.24057
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 4
 
-[node name="MarchaP" type="Button" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=4]
+[node name="MarchaP" type="ColorRect" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=4]
 material = SubResource("ShaderMaterial_p")
-custom_minimum_size = Vector2(30, 30)
+custom_minimum_size = Vector2(58, 58)
 layout_mode = 2
-text = "P"
+mouse_filter = 1
 
-[node name="MarchaR" type="Button" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=5]
-material = SubResource("ShaderMaterial_r")
-custom_minimum_size = Vector2(30, 30)
-layout_mode = 2
-text = "R"
-
-[node name="MarchaN" type="Button" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=6]
-material = SubResource("ShaderMaterial_n")
-custom_minimum_size = Vector2(30, 30)
-layout_mode = 2
-text = "N"
-
-[node name="MarchaD" type="Button" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=7]
-material = SubResource("ShaderMaterial_d")
-custom_minimum_size = Vector2(30, 30)
-layout_mode = 2
-text = "D"
-
-[node name="BotonCamara" type="Button" parent="SafeArea/Interface" unique_id=50956515]
-unique_name_in_owner = true
-material = SubResource("ShaderMaterial_camara")
-custom_minimum_size = Vector2(30, 30)
+[node name="Texto" type="Label" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha/MarchaP" unique_id=100000004]
 layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
+anchors_preset = 15
 anchor_right = 1.0
-offset_left = -180.0
-offset_top = 6.0
-offset_right = -140.0
-offset_bottom = 42.0
-grow_horizontal = 0
-icon = ExtResource("12_sicxr")
-flat = true
-expand_icon = true
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.55)
+text = "P"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="MarchaR" type="ColorRect" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=5]
+material = SubResource("ShaderMaterial_r")
+custom_minimum_size = Vector2(58, 58)
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Texto" type="Label" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha/MarchaR" unique_id=100000005]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.55)
+text = "R"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="MarchaN" type="ColorRect" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=6]
+material = SubResource("ShaderMaterial_n")
+custom_minimum_size = Vector2(58, 58)
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Texto" type="Label" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha/MarchaN" unique_id=100000006]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.55)
+text = "N"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="MarchaD" type="ColorRect" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha" unique_id=7]
+material = SubResource("ShaderMaterial_d")
+custom_minimum_size = Vector2(58, 58)
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Texto" type="Label" parent="SafeArea/Interface/SelectorMarchas/BotonesMarcha/MarchaD" unique_id=100000007]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/outline_size = 3
+theme_override_font_sizes/font_size = 28
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.55)
+text = "D"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2

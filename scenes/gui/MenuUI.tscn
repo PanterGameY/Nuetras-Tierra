@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://d3swyhpeve34j"]
 
-[ext_resource type="Script" path="res://scenes/gui/MenuUI.gd" id="1_menu_ui"]
-[ext_resource type="Shader" path="res://shaders/BlurShader.gdshader" id="2_blur_shader"]
+[ext_resource type="Script" uid="uid://djsgtxni7ehlg" path="res://scenes/gui/MenuUI.gd" id="1_menu_ui"]
+[ext_resource type="Shader" uid="uid://18mvc7fv7ov" path="res://shaders/BlurShader.gdshader" id="2_blur_shader"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_blur"]
 shader = ExtResource("2_blur_shader")
@@ -18,7 +18,7 @@ corner_radius_top_right = 16
 corner_radius_bottom_right = 16
 corner_radius_bottom_left = 16
 
-[node name="MenuUI" type="Control"]
+[node name="MenuUI" type="Control" unique_id=921935395]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -27,7 +27,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_menu_ui")
 
-[node name="FondoScreenshot" type="ColorRect" parent="."]
+[node name="FondoScreenshot" type="ColorRect" parent="." unique_id=671978036]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -36,7 +36,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.1, 0.1, 0.1, 1)
 
-[node name="TextureScreenshot" type="TextureRect" parent="FondoScreenshot"]
+[node name="TextureScreenshot" type="TextureRect" parent="FondoScreenshot" unique_id=636312217]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -46,7 +46,7 @@ grow_vertical = 2
 expand_mode = 1
 stretch_mode = 6
 
-[node name="FondoBlur" type="ColorRect" parent="."]
+[node name="FondoBlur" type="ColorRect" parent="." unique_id=966468791]
 material = SubResource("ShaderMaterial_blur")
 layout_mode = 1
 anchors_preset = 15
@@ -55,7 +55,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SafeArea" type="MarginContainer" parent="."]
+[node name="SafeArea" type="MarginContainer" parent="." unique_id=830185786]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -67,108 +67,257 @@ theme_override_constants/margin_top = 40
 theme_override_constants/margin_right = 40
 theme_override_constants/margin_bottom = 40
 
-[node name="PanelMovil" type="PanelContainer" parent="SafeArea"]
+[node name="PanelMovil" type="PanelContainer" parent="SafeArea" unique_id=1192960379]
 custom_minimum_size = Vector2(360, 0)
 layout_mode = 2
 size_flags_horizontal = 4
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="PanelMargin" type="MarginContainer" parent="SafeArea/PanelMovil"]
+[node name="PanelMargin" type="MarginContainer" parent="SafeArea/PanelMovil" unique_id=1517272768]
 layout_mode = 2
 theme_override_constants/margin_left = 15
 theme_override_constants/margin_top = 15
 theme_override_constants/margin_right = 15
 theme_override_constants/margin_bottom = 15
 
-[node name="VBox" type="VBoxContainer" parent="SafeArea/PanelMovil/PanelMargin"]
+[node name="VBox" type="VBoxContainer" parent="SafeArea/PanelMovil/PanelMargin" unique_id=396123880]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Header" type="HBoxContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox"]
+[node name="Header" type="HBoxContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox" unique_id=363168336]
 layout_mode = 2
 
-[node name="Titulo" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/Header"]
+[node name="Titulo" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/Header" unique_id=695407295]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 26
 text = "SISTEMA"
 
-[node name="BtnCerrarX" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/Header"]
+[node name="BtnCerrarX" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/Header" unique_id=2141756553]
 custom_minimum_size = Vector2(45, 45)
 layout_mode = 2
-text = "✕"
+mouse_filter = 1
+color = Color(0.19, 0.24, 0.33, 0.95)
 
-[node name="DineroHora" type="HBoxContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox"]
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/Header/BtnCerrarX" unique_id=1561242882]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -7.0
+offset_top = -10.0
+offset_right = 7.0
+offset_bottom = 10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 20
+text = "✕"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DineroHora" type="HBoxContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox" unique_id=376343353]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="LblDinero" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/DineroHora"]
+[node name="LblDinero" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/DineroHora" unique_id=1478919413]
 modulate = Color(0.8, 1, 0.6, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Dinero: $0"
 horizontal_alignment = 1
 
-[node name="LblHora" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/DineroHora"]
+[node name="LblHora" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/DineroHora" unique_id=487835499]
 modulate = Color(0.7, 0.8, 1, 1)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Hora: 00:00"
 horizontal_alignment = 1
 
-[node name="GridBotones" type="GridContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox"]
+[node name="GridBotones" type="GridContainer" parent="SafeArea/PanelMovil/PanelMargin/VBox" unique_id=1962461116]
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/h_separation = 8
 theme_override_constants/v_separation = 8
 columns = 3
 
-[node name="BtnMapa" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnMapa" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=2081544365]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnMapa" unique_id=359172555]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "🗺️ MAPA"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnOpciones" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnOpciones" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=1163754334]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnOpciones" unique_id=1069388229]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "⚙️ OPCIONES"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnInventario" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnInventario" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=1276777276]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnInventario" unique_id=1280652467]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "🎒 INVENTARIO"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnCamara" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnCamara" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=1314801630]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnCamara" unique_id=2077953010]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "📷 CÁMARA"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnMensajes" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnMensajes" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=1700541072]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnMensajes" unique_id=1939428227]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "💬 MENSAJES"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnTienda" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnTienda" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=595939897]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnTienda" unique_id=596494411]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "🛒 TIENDA"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnMisiones" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnMisiones" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=1527771196]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnMisiones" unique_id=119961103]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "📋 MISIONES"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnContactos" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnContactos" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=2086213612]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnContactos" unique_id=734033698]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
 text = "👥 CONTACTOS"
+horizontal_alignment = 1
+vertical_alignment = 1
 
-[node name="BtnRadio" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones"]
+[node name="BtnRadio" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones" unique_id=59601964]
 custom_minimum_size = Vector2(100, 55)
 layout_mode = 2
-text = "📻 RADIO"
+mouse_filter = 1
+color = Color(0.18, 0.22, 0.3, 0.95)
 
-[node name="BtnVolver" type="Button" parent="SafeArea/PanelMovil/PanelMargin/VBox"]
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/GridBotones/BtnRadio" unique_id=516639690]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 14
+text = "📻 RADIO"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BtnVolver" type="ColorRect" parent="SafeArea/PanelMovil/PanelMargin/VBox" unique_id=518428044]
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
+mouse_filter = 1
+color = Color(0.2, 0.28, 0.4, 0.95)
+
+[node name="Texto" type="Label" parent="SafeArea/PanelMovil/PanelMargin/VBox/BtnVolver" unique_id=401636330]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 16
 text = "← VOLVER AL JUEGO"
+horizontal_alignment = 1
+vertical_alignment = 1

@@ -1,53 +1,41 @@
 shader_type canvas_item;
 
 uniform bool activo = false;
-uniform vec3 color_activo : source_color = vec3(0.0, 0.8, 1.0); 
-uniform vec3 color_inactivo : source_color = vec3(0.3, 0.35, 0.4);
-uniform float opacidad : hint_range(0.0, 1.0) = 0.9;
+uniform vec3 color_activo : source_color = vec3(1.0, 0.55, 0.12);
+uniform vec3 color_inactivo : source_color = vec3(1.0, 1.0, 1.0);
+uniform float opacidad_activo : hint_range(0.0, 1.0) = 1.0;
+uniform float opacidad_inactivo : hint_range(0.0, 1.0) = 0.62;
+uniform float rugosidad : hint_range(0.0, 1.0) = 0.24;
 
-// Función de rectángulo redondeado corregida para asegurar bordes internos
-float sdRect(vec2 p, vec2 b, float r) {
-    vec2 d = abs(p) - b + vec2(r);
-    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0)) - r;
+float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float sdCircle(vec2 p, float r) {
+    return length(p) - r;
 }
 
 void fragment() {
-    // UV centrado (-0.5 a 0.5)
     vec2 uv = UV - 0.5;
-    
     vec3 col_fondo = vec3(0.05, 0.06, 0.08);
     vec3 color_tema = activo ? color_activo : color_inactivo;
-    
-    // El tamaño del rect (0.48) asegura que casi toque los bordes del botón
-    float d = sdRect(uv, vec2(0.48, 0.45), 0.1);
-    
-    // Máscara principal (el cuerpo del botón)
-    // Usamos un smoothstep invertido para que el interior sea 1.0
+    float d = sdCircle(uv, 0.47);
     float mask = smoothstep(0.01, -0.01, d);
-    
-    // Borde: creamos una línea fina justo en el borde del rectángulo
-    float borde_ancho = 0.02;
-    float borde = smoothstep(borde_ancho, 0.0, abs(d));
-    
-    // Glow: un degradado radial suave que solo aparece si está activo
-    float glow = activo ? (1.0 - length(uv * 2.0)) * 0.5 : 0.0;
-    glow = clamp(glow, 0.0, 1.0);
-    
-    // Mezcla final de colores
+    float borde = smoothstep(0.03, 0.0, abs(d));
+
+    float n = hash12(UV * 120.0);
+    float grano = (n - 0.5) * rugosidad;
+    float opacidad_base = activo ? opacidad_activo : opacidad_inactivo;
+
+    float glow = activo ? (1.0 - smoothstep(0.0, 0.8, length(uv) * 1.6)) : 0.0;
+
     vec3 col = col_fondo;
-    
-    // Si es el cuerpo, ponemos el fondo oscuro con un toque del color del tema
-    col = mix(col, col + (color_tema * 0.15), mask);
-    
-    // Sumamos el borde neón
-    col += color_tema * borde;
-    
-    // Sumamos el resplandor central
-    col += color_tema * glow * mask;
-    
-    // IMPORTANTE: Aseguramos que la opacidad no sea 0 si hay contenido
-    // Usamos el máximo entre la máscara y el borde para que el botón no desaparezca
-    float alpha_final = clamp(mask + borde, 0.0, 1.0) * opacidad;
-    
+    col = mix(col, col + color_tema * (0.25 + grano), mask);
+    col += color_tema * borde * 0.9;
+    col += color_tema * glow * mask * 0.35;
+
+    float alpha_final = clamp(mask + borde * 0.2, 0.0, 1.0) * clamp(opacidad_base + grano * 0.45, 0.0, 1.0);
     COLOR = vec4(col, alpha_final);
 }

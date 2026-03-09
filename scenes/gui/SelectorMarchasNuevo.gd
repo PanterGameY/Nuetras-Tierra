@@ -10,25 +10,44 @@ signal marcha_cambiada(marcha: String)
 	"D": $BotonesMarcha/MarchaD
 }
 
+@onready var labels = {
+	"P": $BotonesMarcha/MarchaP/Texto,
+	"R": $BotonesMarcha/MarchaR/Texto,
+	"N": $BotonesMarcha/MarchaN/Texto,
+	"D": $BotonesMarcha/MarchaD/Texto
+}
+
 var marcha_actual: String = "N"
 var indice_actual: int = 2  # 0=P, 1=R, 2=N, 3=D
 
 func _ready() -> void:
 	# 1. Preparar materiales únicos ANTES de conectar nada
 	for id in botones:
-		var btn = botones[id]
+		var btn: ColorRect = botones[id]
 		if btn.material:
-			# Forzamos que cada botón tenga su propia copia del shader
+			# Forzamos que cada rectángulo tenga su propia copia del shader
 			btn.material = btn.material.duplicate()
-		
-		# 2. Conectar señales
-		btn.pressed.connect(_on_marcha_seleccionada.bind(id))
-		
-		# 3. Estilo de texto inicial
-		btn.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+
+		# 2. Conectar señales de input táctil/click
+		btn.gui_input.connect(_on_marcha_input.bind(id))
+
+		# 3. Color inicial del texto
+		var label_texto := labels[id] as Label
+		if label_texto:
+			label_texto.modulate = Color(1.0, 1.0, 1.0, 0.7)
 	
 	# Estado inicial
 	_actualizar_visuales()
+
+func _on_marcha_input(event: InputEvent, id: String) -> void:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			_on_marcha_seleccionada(id)
+	elif event is InputEventScreenTouch:
+		var touch_event := event as InputEventScreenTouch
+		if touch_event.pressed:
+			_on_marcha_seleccionada(id)
 
 func _on_marcha_seleccionada(id: String) -> void:
 	if marcha_actual == id:
@@ -70,18 +89,17 @@ func _on_marcha_seleccionada(id: String) -> void:
 func _actualizar_visuales() -> void:
 	"""Actualiza el estado visual de todos los botones de forma eficiente"""
 	for id in botones:
-		var btn = botones[id]
+		var btn: ColorRect = botones[id]
+		var txt: Label = labels[id]
 		var es_activa = (id == marcha_actual)
 		
 		# Actualizar Shader (Solo si el material existe)
 		if btn.material:
 			btn.material.set_shader_parameter("activo", es_activa)
 		
-		# Actualizar colores de fuente para resaltar la selección
-		var color_texto = Color(1.0, 0.7, 0.1) if es_activa else Color(0.5, 0.5, 0.5)
-		btn.add_theme_color_override("font_color", color_texto)
-		btn.add_theme_color_override("font_hover_color", color_texto)
-		btn.add_theme_color_override("font_pressed_color", Color.WHITE)
+		# Actualizar color del label para resaltar selección
+		if txt:
+			txt.modulate = Color(1.0, 0.55, 0.12, 1.0) if es_activa else Color(1.0, 1.0, 1.0, 0.72)
 
 func set_marcha(idx: int) -> void:
 	"""Establecer marcha por índice (0=P, 1=R, 2=N, 3=D)"""

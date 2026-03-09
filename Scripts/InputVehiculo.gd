@@ -3,7 +3,7 @@
 extends Node
 
 # Estados del motor
-var motor_encendido: bool = false
+var motor_encendido: bool = true
 var velocidad_motor: float = 0.0
 
 # Entrada analógica
@@ -11,6 +11,7 @@ var gas: float = 0.0
 var freno: float = 0.0
 var freno_mano: bool = false
 var direccion: float = 0.0
+var direccion_tactil_activa: bool = false
 
 # Estado de marchas
 enum Marcha { PARQUEO, REVERSA, NEUTRO, DRIVE }
@@ -46,13 +47,14 @@ func _leer_entrada(delta: float) -> void:
 	freno_mano = Input.is_action_pressed("freno_mano")
 	
 	# Direccion
-	var dir_input: float = 0.0
-	if Input.is_action_pressed("girar_izquierda"):
-		dir_input -= 1.0
-	if Input.is_action_pressed("girar_derecha"):
-		dir_input += 1.0
-	
-	direccion = move_toward(direccion, dir_input, delta * 3.0)
+	# Si la direccion tactil esta activa, no forzamos recentrado por teclado.
+	if not direccion_tactil_activa:
+		var dir_input: float = 0.0
+		if Input.is_action_pressed("girar_izquierda"):
+			dir_input -= 1.0
+		if Input.is_action_pressed("girar_derecha"):
+			dir_input += 1.0
+		direccion = move_toward(direccion, dir_input, delta * 3.0)
 	
 	# Cambio de marchas
 	if Input.is_action_just_pressed("marcha_parqueo"):
@@ -64,9 +66,8 @@ func _leer_entrada(delta: float) -> void:
 	if Input.is_action_just_pressed("marcha_drive"):
 		establecer_marcha(Marcha.DRIVE)
 	
-	# Encender/Apagar motor
-	if Input.is_action_just_pressed("encender_motor"):
-		motor_encendido = !motor_encendido
+	# Sistema de encendido desactivado temporalmente: motor siempre encendido.
+	motor_encendido = true
 
 func establecer_marcha(nueva_marcha: Marcha) -> void:
 	marcha_actual = nueva_marcha
@@ -89,19 +90,25 @@ func set_freno(v: float) -> void:
 	freno = clamp(v, 0.0, 1.0)
 
 func set_dir(v: float) -> void:
+	direccion_tactil_activa = true
 	direccion = clamp(v, -1.0, 1.0)
 
 func set_direccion(v: float) -> void:
 	set_dir(v)
 
 func centrar_direccion() -> void:
+	direccion_tactil_activa = false
 	direccion = 0.0
+
+func liberar_direccion_tactil() -> void:
+	direccion_tactil_activa = false
 
 func set_fmano(estado: bool) -> void:
 	freno_mano = estado
 
 func set_motor_encendido(estado: bool) -> void:
-	motor_encendido = estado
+	# Sistema de encendido desactivado temporalmente: ignorar apagado.
+	motor_encendido = true
 
 func set_marcha_enum(nueva_marcha: Marcha) -> void:
 	establecer_marcha(nueva_marcha)
@@ -121,6 +128,7 @@ func reset_tactil() -> void:
 	gas = 0.0
 	freno = 0.0
 	direccion = 0.0
+	direccion_tactil_activa = false
 	freno_mano = false
 
 func esta_en_reversa() -> bool:
@@ -131,6 +139,7 @@ func esta_en_drive() -> bool:
 
 func start_driving() -> void:
 	en_control = true
+	motor_encendido = true
 	print("[Input] Control del vehiculo activado")
 
 func stop_driving() -> void:
@@ -138,6 +147,8 @@ func stop_driving() -> void:
 	gas = 0.0
 	freno = 0.0
 	direccion = 0.0
+	direccion_tactil_activa = false
+	motor_encendido = true
 	print("[Input] Control del vehiculo desactivado")
 
 func resetear() -> void:
@@ -145,6 +156,7 @@ func resetear() -> void:
 	freno = 0.0
 	freno_mano = false
 	direccion = 0.0
-	motor_encendido = false
+	direccion_tactil_activa = false
+	motor_encendido = true
 	marcha_actual = Marcha.PARQUEO
 	print("[Input] InputVehiculo resetado")

@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://dia560dmtdc3x" path="res://scenes/CicloCielo.gd" id="1_a5ike"]
 [ext_resource type="Shader" uid="uid://dpsv82aigbps3" path="res://shaders/cielo.gdshader" id="5_4c5cp"]
+[ext_resource type="ArrayOccluder3D" uid="uid://bhhj1l0qp5b3k" path="res://scenes/Fusa.occ" id="5_bwfyw"]
+[ext_resource type="PackedScene" uid="uid://cxef2qmeh5c4i" path="res://modelos3d/vehiculos/Buses/MarcopoloG8-1200/MarcopoloG8-1200.tscn" id="9_dpfe0"]
 [ext_resource type="PackedScene" uid="uid://beq42am3frtwj" path="res://scenes/Player.tscn" id="11_eu68q"]
 [ext_resource type="PackedScene" uid="uid://ctxljpie4o5nb" path="res://modelos3d/vehiculos/NPR/npr.tscn" id="12_c5vow"]
 [ext_resource type="Material" uid="uid://2s5gt1bmb8xr" path="res://materiales/Chasis.tres" id="13_dtv6f"]
@@ -16,9 +18,9 @@ shader_parameter/color_tarde_sup = Color(0.15, 0.05, 0.2, 1)
 shader_parameter/color_tarde_hor = Color(0.9, 0.4, 0.2, 1)
 shader_parameter/color_noche_sup = Color(0.01, 0.02, 0.05, 1)
 shader_parameter/color_noche_hor = Color(0.02, 0.05, 0.1, 1)
-shader_parameter/densidad_nubes = 1.3630000647425
-shader_parameter/velocidad_nubes = 0.0090000004275
-shader_parameter/intensidad_sombras = 0.98000004655
+shader_parameter/densidad_nubes = 0.838000039805
+shader_parameter/velocidad_nubes = 0.006000000285
+shader_parameter/intensidad_sombras = 0.88800004218
 shader_parameter/intensidad_niebla = 0.6110000290225
 shader_parameter/turbidez = 1.0
 
@@ -36,7 +38,6 @@ ssr_max_steps = 32
 ssr_fade_in = 0.15528965
 ssr_fade_out = 0.4999998
 ssr_depth_tolerance = 0.21
-ssao_enabled = true
 ssao_radius = 1.2
 ssao_intensity = 1.8
 glow_enabled = true
@@ -50,8 +51,6 @@ fog_density = 0.1632
 fog_aerial_perspective = 0.1
 volumetric_fog_density = 0.02
 volumetric_fog_anisotropy = 0.7
-
-[sub_resource type="ArrayOccluder3D" id="ArrayOccluder3D_c5vow"]
 
 [sub_resource type="BoxMesh" id="BoxMesh_roeuy"]
 
@@ -73,7 +72,7 @@ shader_parameter/fatiga_ocular = 0.0
 [node name="Mapa" type="Node3D" unique_id=1320088043]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=1329705658]
-transform = Transform3D(0.16443254, -0.91127956, -0.3775361, -0.40030134, -0.4114509, 0.81881946, -0.9015099, 0.016484207, -0.43244466, 11.816716, 12.09083, 86.0765)
+transform = Transform3D(-0.13101423, -0.96276987, 0.23642828, -0.41244978, 0.26979586, 0.87011874, -0.9015101, 0.016483957, -0.43244386, 11.816716, 12.09083, 86.0765)
 light_color = Color(0.99999946, 0.9302653, 0.68363184, 1)
 light_angular_distance = 2.09
 shadow_enabled = true
@@ -88,22 +87,9 @@ environment = SubResource("Environment_bt6ee")
 [node name="player" parent="." unique_id=185812776 instance=ExtResource("11_eu68q")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -35.376625, 1.2411418, 43.080353)
 
-[node name="npr" parent="." unique_id=722938509 instance=ExtResource("12_c5vow")]
-transform = Transform3D(-0.9784046, 0, 0.20669943, 0, 1, 0, -0.20669943, 0, -0.9784046, -37.925587, 0.57957697, 36.392883)
-
-[node name="SpotLight3D" type="SpotLight3D" parent="npr" unique_id=23525663]
-transform = Transform3D(0.9857321, -0.1643278, 0.036451165, -0.005457066, 0.18524276, 0.9826777, -0.16823359, -0.9688557, 0.18170299, -0.019784927, 3.1120389, -2.8021927)
-light_color = Color(1.242, 0.8634728, 0.8371102, 1)
-light_energy = 9.395
-light_specular = 6.837
-light_bake_mode = 1
-spot_range = 3.999
-spot_attenuation = 3.42
-spot_angle = 75.3
-spot_angle_attenuation = 3.732133
-
 [node name="OccluderInstance3D" type="OccluderInstance3D" parent="." unique_id=1203273771]
-occluder = SubResource("ArrayOccluder3D_c5vow")
+visible = false
+occluder = ExtResource("5_bwfyw")
 
 [node name="prueba" type="MeshInstance3D" parent="." unique_id=2035431132]
 transform = Transform3D(5.5033426, 0, 0, 0, 13.638476, 0, 0, 0, 5.816674, -74.0925, 0.3541851, 45.360718)
@@ -180,3 +166,9 @@ shadow_transmittance_bias = 0.06
 spot_range = 44.639
 spot_angle = 68.42
 spot_angle_attenuation = 0.13869624
+
+[node name="npr" parent="." unique_id=1178482308 instance=ExtResource("12_c5vow")]
+transform = Transform3D(-0.999875, 0, -0.015812127, 0, 1, 0, 0.015812127, 0, -0.999875, -5.156192, 0.50956726, 33.43061)
+
+[node name="MarcopoloG81200" parent="." unique_id=1188542954 instance=ExtResource("9_dpfe0")]
+transform = Transform3D(-1.1970665, 0, -0.08385402, 0, 1.1999999, 0, 0.08385402, 0, -1.1970665, -4.4254003, 0.5886567, 18.43787)

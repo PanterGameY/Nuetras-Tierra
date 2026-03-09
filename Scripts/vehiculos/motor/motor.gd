@@ -4,8 +4,12 @@ extends Node3D
 @export var config: MotorConfig = preload("res://Scripts/vehiculos/motor/recursos/Camion_Pesado.tres")
 @export_group("Asistencias")
 @export var auto_hold_habilitado: bool = true
-@export var auto_hold_velocidad_ms: float = 0.9
-@export var auto_hold_freno: float = 0.45
+@export var auto_hold_velocidad_ms: float = 0.55
+@export var auto_hold_freno: float = 0.18
+@export_group("Frenado Progresivo")
+@export var freno_curva: float = 1.55 # >1 reduce la mordida inicial del pedal.
+@export var rampa_subida_freno: float = 1.35 # Unidades/segundo al pisar.
+@export var rampa_bajada_freno: float = 2.8  # Unidades/segundo al soltar.
 
 @onready var coche: RigidBody3D = _get_rigidbody_parent(get_parent())
 @onready var llantas_ctrl: Node3D = coche.get_node_or_null("ControladorLlantas")
@@ -88,9 +92,10 @@ func _physics_process(delta: float) -> void:
 	# Enviar a llantas
 	llantas_ctrl.recibir_par_motor(torque_ruedas if not freno_mano else 0.0)
 
-	# Suavizado gradual del freno similar al motor
-	var freno_objetivo: float = 1.0 if freno_mano else freno
-	freno_suavizado = lerp(freno_suavizado, freno_objetivo, delta / max(config.inercia_freno, 0.05))
+	# Frenado progresivo: menos brusco al inicio y con rampa de entrada/salida.
+	var freno_objetivo: float = 1.0 if freno_mano else pow(clamp(freno, 0.0, 1.0), freno_curva)
+	var velocidad_rampa := rampa_subida_freno if freno_objetivo > freno_suavizado else rampa_bajada_freno
+	freno_suavizado = move_toward(freno_suavizado, freno_objetivo, velocidad_rampa * delta)
 	
 	var presion_freno: float = freno_suavizado
 	if auto_hold_habilitado and not freno_mano and gas < 0.03 and abs(speed_ms) < auto_hold_velocidad_ms:

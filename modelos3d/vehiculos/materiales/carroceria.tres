@@ -1,0 +1,24 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://dq5k8n3r7vx2m"]
+
+[ext_resource type="Shader" uid="uid://ckj7m8pqw5nxr" path="res://Vehiculos/materiales/carroceria.gdshader" id="1_carroceria_shader"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_carroceria_shader")
+shader_parameter/base_color = Color(0.8, 0.05, 0.05, 1)
+shader_parameter/use_base_texture = false
+shader_parameter/metallic = 0.3
+shader_parameter/roughness = 0.2
+shader_parameter/specular = 0.6
+shader_parameter/clearcoat = 0.8
+shader_parameter/clearcoat_roughness = 0.05
+shader_parameter/metallic_paint = false
+shader_parameter/metallic_tint = Color(0.9, 0.9, 1, 1)
+shader_parameter/metallic_intensity = 0.3
+shader_parameter/use_normal_map = false
+shader_parameter/normal_strength = 1.0
+shader_parameter/use_roughness_map = false
+shader_parameter/use_metallic_map = false
+shader_parameter/ambient_occlusion = 1.0
+shader_parameter/dirt_color = Color(0.3, 0.25, 0.2, 1)
+shader_parameter/dirt_amount = 0.0
