@@ -511,7 +511,10 @@ func _input(e):
 	if _accion_event(e, ["first_person"]): # first_person (tecla O)
 		_set_primera_persona(not _primera_persona)
 
-func _physics_process(delta):
+func _physics_process(delta: float) -> void:
+	if multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
+		return
+		
 	# Actualizar posición y rotación de agarre en vivo para depuración en el Inspector
 	if is_instance_valid(caja_agarrada) and (not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()):
 		var es_tableta = caja_agarrada.name.to_lower().contains("tableta")

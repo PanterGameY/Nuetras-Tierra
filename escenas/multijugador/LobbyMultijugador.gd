@@ -4,6 +4,8 @@ const FONT = preload("res://recursos/fonts/Moderniz.otf")
 const MAIN_MENU_SCENE = "res://escenas/main menu/Main-Menu.tscn"
 
 @onready var red_manager = get_node("/root/RedManager")
+@onready var network = get_node("/root/Network")
+@onready var players_manager = get_node("/root/PlayersManager")
 
 @onready var lbl_titulo: Label = $Card/VBox/Title
 @onready var lbl_estado: Label = $Card/VBox/Status
@@ -65,8 +67,15 @@ func _ready() -> void:
 	btn_crear_confirmar.pressed.connect(_on_crear_sala_pressed)
 	btn_crear_cancelar.pressed.connect(_on_crear_sala_cancelar_pressed)
 	
-	# Acciones Modal Unirse
-	btn_buscar_sala.pressed.connect(_on_buscar_sala_pressed)
+	# Acciones Modal Unirse (Ahora conecta directamente sin buscar)
+	btn_buscar_sala.pressed.connect(func():
+		var codigo = input_codigo_sala.text.strip_edges()
+		if codigo == "":
+			lbl_search_status.text = "INGRESA UN CODIGO VALIDO"
+			lbl_search_status.add_theme_color_override("font_color", Color(0.9, 0.2, 0.2))
+			return
+		_on_unirse_encontrado_pressed(codigo)
+	)
 	btn_unirse_cancelar.pressed.connect(_on_unirse_cancelar_pressed)
 	
 	# Acciones de sala activa
@@ -74,12 +83,13 @@ func _ready() -> void:
 	btn_salir_sala.pressed.connect(_on_salir_sala_pressed)
 	
 	# Conectar senales de red_manager
-	red_manager.salas_actualizadas.connect(_al_recibir_salas)
-	red_manager.jugadores_actualizados.connect(_al_jugadores_actualizados)
-	red_manager.sala_creada.connect(_al_crear_sala)
-	red_manager.unido_a_sala.connect(_al_unirse_sala)
-	red_manager.error_conexion.connect(_al_error_conexion)
-	red_manager.host_desconectado.connect(_al_host_desconectado)
+	if red_manager:
+		red_manager.salas_actualizadas.connect(_al_recibir_salas)
+		red_manager.jugadores_actualizados.connect(_al_jugadores_actualizados)
+		red_manager.sala_creada.connect(_al_crear_sala)
+		red_manager.unido_a_sala.connect(_al_unirse_sala)
+		red_manager.error_conexion.connect(_al_error_conexion)
+		red_manager.host_desconectado.connect(_al_host_desconectado)
 	
 	# Temporizador de auto-refresco de salas
 	refresh_timer = Timer.new()
@@ -87,12 +97,13 @@ func _ready() -> void:
 	refresh_timer.autostart = true
 	add_child(refresh_timer)
 	refresh_timer.timeout.connect(func():
-		if red_manager.current_room == "":
+		if red_manager and red_manager.current_room == "":
 			red_manager.consultar_salas()
 	)
 	
 	# Conectar a la senalizacion WebSocket
-	red_manager.conectar_a_senalizacion()
+	if red_manager:
+		red_manager.conectar_a_senalizacion()
 
 func _aplicar_estilo_premium() -> void:
 	# 1. Titulo con degradado / sombra
@@ -232,7 +243,8 @@ func _aplicar_estilo_premium() -> void:
 	# Estilizar Botones modales
 	_set_button_style(btn_crear_confirmar, Color(0.2, 0.65, 0.15))         # Verde
 	_set_button_style(btn_crear_cancelar, Color(0.75, 0.12, 0.15))          # Rojo
-	_set_button_style(btn_buscar_sala, Color(0.008, 0.7, 0.8))             # Cyan
+	btn_buscar_sala.text = "UNIRSE"  # Cambiar texto a unirse directamente
+	_set_button_style(btn_buscar_sala, Color(0.2, 0.65, 0.15))             # Verde
 	_set_button_style(btn_unirse_encontrado, Color(0.2, 0.65, 0.15))       # Verde
 	_set_button_style(btn_unirse_cancelar, Color(0.75, 0.12, 0.15))        # Rojo
 	
@@ -314,8 +326,18 @@ func _on_crear_sala_pressed() -> void:
 		limite_jugadores = option_max_jugadores.get_item_id(index)
 		
 	modal_crear.visible = false
-	lbl_estado.text = "CREANDO SALA: " + codigo + "..."
-	red_manager.crear_sala(codigo, nombre_sala, limite_jugadores)
+	lbl_estado.text = "CREANDO SERVIDOR..."
+	
+	# Guardar nombre de usuario local
+	if players_manager:
+		players_manager.player_name = DatosUsuario.nombre_usuario
+		
+	# Iniciar servidor ENet local/dedicado para esta sala
+	if network:
+		network.start_server_for_room(codigo)
+		
+	# Ir directamente a la pantalla de juego
+	_on_iniciar_juego_pressed()
 
 func _on_buscar_sala_pressed() -> void:
 	var codigo = input_codigo_sala.text.strip_edges()
@@ -366,11 +388,19 @@ func _on_buscar_sala_pressed() -> void:
 
 func _on_unirse_encontrado_pressed(codigo: String) -> void:
 	modal_unirse.visible = false
-	lbl_estado.text = "UNIENDO A SALA: " + codigo + "..."
-	red_manager.unirse_a_sala(codigo)
+	lbl_estado.text = "UNIENDO A SALA..."
+	
+	if players_manager:
+		players_manager.player_name = DatosUsuario.nombre_usuario
+		
+	if network:
+		# Conectar directamente a la VPS usando el código de la sala
+		network.start_client_for_room(codigo)
+		
+	_on_iniciar_juego_pressed()
 
 func _on_iniciar_juego_pressed() -> void:
-	red_manager.cargar_juego_local()
+	get_tree().change_scene_to_file("res://demo/Sky3DDemo.tscn")
 
 func _on_salir_sala_pressed() -> void:
 	red_manager.salir_de_sala()
