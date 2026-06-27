@@ -1,0 +1,70 @@
+# Documentación Técnica Completa de Nuestra Tierra 2.0
+
+Este documento contiene la información detallada del juego *Nuestra Tierra 2.0* (Godot 4.7 Mobile), estructurado para su integración en sistemas de datos externos y la creación de un script GDScript global de documentación y referencias del juego.
+
+---
+
+## 1. Arquitectura y Nodos Autoload (Singletons)
+
+El motor de *Nuestra Tierra 2.0* se apoya en varios singletons cargados al inicio del motor (definidos en `project.godot`):
+
+*   **`InputVehiculo`**: Gestor global que mapea y suaviza las entradas del teclado/táctiles y las transmite a las físicas vehiculares. Controla los estados de marchas (Park, Drive, Neutral, Reverse), embrague y freno de mano.
+*   **`DatosUsuario`** (`res://Datos/DatosUsuario.gd`): Administra el perfil del jugador, dinero (`dinero`), esmeraldas (`esmeraldas`), configuraciones de vehículos modificados (`vehiculos_personalizados`), y los estados del tutorial (`tutorial_completado`, `tutorial_celular_completado`). Maneja el guardado local en `user://datos_usuario.cfg` y la sincronización con Firebase Firestore.
+*   **`MenuSystem`** (`res://escenas/gui/MenuSystem.gd`): Controlador global de transiciones entre escenas de la UI principal, pantallas de carga y menús.
+*   **`Firebase`**: Módulo integrado para la autenticación en la nube, almacenamiento en la base de datos Firestore y sincronización en tiempo real.
+*   **`SettingsManager`** (`res://Scripts/SettingsManager.gd`): Controla los ajustes de rendimiento de gráficos (sombras, reflejos, texturas), volumen de audio y sensibilidad táctil.
+*   **`NotificationManager`** (`res://escenas/gui/NotificationManager.gd`): Módulo de alertas animadas con diseño premium de borde dorado y fuente Moderniz para logros, cobros, multas y misiones.
+*   **`RedManager`** (`res://Scripts/RedManager.gd`): Controla la sincronización multijugador, autoridades de red y spawns concurrentes de peers.
+
+---
+
+## 2. Sistema de Mensajería y Reparto (Mensajero.gd)
+
+Este script (`res://Scripts/trabajos/Mensajero.gd`) maneja el flujo de entrega de mercancías en el mapa de la ciudad:
+
+### Flujo de Estados (`EstadoTrabajo`)
+1.  **`INACTIVO` (0)**: El jugador no tiene ninguna ruta asignada. Debe interactuar con el *Jefe de Logística* en la base de envíos.
+2.  **`ENTREGANDO` (1)**: Tras aceptar el trabajo, se spawnea un furgón repartidor (`sprinter_repartidor.tscn`) en la posición global del `AreaVehiculo`. Se traza una ruta naranja en el GPS del mapa 3D y en la app *Waze* del celular.
+3.  **`RETORNANDO` (2)**: El furgón llega a la zona de entrega, deposita el paquete y la app cambia el destino de regreso hacia la Base de Mensajería para el cobro del dinero.
+
+### Lista de Destinos Disponibles
+El sistema selecciona aleatoriamente un destino de entrega de la siguiente lista de coordenadas 3D:
+*   **Mercado Central (Norte 2)**: `Vector3(12.0, 0.0, 80.0)`
+*   **Centro de la Ciudad**: `Vector3(0.0, 1.5, -60.0)`
+*   **Gasolinera Norte**: `Vector3(-80.0, 0.0, 45.0)`
+*   **Taller Mecánico**: `Vector3(-50.0, 0.0, -35.0)`
+*   **Estación de Policía**: `Vector3(30.0, 0.0, -90.0)`
+
+### Fórmulas del Trabajo
+*   **Recompensa Base**: `$200 COP`
+*   **Cálculo de Recompensa Dinámica**:
+    $$\text{Recompensa} = \text{Snapped}(\text{Recompensa\_Base} + (\text{Distancia a Destino} \times 3.0), 1.0)$$
+
+---
+
+## 3. Dispositivos Táctiles y Celular UI (CelularUI.gd)
+
+El celular del jugador funciona como un panel de control con interfaz inspirada en iOS y Material You, operando con una resolución nativa adaptada y Glassmorphic Dark UI.
+
+### Aplicaciones Integradas
+*   **Waze GPS**: Dibuja la ruta del mapa 3D en tiempo real proyectando las coordenadas usando `minimap_camera.unproject_position()`. Permite arrastrar la cámara y recentrar el objetivo.
+*   **Banco NT**: Consulta balances, esmeraldas y permite transferir dinero sincronizado con Firebase Firestore.
+*   **NT Música**: Reproductor MP3 local de canciones de la región como *Aire de Son* y *Puya Vallenata*. Si el celular se cierra sin audífonos equipados, aplica un filtro de volumen de $-24\text{ dB}$ y modula la velocidad a $0.82$ para simular sonido ahogado.
+*   **Trabajos y Licencias**: Permite ver el progreso de misiones activas y rotar el teléfono horizontalmente a 90° (`toggle_phone_orientation`) para inspeccionar licencias de conducción.
+
+---
+
+## 4. Físicas Vehiculares y Controles (coche.gd)
+
+El script vehicular (`coche.gd`) maneja un modelo avanzado de RigidBody3D personalizado a través del recurso `VehiculoConfig`:
+
+### Ecuaciones y Cálculos Físicos Utilizados
+*   **Resistencia del Aire (Arrastre Aerodinámico)**:
+    $$F_{arrastre} = 0.5 \times \rho \times v^2 \times C_d \times A$$
+    *Donde $\rho = 1.225\text{ kg/m}^3$ (densidad del aire), $v$ es la velocidad lineal, $C_d$ es el coeficiente de arrastre (`coef_arrastre`), y $A$ es el área frontal (`area_frontal_m2`).*
+*   **Resistencia de Rodamiento**:
+    $$F_{rodamiento} = C_{rr} \times M \times g$$
+    *Donde $C_{rr}$ es la resistencia de la rueda (`resistencia_rodadura`), modificada dinámicamente por la humedad (`nivel_mojado`) o barro (`nivel_barro`), $M$ es la masa total y $g = 9.81\text{ m/s}^2$.*
+*   **Sistema Estabilizador Anti-Volcamiento (Anti-Roll)**:
+    $$T_{muelle} = - \vec{e}_{eje} \times (K_{antiroll} \times \theta_{roll})$$
+    *Aplica un torque compensador basado en el ángulo de inclinación vertical respecto al suelo para evitar que camiones altos vuelquen al tomar curvas rápidas.*

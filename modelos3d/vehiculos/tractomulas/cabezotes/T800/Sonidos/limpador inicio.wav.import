@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://bst6h42u18mff"
+path="res://.godot/imported/limpador inicio.wav-11d0f4317871095eb8481bafd2394e8a.sample"
+
+[deps]
+
+source_file="res://modelos3d/vehiculos/tractomulas/cabezotes/T800/Sonidos/limpador inicio.wav"
+dest_files=["res://.godot/imported/limpador inicio.wav-11d0f4317871095eb8481bafd2394e8a.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

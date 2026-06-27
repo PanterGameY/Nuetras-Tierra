@@ -1,0 +1,8 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://6mlvgqdtuk1q"]
+
+[ext_resource type="Texture2D" uid="uid://d0hbp6cvn1har" path="res://modelos3d/vehiculos/Buses/MarcopoloG8-1200/texturas/milha.png" id="1_8yo2v"]
+
+[resource]
+transparency = 1
+shading_mode = 0
+albedo_texture = ExtResource("1_8yo2v")

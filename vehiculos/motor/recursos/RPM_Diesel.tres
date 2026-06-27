@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="RPMConfig" format=3 uid="uid://bp6qvt2h08jj1"]
+
+[ext_resource type="Script" uid="uid://mjxu5nnnyd2u" path="res://Scripts/vehiculos/motor/rpm_config.gd" id="1_rpm"]
+
+[resource]
+script = ExtResource("1_rpm")

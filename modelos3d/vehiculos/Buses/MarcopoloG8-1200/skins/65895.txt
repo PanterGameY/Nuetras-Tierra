@@ -1,0 +1,12 @@
+[skin]
+skin001=65895.png
+skin002=poltrona 7.png
+skin003=Apoio para pernas.png
+skin004=plastico leito.png
+skin005=placa.png
+
+skin007=Vidro Frontal.png
+skin008=65895.png
+skin009=rodas cubo preto.png
+skin010=cortina cinza.png
+

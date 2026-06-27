@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="MotorConfig" format=3 uid="uid://duster_motor_v2"]
+
+[ext_resource type="Script" uid="uid://cvkhyiytavxq2" path="res://Scripts/vehiculos/motor/motor_config.gd" id="1_m"]
+
+[resource]
+script = ExtResource("1_m")
+par_maximo = 2100.0
+rpm_par_maximo = 3800.0
+rpm_minimas = 800.0
+rpm_maximas = 6500.0
+inercia_motor = 1.2
+aceleracion_rpm_max = 3000.0
+freno_motor_fuerza = 0.35
+friccion_motor = 0.05
+suavizado_torque = 0.35
+inercia_freno = 0.3
+relaciones_caja = [3.5, 2.2, 1.5, 1.0, 0.8]
+relacion_diferencial = 3.8
+relacion_reversa = 3.5
+radio_rueda = 0.38
+eficiencia_transmision = 0.9
+velocidad_maxima_kmh = 170.0
+rpm_subir_marcha = 5500.0
+rpm_bajar_marcha = 2500.0
+umbrales_velocidad_kmh = [30.0, 55.0, 85.0, 120.0, 160.0]
+escala_torque_marcha = [0.5, 0.85, 0.95, 1.0, 1.05]
+suavizado_par_marcha = [0.12, 0.25, 0.35, 0.45, 0.55]
+shift_delay = 0.4
+clutch_disengage_multiplier = 0.7
+shift_rpm_drop_factor = 0.65

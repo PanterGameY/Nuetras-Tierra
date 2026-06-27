@@ -1,0 +1,14 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://clwf5vb44pvj5"]
+
+[ext_resource type="Shader" uid="uid://b4id6umtbrhgc" path="res://shaders/ui/Color_adjust.gdshader" id="1_nenoi"]
+
+[resource]
+shader = ExtResource("1_nenoi")
+shader_parameter/hue_shift = 0.0
+shader_parameter/saturation = 1.0
+shader_parameter/value_multiplier = 1.0
+shader_parameter/brightness = 0.0
+shader_parameter/contrast = 1.0
+shader_parameter/tint_color = Color(1, 1, 1, 1)
+shader_parameter/tint_amount = 0.0
+shader_parameter/alpha_multiplier = 1.0

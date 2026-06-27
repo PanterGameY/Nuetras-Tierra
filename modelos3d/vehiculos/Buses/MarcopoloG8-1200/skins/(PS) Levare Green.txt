@@ -1,0 +1,12 @@
+[skin]
+skin001=(PS) levare Green.png
+skin002=poltrona 1.png
+skin003=Apoio para pernas.png
+skin004=plastico leito.png
+skin005=placa.png
+
+skin007=Vidro Frontal.png
+skin008=(PS) Levare Green.png
+skin009=rodas cubo preto.png
+skin010=Cortina verde.png
+

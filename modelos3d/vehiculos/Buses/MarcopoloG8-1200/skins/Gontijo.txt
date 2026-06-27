@@ -1,0 +1,11 @@
+[skin]
+skin001=Gontijo.png
+skin002=poltrona 1.png
+skin003=Apoio para pernas.png
+skin004=plastico leito.png
+skin005=placa.png
+
+skin007=Vidro Frontal.png
+skin008=Gontijo.png
+skin009=rodas pretas.png
+skin010=Cortina verde.png
