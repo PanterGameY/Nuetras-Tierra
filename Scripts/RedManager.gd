@@ -8,8 +8,8 @@ signal sala_creada(sala_id: String)
 signal unido_a_sala(sala_id: String)
 signal host_desconectado()
 
-const SIGNALING_URL_PC = "ws://127.0.0.1:8080"
-const SIGNALING_URL_MOBILE = "ws://192.168.20.93:8080"
+const SIGNALING_URL_PC = "ws://sdbger1qghfrbw960k2xlnx4.2.25.71.102.sslip.io"
+const SIGNALING_URL_MOBILE = "ws://sdbger1qghfrbw960k2xlnx4.2.25.71.102.sslip.io"
 
 var ws_peer: WebSocketPeer = WebSocketPeer.new()
 var enet_peer: ENetMultiplayerPeer = ENetMultiplayerPeer.new()
