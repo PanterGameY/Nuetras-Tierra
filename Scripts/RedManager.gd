@@ -24,6 +24,9 @@ var nombres_jugadores: Dictionary = {}
 func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
+	multiplayer.connection_failed.connect(_on_connection_failed)
+	multiplayer.server_disconnected.connect(_on_server_disconnected)
 	get_tree().node_added.connect(_on_node_added)
 	call_deferred("_check_server_cmdline")
 
@@ -265,3 +268,16 @@ func iniciar_servidor_dedicado(port: int) -> void:
 func _cargar_escena_servidor() -> void:
 	print("[RedManager] Cargando escena del mapa para servidor dedicado...")
 	get_tree().change_scene_to_file("res://demo/Sky3DDemo.tscn")
+
+func _on_connected_to_server() -> void:
+	print("[RedManager] Conexión establecida exitosamente con el servidor ENet de juego.")
+
+func _on_connection_failed() -> void:
+	print("[RedManager] Error: No se pudo conectar al servidor ENet de juego.")
+	error_conexion.emit("ERROR DE CONEXION: EL SERVIDOR DE JUEGO NO ESTA CORRIENDO EN LA VPS.")
+	_clean_up_multiplayer()
+
+func _on_server_disconnected() -> void:
+	print("[RedManager] Desconectado del servidor ENet de juego.")
+	error_conexion.emit("DESCONECTADO DEL SERVIDOR DE JUEGO.")
+	_clean_up_multiplayer()
