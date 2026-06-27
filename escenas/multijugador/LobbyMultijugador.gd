@@ -528,12 +528,9 @@ func _mostrar_lobby_sala(_sala_id: String) -> void:
 	
 	btn_salir_sala.visible = true
 	
-	# Solo el host puede iniciar el juego
-	if red_manager.is_host:
-		btn_iniciar.text = "INICIAR JUEGO"
-		btn_iniciar.visible = true
-	else:
-		btn_iniciar.visible = false
+	# Todos los jugadores pueden iniciar el juego en salas dedicadas
+	btn_iniciar.text = "INICIAR JUEGO"
+	btn_iniciar.visible = true
 		
 	_actualizar_lista_jugadores()
 
