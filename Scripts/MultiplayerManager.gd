@@ -56,8 +56,9 @@ func _ready() -> void:
 	if multiplayer.is_server():
 		multiplayer.peer_connected.connect(_on_peer_connected)
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-		# Spawnear al host localmente
-		_spawn_player_and_vehicle(1)
+		# Spawnear al host localmente solo si no es servidor dedicado/headless
+		if DisplayServer.get_name() != "headless":
+			_spawn_player_and_vehicle(1)
 		_limpiar_nodos_default.call_deferred()
 	else:
 		_print_on_screen("[MultiplayerManager] Cliente listo, enviando peer_listo al host y registrando nombre...")

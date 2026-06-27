@@ -25,6 +25,7 @@ func _ready() -> void:
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	get_tree().node_added.connect(_on_node_added)
+	call_deferred("_check_server_cmdline")
 
 func _on_node_added(node: Node) -> void:
 	if node.name == "Main" and str(node.get_path()) == "/root/Main":
@@ -171,15 +172,16 @@ func _on_signaling_message(text: String) -> void:
 		"joined":
 			local_peer_id = msg.peer_id
 			var host_ip = msg.get("host_ip", "127.0.0.1")
+			var host_port = int(msg.get("host_port", 10567))
 			if host_ip == get_local_ip():
 				host_ip = "127.0.0.1"
 			
 			_clean_up_multiplayer()
 			
 			enet_peer = ENetMultiplayerPeer.new()
-			var err = enet_peer.create_client(host_ip, 10567)
+			var err = enet_peer.create_client(host_ip, host_port)
 			if err != OK:
-				error_conexion.emit("ERROR AL INICIAR CONEXION EN PUERTO 10567.")
+				error_conexion.emit("ERROR AL INICIAR CONEXION EN PUERTO " + str(host_port) + ".")
 				_clean_up_multiplayer()
 				return
 				
@@ -237,3 +239,29 @@ func cargar_juego_local() -> void:
 	if multiplayer.has_multiplayer_peer() and multiplayer.is_server():
 		cargar_juego.rpc()
 	get_tree().change_scene_to_file("res://escenas/gui/escena_carga.tscn")
+
+func _check_server_cmdline() -> void:
+	var args = OS.get_cmdline_args()
+	if "--server" in args:
+		var port = 10567
+		for i in range(args.size()):
+			if args[i] == "--port" and i + 1 < args.size():
+				port = int(args[i+1])
+		print("[RedManager] Iniciando servidor dedicado en puerto: ", port)
+		iniciar_servidor_dedicado(port)
+
+func iniciar_servidor_dedicado(port: int) -> void:
+	_clean_up_multiplayer()
+	enet_peer = ENetMultiplayerPeer.new()
+	var err = enet_peer.create_server(port, 10) # Max 10 jugadores por sala
+	if err != OK:
+		print("[RedManager] Error al iniciar servidor en puerto ", port)
+		return
+	multiplayer.multiplayer_peer = enet_peer
+	is_host = true
+	
+	call_deferred("_cargar_escena_servidor")
+
+func _cargar_escena_servidor() -> void:
+	print("[RedManager] Cargando escena del mapa para servidor dedicado...")
+	get_tree().change_scene_to_file("res://demo/Sky3DDemo.tscn")

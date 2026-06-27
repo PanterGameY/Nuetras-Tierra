@@ -50,6 +50,7 @@ func _ready() -> void:
 	option_max_jugadores.add_item("4 JUGADORES", 4)
 	option_max_jugadores.add_item("6 JUGADORES", 6)
 	option_max_jugadores.add_item("8 JUGADORES", 8)
+	option_max_jugadores.add_item("10 JUGADORES", 10)
 	option_max_jugadores.selected = 1 # 4 jugadores por defecto
 	
 	# Aplicar el tema visual premium consistente con el juego
