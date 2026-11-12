@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MotorConfig" format=3 uid="uid://bammwhn54f34v"]
+
+[ext_resource type="Script" uid="uid://cvkhyiytavxq2" path="res://codigo/entidades/vehiculo/motor/motor_config.gd" id="1_hy33a"]
+
+[resource]
+script = ExtResource("1_hy33a")
+par_maximo = 4200.0
+rpm_minimas = 600.0
+rpm_maximas = 3200.0
+inercia_motor = 2.8
+inercia_freno = 0.25
+relacion_diferencial = 4.2
+radio_rueda = 0.4
+eficiencia_transmision = 0.88
+velocidad_maxima_kmh = 110.0
+metadata/_custom_type_script = "uid://ndlo3bgkoisg"

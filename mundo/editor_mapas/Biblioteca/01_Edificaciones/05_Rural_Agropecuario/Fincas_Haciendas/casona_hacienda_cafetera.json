@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Casona rural tradicional con corredores en cuatro costados y techos amplios.",
+	"icono": "🚜",
+	"id": "casona_hacienda_cafetera",
+	"nombre": "Casona Hacienda Cafetera",
+	"seccion": "05_Rural_Agropecuario",
+	"subcategoria": "Fincas_Haciendas",
+	"tamano": [
+		16.0,
+		6.5,
+		14.0
+	]
+}

@@ -1,0 +1,9 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://b82dyh3abynmw"]
+
+[ext_resource type="Texture2D" path="res://materiales/imagenes/madera-oscura.jpg" id="1_8sl7b"]
+
+[resource]
+resource_name = "Material.003dashboard.png.017dashboard.png.065dashboard.png.118"
+albedo_color = Color(1, 1, 0.05490196, 1)
+albedo_texture = ExtResource("1_8sl7b")
+roughness = 0.4

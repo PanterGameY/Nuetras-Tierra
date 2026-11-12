@@ -1,0 +1,11 @@
+[skin]
+skin001=(PS) Viação Garcia.png
+skin002=poltrona 8.png
+skin003=Apoio para pernas.png
+skin004=plastico leito.png
+skin005=placa.png
+
+skin007=Vidro Frontal.png
+skin008=(PS) Viação Garcia.png
+skin009=rodas pratas.png
+skin010=cortina União Santa Cruz.png

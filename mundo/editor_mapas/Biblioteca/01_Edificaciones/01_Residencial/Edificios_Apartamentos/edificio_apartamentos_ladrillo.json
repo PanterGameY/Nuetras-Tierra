@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Bloque residencial multifamiliar de 4 pisos en ladrillo a la vista.",
+	"icono": "🏢",
+	"id": "edificio_apartamentos_ladrillo",
+	"nombre": "Edificio Apartamentos Ladrillo",
+	"seccion": "01_Residencial",
+	"subcategoria": "Edificios_Apartamentos",
+	"tamano": [
+		12.0,
+		14.5,
+		12.0
+	]
+}

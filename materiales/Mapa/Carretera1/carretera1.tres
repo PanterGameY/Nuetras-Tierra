@@ -1,0 +1,20 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://be8unym6ir7rw"]
+
+[ext_resource type="Texture2D" uid="uid://df5cyuvm87v86" path="res://materiales/Mapa/Carretera1/carretera1.png" id="1_vpwd6"]
+[ext_resource type="Texture2D" uid="uid://csi280qiuk5tm" path="res://materiales/Mapa/Carretera1/atlas_carretera1_AO.png" id="2_vjqsx"]
+[ext_resource type="Texture2D" uid="uid://dgsh2x1jnppr" path="res://materiales/Mapa/Carretera1/atlas_carretera1_HEIGHT.png" id="3_ohlc1"]
+[ext_resource type="Texture2D" uid="uid://chlyh0x2c7ru8" path="res://materiales/Mapa/Carretera1/atlas_carretera1_NORMAL.png" id="4_inm68"]
+[ext_resource type="Texture2D" uid="uid://demkauswinfw5" path="res://materiales/Mapa/Carretera1/atlas_carretera1_ROUGHNESS.png" id="5_2ocxv"]
+
+[resource]
+albedo_texture = ExtResource("1_vpwd6")
+roughness_texture = ExtResource("5_2ocxv")
+normal_enabled = true
+normal_scale = 3.88
+normal_texture = ExtResource("4_inm68")
+bent_normal_enabled = true
+ao_enabled = true
+ao_light_affect = 0.09
+ao_texture = ExtResource("2_vjqsx")
+heightmap_scale = 3.4
+heightmap_texture = ExtResource("3_ohlc1")

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ConcesionarioVehiculo" format=3 uid="uid://cbdn0uvfkqhkh"]
+
+[ext_resource type="Script" uid="uid://soryp0udqibk" path="res://codigo/sistemas/taller/ConcesionarioVehiculo.gd" id="1_script"]
+[ext_resource type="PackedScene" uid="uid://r3yrji03vf61" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn" id="2_scene"]
+
+[resource]
+script = ExtResource("1_script")
+nombre = "Kenworth T800 Chasis Extendido"
+descripcion = "Tractor-camión de chasis extendido, alta potencia para carga pesada y terreno difícil."
+precio = 150000.0
+requisito_nivel = 5
+requisito_licencia = "camion"
+escena = ExtResource("2_scene")

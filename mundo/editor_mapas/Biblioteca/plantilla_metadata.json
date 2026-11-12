@@ -1,0 +1,16 @@
+{
+  "id": "ejemplo_objeto_id",
+  "nombre": "Nombre Mostrado en la UI",
+  "categoria": "RESIDENCIAL",
+  "subcategoria": "Casas_Tradicionales",
+  "icono": "🏠",
+  "icono_textura": "res://recursos/iconos_editor/ejemplo.png",
+  "ruta_escena": "res://mundo/editor_mapas/Biblioteca/01_Edificaciones/01_Residencial/Casas_Tradicionales/ejemplo.tscn",
+  "tamano": [10.0, 5.0, 8.0],
+  "snap_tamano": 2.0,
+  "rotacion_paso_grados": 45.0,
+  "descripcion": "Descripción del elemento para el tooltip y detalles en el editor de mapas.",
+  "tags": ["colombia", "pueblo", "colonial", "vivienda"],
+  "autor": "Nuestra Tierra",
+  "version": "1.0"
+}

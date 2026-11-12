@@ -1,0 +1,8 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://baj0blvsles43"]
+
+[resource]
+resource_name = "Cristal"
+transparency = 1
+cull_mode = 2
+albedo_color = Color(0, 0, 0, 0.8666667)
+roughness = 0.1521739

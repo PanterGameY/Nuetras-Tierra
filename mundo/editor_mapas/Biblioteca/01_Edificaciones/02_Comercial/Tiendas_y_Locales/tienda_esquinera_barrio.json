@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Tienda comercial de barrio con toldo frontal y amplia vitrina.",
+	"icono": "🏪",
+	"id": "tienda_esquinera_barrio",
+	"nombre": "Tienda Esquinera de Barrio",
+	"seccion": "02_Comercial",
+	"subcategoria": "Tiendas_y_Locales",
+	"tamano": [
+		9.0,
+		5.0,
+		8.5
+	]
+}

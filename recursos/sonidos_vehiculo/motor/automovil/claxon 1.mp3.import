@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://pu5u6746wtyt"
+path="res://.godot/imported/claxon 1.mp3-dc71f6db76c178b5ee1661d60c652c0c.mp3str"
+
+[deps]
+
+source_file="res://recursos/sonidos_vehiculo/motor/automovil/claxon 1.mp3"
+dest_files=["res://.godot/imported/claxon 1.mp3-dc71f6db76c178b5ee1661d60c652c0c.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

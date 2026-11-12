@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://d3m5lanqx4wyr"]
+
+[ext_resource type="Shader" uid="uid://clxocurel1p74" path="res://shaders/parabrisas.gdshader" id="1_parabrisas_shader"]
+[ext_resource type="Texture2D" uid="uid://jk2t2lm5hg3j" path="res://shaders/parabrisas_roto.png" id="2_lky2l"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_parabrisas_shader")
+shader_parameter/glass_color = Color(0.10823264, 0.1272627, 0.13684662, 0.15)
+shader_parameter/roughness = 0.05
+shader_parameter/metallic = 0.1
+shader_parameter/specular_str = 0.98
+shader_parameter/fresnel_power = 5.0
+shader_parameter/fresnel_scale = 0.82400003914
+shader_parameter/fresnel_tint = Color(0.55, 0.72, 0.78, 1)
+shader_parameter/dirt_level = 0.0
+shader_parameter/dirt_color = Color(0.42, 0.36, 0.28, 0.95)
+shader_parameter/rain_intensity = 0.0
+shader_parameter/rain_speed = 1.5
+shader_parameter/damage_level = 0.0
+shader_parameter/damage_center = Vector2(0.5, 0.5)
+shader_parameter/parabrisas_roto = ExtResource("2_lky2l")

@@ -1,0 +1,15 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://c7jrqlg7t5uq2"]
+
+[ext_resource type="Shader" path="res://materiales/Vehiculos/materiales naturales/Material-Cuero.gdshader" id="1_n1o8j"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_n1o8j")
+shader_parameter/leather_color = Color(0.15, 0.08, 0.05, 1)
+shader_parameter/roughness_base = 0.75
+shader_parameter/metallic = 0.0
+shader_parameter/specular = 0.3
+shader_parameter/normal_strength = 1.5
+shader_parameter/grain_scale = 20.0
+shader_parameter/wear_strength = 0.3
+shader_parameter/wear_color = Color(0.3, 0.18, 0.1, 1)

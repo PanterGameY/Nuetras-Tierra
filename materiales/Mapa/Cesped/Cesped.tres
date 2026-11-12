@@ -1,0 +1,69 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://b32chey8be4t1"]
+
+[ext_resource type="Shader" uid="uid://c5bj2x8vjuptp" path="res://materiales/Mapa/Cesped/Cesped.gdshader" id="1_cesped"]
+[ext_resource type="Texture2D" uid="uid://o7vgvhelxnl2" path="res://materiales/Mapa/Cesped/Grass004_2K_AmbientOcclusion.jpg" id="2_ao"]
+[ext_resource type="Texture2D" uid="uid://413lciud54kp" path="res://materiales/Mapa/Cesped/Grass004_2K_Color.jpg" id="3_color"]
+[ext_resource type="Texture2D" uid="uid://cujmlmlevn1g1" path="res://materiales/Mapa/Cesped/Grass004_2K_Displacement.jpg" id="4_height"]
+[ext_resource type="Texture2D" uid="uid://cqgk55u36b5gc" path="res://materiales/Mapa/Cesped/Grass004_2K_Normal.jpg" id="5_normal"]
+[ext_resource type="Texture2D" uid="uid://du5rjuomjd8tx" path="res://materiales/Mapa/Cesped/Grass004_2K_Roughness.jpg" id="6_rough"]
+[ext_resource type="Texture2D" uid="uid://bhbvo5iwty5m6" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Color.jpg" id="7_dirt_color"]
+[ext_resource type="Texture2D" uid="uid://bqubki6yb6cfb" path="res://materiales/Mapa/ground/Ground103_1K-JPG_NormalDX.jpg" id="8_dirt_normal"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_cesped")
+shader_parameter/texture_albedo = ExtResource("3_color")
+shader_parameter/texture_normal = ExtResource("5_normal")
+shader_parameter/texture_roughness = ExtResource("6_rough")
+shader_parameter/texture_ao = ExtResource("2_ao")
+shader_parameter/texture_height = ExtResource("4_height")
+shader_parameter/uv_scale = Vector2(0.2, 0.2)
+shader_parameter/normal_scale = 2.28
+shader_parameter/roughness_scale = 0.94
+shader_parameter/ao_light_affect = 1.0
+shader_parameter/root_shadow_depth = 0.55
+shader_parameter/grass_translucency = 0.18
+shader_parameter/anti_tiling_enabled = true
+shader_parameter/dirt_enabled = true
+shader_parameter/dirt_albedo = ExtResource("7_dirt_color")
+shader_parameter/dirt_normal = ExtResource("8_dirt_normal")
+shader_parameter/dirt_roughness = 0.95
+shader_parameter/dirt_uv_scale = Vector2(0.25, 0.25)
+shader_parameter/dirt_blend_amount = 0.65200003097
+shader_parameter/dirt_noise_scale = 0.035
+shader_parameter/rock_enabled = false
+shader_parameter/rock_roughness = 0.88
+shader_parameter/rock_uv_scale = Vector2(0.18, 0.18)
+shader_parameter/rock_slope_threshold = 0.55
+shader_parameter/rock_slope_sharpness = 3.5
+shader_parameter/road_edge_enabled = false
+shader_parameter/road_edge_source = 0
+shader_parameter/object_size = Vector2(50, 50)
+shader_parameter/road_edge_width = 5.46900025907898
+shader_parameter/road_edge_dirt_intensity = 0.0
+shader_parameter/road_edge_noise_scale = 0.08
+shader_parameter/road_edge_irregularity = 0.65
+shader_parameter/road_edge_pebbles = 0.35
+shader_parameter/use_world_coords = true
+shader_parameter/height_blend_sharpness = 0.65
+shader_parameter/variation_enabled = true
+shader_parameter/variation_strength = 0.2830000134425
+shader_parameter/variation_scale = 0.025
+shader_parameter/macro_variation_scale = 0.005
+shader_parameter/variation_tint_warm = Color(1.1, 1.04, 0.78, 1)
+shader_parameter/variation_tint_lush = Color(0.9, 1.05, 0.85, 1)
+shader_parameter/wetness = 0.0
+shader_parameter/puddle_depth = 0.6
+shader_parameter/grass_state = 3.0
+shader_parameter/wear_amount = 0.2930000139175
+shader_parameter/wind_enabled = true
+shader_parameter/wind_direction = Vector2(1, 0.5)
+shader_parameter/wind_speed = 0.2000000095
+shader_parameter/wind_strength = 0.030000001425
+shader_parameter/wind_frequency = 0.55
+shader_parameter/wind_gust_strength = 0.4
+shader_parameter/wind_gust_speed = 2.0
+shader_parameter/detail_distance = 25.0
+shader_parameter/medium_distance = 70.0
+shader_parameter/fade_distance = 140.0
+shader_parameter/quality_level = 2

@@ -1,0 +1,17 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://ch3le4dqgmpvo"]
+
+[ext_resource type="Texture2D" uid="uid://bvje78c16hvw1" path="res://materiales/Mapa/casas/casas.png" id="1_w25po"]
+[ext_resource type="Texture2D" uid="uid://vxcqrpw3pkus" path="res://materiales/Mapa/casas/casas_atlas_height.png" id="2_5hey1"]
+[ext_resource type="Texture2D" uid="uid://c1qal0apjypwl" path="res://materiales/Mapa/casas/casas_atlas_normal_map.png" id="3_stv13"]
+[ext_resource type="Texture2D" uid="uid://bukv4gcftwbyp" path="res://materiales/Mapa/casas/casas_atlas_roughness.png" id="4_bmju3"]
+
+[resource]
+albedo_texture = ExtResource("1_w25po")
+roughness = 0.29
+roughness_texture = ExtResource("4_bmju3")
+normal_enabled = true
+normal_scale = 0.5
+normal_texture = ExtResource("3_stv13")
+heightmap_enabled = true
+heightmap_scale = 0.3
+heightmap_texture = ExtResource("2_5hey1")

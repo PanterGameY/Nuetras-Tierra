@@ -1,0 +1,7 @@
+[gd_resource type="AtlasTexture" format=3 uid="uid://8y0kbv74mre2"]
+
+[ext_resource type="Texture2D" uid="uid://dsr46crd3rjqt" path="res://recursos/botones/Canjeo_esmeraldas/tarjetas banco/tarjetas.png" id="1_6af3f"]
+
+[resource]
+atlas = ExtResource("1_6af3f")
+region = Rect2(944, 126, 346, 526)

@@ -1,0 +1,272 @@
+extends Node
+
+const SAVE_PATH = "user://settings.cfg"
+
+var last_scene_path: String = ""
+var _instancia_ui: Node = null
+var current_sombras: int = 2
+
+func change_to_settings() -> void:
+	if _instancia_ui and is_instance_valid(_instancia_ui):
+		_instancia_ui.visible = true
+		return
+
+	var path = "res://interfaz/pantallas/configuraciones/configuraciones.tscn"
+	var scn = load(path)
+	if scn:
+		_instancia_ui = scn.instantiate()
+		# Aseguramos que sea una capa superior
+		if _instancia_ui is CanvasLayer:
+			_instancia_ui.layer = 100
+		get_tree().root.add_child(_instancia_ui)
+		_instancia_ui.visible = true
+	else:
+		push_error("[SettingsManager] No se pudo cargar configuraciones.tscn")
+
+func return_from_settings() -> void:
+	if _instancia_ui and is_instance_valid(_instancia_ui):
+		_instancia_ui.visible = false
+
+func _ready() -> void:
+	# Aplicar configuraciones al arrancar el juego
+	apply_all_settings()
+	get_tree().node_added.connect(_on_node_added)
+
+func apply_all_settings() -> void:
+	var cfg = ConfigFile.new()
+	var err = cfg.load(SAVE_PATH)
+	
+	if err != OK:
+		print("[SettingsManager] No se pudo cargar settings.cfg (error %d), inicializando con preset Medio." % err)
+		apply_preset(1)
+		return
+
+	_apply_graphics(cfg)
+	_apply_audio(cfg)
+	print("[SettingsManager] Configuraciones aplicadas correctamente.")
+
+func apply_preset(preset_idx: int) -> void:
+	var cfg = ConfigFile.new()
+	cfg.load(SAVE_PATH)
+	
+	match preset_idx:
+		0: # BAJO (Gama baja / móvil modesto)
+			cfg.set_value("graficos", "calidad", 0)
+			cfg.set_value("graficos", "cielo_calidad", 2)
+			cfg.set_value("graficos", "sombras", 0)
+			cfg.set_value("graficos", "aa", 0)
+			cfg.set_value("graficos", "render_scale", 60)
+			cfg.set_value("graficos", "fps", 0) # 30 FPS
+			cfg.set_value("graficos", "ssao_enabled", false)
+			cfg.set_value("graficos", "glow_enabled", false)
+			cfg.set_value("graficos", "sdfgi_enabled", false)
+		1: # MEDIO (Gama media)
+			cfg.set_value("graficos", "calidad", 1)
+			cfg.set_value("graficos", "cielo_calidad", 1)
+			cfg.set_value("graficos", "sombras", 1)
+			cfg.set_value("graficos", "aa", 1)
+			cfg.set_value("graficos", "render_scale", 75)
+			cfg.set_value("graficos", "fps", 1) # 60 FPS
+			cfg.set_value("graficos", "ssao_enabled", false)
+			cfg.set_value("graficos", "glow_enabled", false)
+			cfg.set_value("graficos", "sdfgi_enabled", false)
+		2: # ALTO (Estilo ATS - Optimizado)
+			cfg.set_value("graficos", "calidad", 2)
+			cfg.set_value("graficos", "cielo_calidad", 0)
+			cfg.set_value("graficos", "sombras", 2)
+			cfg.set_value("graficos", "aa", 1)
+			cfg.set_value("graficos", "render_scale", 85)
+			cfg.set_value("graficos", "fps", 1) # 60 FPS
+			cfg.set_value("graficos", "ssao_enabled", false)
+			cfg.set_value("graficos", "glow_enabled", true)
+			cfg.set_value("graficos", "sdfgi_enabled", false)
+		3: # ULTRA (Gama alta / PC)
+			cfg.set_value("graficos", "calidad", 3)
+			cfg.set_value("graficos", "cielo_calidad", 0)
+			cfg.set_value("graficos", "sombras", 3)
+			cfg.set_value("graficos", "aa", 2)
+			cfg.set_value("graficos", "render_scale", 100)
+			cfg.set_value("graficos", "fps", 1) # 60 FPS
+			cfg.set_value("graficos", "ssao_enabled", true)
+			cfg.set_value("graficos", "glow_enabled", true)
+			cfg.set_value("graficos", "sdfgi_enabled", false)
+
+	cfg.save(SAVE_PATH)
+	_apply_graphics(cfg)
+	print("[SettingsManager] Preset %d aplicado y guardado." % preset_idx)
+
+func _apply_graphics(cfg: ConfigFile) -> void:
+	var vp = get_viewport()
+	
+	# Anti-aliasing
+	var aa = cfg.get_value("graficos", "aa", 0)
+	match aa:
+		0:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		1:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+		2:
+			vp.msaa_3d = Viewport.MSAA_2X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		3:
+			vp.msaa_3d = Viewport.MSAA_4X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		4:
+			vp.msaa_3d = Viewport.MSAA_8X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+
+	# VSync
+	var vsync = cfg.get_value("graficos", "vsync", true)
+	if vsync:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED)
+	else:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+
+	# Sombras
+	var sombras = cfg.get_value("graficos", "sombras", 1)
+	current_sombras = sombras
+	var atlas_size = 0
+	# Aplicar calidad de sombras en tiempo real a nivel de RenderingServer
+	# 0: Off, 1: Low (1024), 2: Mid (2048), 3: High (4096)
+	match sombras:
+		0:
+			# NUNCA asignar 0 a directional_shadow_atlas_set_size en Vulkan.
+			# Asignar 0 destruye el framebuffer del atlas de sombras en la GPU.
+			# Si cualquier luz tiene o activa shadow_enabled=true, Godot intenta
+			# dibujar en un framebuffer nulo y explota con:
+			# "Parameter framebuffer is null" / "draw_list_begin".
+			# El apagado de sombras se hace mediante light.shadow_enabled = false.
+			RenderingServer.directional_shadow_atlas_set_size(1024, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			atlas_size = 1024
+		1:
+			RenderingServer.directional_shadow_atlas_set_size(1024, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_HARD)
+			atlas_size = 1024
+		2:
+			RenderingServer.directional_shadow_atlas_set_size(2048, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+			atlas_size = 2048
+		3:
+			RenderingServer.directional_shadow_atlas_set_size(4096, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			RenderingServer.positional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM)
+			atlas_size = 4096
+
+	vp.positional_shadow_atlas_size = atlas_size
+
+	# Aplicar en tiempo real a todas las luces del árbol
+	var all_lights: Array = []
+	_find_all_lights(get_tree().root, all_lights)
+	for l in all_lights:
+		_configurar_luz_sombras(l, sombras)
+
+	# Render scale & FSR
+	var render_scale = cfg.get_value("graficos", "render_scale", 75) / 100.0
+	var method = ProjectSettings.get_setting("rendering/renderer/rendering_method")
+	if method == "forward_plus":
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = render_scale
+
+	# FPS cap
+	var fps_idx = cfg.get_value("graficos", "fps", 1)
+	var fps_values: Array[int] = [30, 60, 90, 120, 0]
+	if fps_idx < fps_values.size():
+		Engine.max_fps = fps_values[fps_idx]
+
+	# Modificar Environment (SSAO, Glow, SDFGI) en tiempo real
+	var env = vp.find_world_3d().environment if vp.find_world_3d() else null
+	if env:
+		env.ssao_enabled = cfg.get_value("graficos", "ssao_enabled", true)
+		env.glow_enabled = cfg.get_value("graficos", "glow_enabled", true)
+		env.sdfgi_enabled = cfg.get_value("graficos", "sdfgi_enabled", false)
+
+	# Notificar a los optimizadores de ciudad activos
+	var optimizers = get_tree().get_nodes_in_group("city_optimizer")
+	for opt in optimizers:
+		if opt.has_method("update_settings_from_config"):
+			opt.update_settings_from_config()
+
+	# Aplicar la calidad de cielo guardada
+	var cielo = _find_cielo_sistema(get_tree().root)
+	if cielo:
+		var cielo_calidad = cfg.get_value("graficos", "cielo_calidad", 2)
+		if "perfil_calidad" in cielo:
+			cielo.perfil_calidad = cielo_calidad
+	
+	# Asegurar que los cambios se propaguen al RenderingServer
+	RenderingServer.force_draw(false)
+
+func _apply_audio(cfg: ConfigFile) -> void:
+	var master_vol = cfg.get_value("audio", "vol_general", 100) / 100.0
+	var music_vol = cfg.get_value("audio", "musica", 80) / 100.0
+	var sfx_vol = cfg.get_value("audio", "efectos", 100) / 100.0
+	
+	_set_bus_volume(0, master_vol)
+	_set_bus_volume(1, music_vol)
+	_set_bus_volume(2, sfx_vol)
+
+func _set_bus_volume(bus_idx: int, linear: float) -> void:
+	if bus_idx >= AudioServer.get_bus_count():
+		return
+	var db = linear_to_db(linear) if linear > 0.001 else -80.0
+	AudioServer.set_bus_volume_db(bus_idx, db)
+
+func _configurar_luz_sombras(l: Light3D, nivel_sombras: int) -> void:
+	if not is_instance_valid(l):
+		return
+	if l is DirectionalLight3D:
+		l.shadow_enabled = (nivel_sombras > 0)
+		match nivel_sombras:
+			1: # Baja
+				l.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+				l.directional_shadow_max_distance = 80.0
+				l.directional_shadow_blend_splits = false
+			2: # Media
+				l.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+				l.directional_shadow_max_distance = 140.0
+				l.directional_shadow_blend_splits = true
+			3: # Alta
+				l.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+				l.directional_shadow_max_distance = 200.0
+				l.directional_shadow_blend_splits = true
+	elif l is Light3D:
+		# Luces secundarias (faros vehiculares, postes)
+		l.shadow_enabled = (nivel_sombras >= 2)
+
+func _find_all_lights(node: Node, result: Array) -> void:
+	if node is Light3D:
+		result.append(node)
+	for child in node.get_children():
+		_find_all_lights(child, result)
+
+func _find_directional_lights(node: Node, result: Array) -> void:
+	_find_all_lights(node, result)
+
+func _on_node_added(node: Node) -> void:
+	if node is Light3D:
+		_configurar_luz_sombras(node, current_sombras)
+	if node.name == "CieloSistema" or node.has_method("clima_despejado"):
+		var cfg = ConfigFile.new()
+		if cfg.load(SAVE_PATH) == OK:
+			var cielo_calidad = cfg.get_value("graficos", "cielo_calidad", 2)
+			if "perfil_calidad" in node:
+				node.perfil_calidad = cielo_calidad
+	if node.has_method("aplicar_configuracion_sombras"):
+		node.call("aplicar_configuracion_sombras", current_sombras)
+
+func _find_cielo_sistema(node: Node) -> Node:
+	if node.name == "CieloSistema" or node.has_method("clima_despejado"):
+		return node
+	for child in node.get_children():
+		var found = _find_cielo_sistema(child)
+		if found:
+			return found
+	return null

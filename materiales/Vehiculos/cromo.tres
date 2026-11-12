@@ -1,0 +1,17 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://pe3u1fbbxy4g"]
+
+[ext_resource type="Shader" uid="uid://bgqc6avsml74g" path="res://materiales/Vehiculos/cromo_automotriz.gdshader" id="1_cromo"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_cromo")
+shader_parameter/color_cromo = Color(0.92, 0.94, 0.97, 1)
+shader_parameter/metalico = 1.0
+shader_parameter/rugosidad_base = 0.035
+shader_parameter/especular = 0.95
+shader_parameter/fuerza_fresnel = 0.45
+shader_parameter/tinte_borde = Color(0.97, 0.98, 1, 1)
+shader_parameter/activar_micro_pulido = true
+shader_parameter/escala_micro_pulido = 120.0
+shader_parameter/fuerza_micro_pulido = 0.012
+shader_parameter/nivel_lluvia = 0.0

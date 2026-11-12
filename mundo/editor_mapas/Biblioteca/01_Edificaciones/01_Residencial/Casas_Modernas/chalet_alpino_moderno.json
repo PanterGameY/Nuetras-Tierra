@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Chalet estilo alpino con techumbre inclinada, deck de madera y fachada mixta.",
+	"icono": "🏡",
+	"id": "chalet_alpino_moderno",
+	"nombre": "Chalet Alpino Moderno",
+	"seccion": "01_Residencial",
+	"subcategoria": "Casas_Modernas",
+	"tamano": [
+		9.5,
+		8.5,
+		12.0
+	]
+}

@@ -1,0 +1,24 @@
+[remap]
+
+importer="wav"
+type="AudioStreamWAV"
+uid="uid://hbbfr7wsp7mh"
+path="res://.godot/imported/maneco on.wav-90fbb212b6529b6a594a21faa03bdbcb.sample"
+
+[deps]
+
+source_file="res://modelos3d/vehiculos/tractomulas/cabezotes/T800/Sonidos/maneco on.wav"
+dest_files=["res://.godot/imported/maneco on.wav-90fbb212b6529b6a594a21faa03bdbcb.sample"]
+
+[params]
+
+force/8_bit=false
+force/mono=false
+force/max_rate=false
+force/max_rate_hz=44100
+edit/trim=false
+edit/normalize=false
+edit/loop_mode=0
+edit/loop_begin=0
+edit/loop_end=-1
+compress/mode=2

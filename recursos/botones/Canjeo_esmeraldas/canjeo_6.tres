@@ -1,0 +1,7 @@
+[gd_resource type="AtlasTexture" format=3 uid="uid://i6d7vhtxyoek"]
+
+[ext_resource type="Texture2D" uid="uid://d21h82ylwpbbs" path="res://recursos/botones/Canjeo_esmeraldas/Canjeo_esmeraldas.png" id="1_6q20w"]
+
+[resource]
+atlas = ExtResource("1_6q20w")
+region = Rect2(511, 466, 422, 229)
