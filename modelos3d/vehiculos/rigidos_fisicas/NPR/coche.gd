@@ -1,6 +1,8 @@
 @tool
 extends RigidBody3D
 
+static var _stream_choque_leve: AudioStream = null
+
 # ═══════════════════════════════════════════════════════════════════════
 # coche.gd — Sistema de física vehicular
 # Toda la configuración viene de VehiculoConfig (un recurso .tres por vehículo).
@@ -13,6 +15,7 @@ extends RigidBody3D
 @onready var motor: Node               = get_node_or_null("Motor")
 @onready var llantas_controlador: Node = null
 @onready var ui_vehiculo: CanvasLayer  = get_node_or_null("UIVehiculo")
+var icono_entrada: Node3D = null
 @onready var spring_arm: SpringArm3D   = get_node_or_null("BrazoCamara/SpringArm3D")
 @onready var luz_stop_node: Node3D     = get_node_or_null("Luces/LuzStop")
 
@@ -25,21 +28,21 @@ extends RigidBody3D
 
 @export_group("Chasis", "chasis_")
 @export var masa_kg: float = 1400.0
-@export var centro_de_masa: Vector3 = Vector3(0.0, -0.35, 0.0)
+@export var centro_de_masa: Vector3 = Vector3(0.0, -0.10, 0.0) # Subido el centro de masa para permitir transferencia de peso realista
 @export var coef_arrastre: float = 0.40
 @export var area_frontal_m2: float = 2.6
 @export var resistencia_rodadura: float = 0.015
 
 @export_group("Estabilidad", "estabilidad_")
-@export var torque_antiroll: float = 25000.0
-@export var amort_antiroll: float = 6000.0
-@export var fuerza_enderezado: float = 80000.0
-@export var amort_enderezado: float = 10000.0
-@export var umbral_enderezado: float = 0.85
+@export var torque_antiroll: float = 15000.0 # Reducida de 25000 para que la suspensión actúe de forma más blanda y natural
+@export var amort_antiroll: float = 4000.0
+@export var fuerza_enderezado: float = 12000.0 # Más baja para que no regrese mágicamente a estar plano
+@export var amort_enderezado: float = 2000.0
+@export var umbral_enderezado: float = 0.25 # Solo asiste cuando el coche ya está casi totalmente sobre su techo (<15 grados de volteado completo)
 
 @export_group("Cabeceo", "pitch_")
-@export var pitch_intensidad: float = 15.0
-@export var pitch_amort: float = 12000.0
+@export var pitch_intensidad: float = 18.0 # Ligeramente subido para acentuar el frenado y aceleración
+@export var pitch_amort: float = 10000.0
 @export var pitch_suavizado: float = 5.0
 @export var pitch_acel_max: float = 8.0
 
@@ -51,6 +54,34 @@ extends RigidBody3D
 @export var fuerza_freno_mano: float = 12000.0
 @export var vel_umbral_parado: float = 0.15
 @export var omega_umbral_parado: float = 0.05
+
+@export_group("Torsión de Chasis Lateral (Torque Twist)")
+## Habilita la inclinación lateral del chasis al acelerar con carga pesada.
+@export var habilitar_torque_twist: bool = true
+## Intensidad de la inclinación lateral (roll) del chasis.
+@export var intensidad_torsion_roll: float = 10000.0
+## Desvío lateral leve en el frontal al hacer fuerza.
+@export var intensidad_desvio_frontal: float = 2500.0
+
+@export_group("Levantamiento Frontal Carga Pesada (Wheelie)")
+## Habilita el levantamiento dinámico de la trompa al arrancar bajo sobrecarga extrema.
+@export var habilitar_levantamiento_carga: bool = true
+## Masa mínima de remolque/carga en kg para activar el despegue de ruedas delanteras.
+## Por defecto 42,000 kg: el camión soporta fácilmente hasta 40 toneladas sin despegar las ruedas.
+@export var peso_umbral_levantamiento_kg: float = 42000.0
+## Masa de remolque/carga en kg donde el despegue alcanza su plenitud (ej. 50,000 kg).
+@export var peso_pleno_levantamiento_kg: float = 50000.0
+## Fuerza vertical aplicada en el parachoques delantero (Newtons) para elevar suavemente el eje directriz.
+@export var fuerza_elevacion_frontal: float = 22000.0
+## Par de cabeceo (Pitch-up en Nm) para inclinar el chasis sobre el eje trasero.
+@export var torque_levantamiento_frontal: float = 38000.0
+## Velocidad máxima en km/h hasta la que se mantiene levantado el morro antes de asentarse al ganar fuerza.
+@export var velocidad_fin_levantamiento_kmh: float = 18.0
+## Ángulo máximo de inclinación hacia arriba (en radianes, ~9.5 grados) para mantener estabilidad y seguridad.
+@export var max_angulo_levantamiento_rad: float = 0.165
+
+var _torsion_par_suave: float = 0.0
+var _levantamiento_trompa_suave: float = 0.0
 
 # ─── Estado interno ───────────────────────────────────────────────────
 var activo: bool             = false
@@ -93,6 +124,10 @@ var luces_emergencia: bool     = false
 var direccional_izquierda: bool = false
 var direccional_derecha: bool   = false
 
+@export_group("Icono Entrada Diegético")
+## Offset manual para calibrar la posición 3D del botón de entrada (ej: Vector3(0, 0.2, 0))
+@export var offset_icono_entrada: Vector3 = Vector3.ZERO
+
 var _pos_objetivo: Vector3 = Vector3.ZERO
 var _rot_objetivo: Vector3 = Vector3.ZERO
 
@@ -125,7 +160,14 @@ func _aplicar_config() -> void:
 
 	mass = masa_kg + peso_carga_actual
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
-	center_of_mass = centro_de_masa
+	
+	# LÍMITE FÍSICO DURO: Asegurar que el centro de masas en el eje Y no sea inferior a -0.10.
+	# Si el recurso .tres tiene un valor muy bajo como -0.35 o -0.50, esto actuaba como un giroscopio
+	# mágico de tentetieso impidiendo físicamente cualquier volcado.
+	var centro_real: Vector3 = centro_de_masa
+	if centro_real.y < -0.10:
+		centro_real.y = -0.10
+	center_of_mass = centro_real
 
 func _propagar_config_async() -> void:
 	_aplicar_config()
@@ -196,8 +238,13 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 
+	add_to_group("vehiculo")
+
 	_pos_objetivo = global_position
 	_rot_objetivo = global_rotation
+
+	# Optimizar mallas internas, sombras e iluminación del vehículo
+	_optimizar_mallas_e_iluminacion(self)
 
 	if multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
 		# Desactivar cámaras y UI para vehículos remotos
@@ -209,6 +256,47 @@ func _ready() -> void:
 		freeze_mode = FREEZE_MODE_KINEMATIC
 		set_process(false)
 		return
+
+func _optimizar_mallas_e_iluminacion(raiz: Node) -> void:
+	if not is_instance_valid(raiz):
+		return
+	var stack: Array[Node] = [raiz]
+	while stack.size() > 0:
+		var n: Node = stack.pop_back()
+		if not is_instance_valid(n):
+			continue
+		
+		if n is MeshInstance3D:
+			var mesh_node := n as MeshInstance3D
+			var nombre_l := mesh_node.name.to_lower()
+			var padre_name := mesh_node.get_parent().name.to_lower() if mesh_node.get_parent() else ""
+			
+			if nombre_l.contains("asiento") or nombre_l.contains("interior") or nombre_l.contains("motor") \
+				or nombre_l.contains("tablero") or nombre_l.contains("palanca") or nombre_l.contains("volante") \
+				or nombre_l.contains("pedal") or nombre_l.contains("accesorio") or nombre_l.contains("detalles") \
+				or padre_name.contains("interior") or padre_name.contains("cabina"):
+				
+				mesh_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mesh_node.visibility_range_end = 45.0
+				mesh_node.visibility_range_end_margin = 5.0
+				mesh_node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+			else:
+				mesh_node.visibility_range_end = 350.0
+				mesh_node.visibility_range_end_margin = 25.0
+				mesh_node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+
+		elif n is Light3D:
+			var luz := n as Light3D
+			var luz_nombre := luz.name.to_lower()
+			if luz_nombre.contains("interior") or luz_nombre.contains("cabina") or luz_nombre.contains("tablero") or luz_nombre.contains("stop") or luz_nombre.contains("direccional"):
+				luz.shadow_enabled = false
+			if luz is SpotLight3D:
+				var spot := luz as SpotLight3D
+				if spot.spot_range > 45.0:
+					spot.spot_range = 45.0
+
+		for c in n.get_children():
+			stack.append(c)
 
 	camera_manager = _detect_camera_manager()
 	_collect_local_cameras()
@@ -275,6 +363,7 @@ func _physics_process(delta: float) -> void:
 	_aplicar_antiroll(delta)
 	_aplicar_correccion_volcado(delta)
 	_aplicar_cabeceo(delta)
+	_aplicar_torsion_chasis_carga(delta)
 	_limpiar_microvelocidades(vel_escalar)
 
 	if spring_arm and activo:
@@ -360,6 +449,8 @@ func _aplicar_antiroll(_delta: float) -> void:
 	var local_up: Vector3 = global_transform.basis.y
 	var dot_up: float     = local_up.dot(Vector3.UP)
 
+	# Si está casi plano, se estabiliza normalmente.
+	# Pero si pasa de un ángulo medio, el antiroll decae para permitir el volcado real.
 	if dot_up > 0.998:
 		return
 
@@ -368,9 +459,18 @@ func _aplicar_antiroll(_delta: float) -> void:
 	if eje_roll.length_squared() < 0.001:
 		return
 
-	var torque_muelle: Vector3 = -eje_roll * (torque_antiroll * angulo_roll)
+	# Atenuador de antiroll: decae progresivamente a partir de inclinación moderada (dot_up <= 0.94 / ~20 grados)
+	# y llega a cero total cuando se acerca al umbral de volcado (0.25).
+	# Forzamos los límites en código para saltarnos los valores sobreescritos por el recurso .tres
+	var umbral_real: float = 0.25
+	var factor_atenuacion: float = clamp((dot_up - umbral_real) / (0.94 - umbral_real), 0.0, 1.0)
+
+	var torque_antiroll_real: float = minf(torque_antiroll, 15000.0)
+	var amort_antiroll_real: float = minf(amort_antiroll, 4000.0)
+
+	var torque_muelle: Vector3 = -eje_roll * (torque_antiroll_real * angulo_roll * factor_atenuacion)
 	var omega_roll: float      = angular_velocity.dot(eje_roll)
-	var torque_amort: Vector3  = -eje_roll * (amort_antiroll * omega_roll)
+	var torque_amort: Vector3  = -eje_roll * (amort_antiroll_real * omega_roll * factor_atenuacion)
 
 	apply_torque(torque_muelle + torque_amort)
 
@@ -379,18 +479,25 @@ func _aplicar_correccion_volcado(_delta: float) -> void:
 	var local_up: Vector3 = global_transform.basis.y
 	var dot_up: float     = local_up.dot(Vector3.UP)
 
-	if dot_up >= umbral_enderezado:
+	# LÍMITE FÍSICO DURO: Forzar que el umbral de asistencia sea de 0.25 (15 grados sobre su techo)
+	# para ignorar configs viejos o exagerados del archivo .tres que mantendrían el vehículo plano.
+	var umbral_real: float = 0.25
+	if dot_up >= umbral_real:
 		return
 
 	var eje_corr: Vector3 = local_up.cross(Vector3.UP).normalized()
 	if eje_corr.length_squared() < 0.001:
 		return
 
-	var intensidad: float = clamp((1.0 - dot_up) / (1.0 - umbral_enderezado), 0.0, 1.0)
+	var intensidad: float = clamp((1.0 - dot_up) / (1.0 - umbral_real), 0.0, 1.0)
 
-	var torque_corr: Vector3 = eje_corr * fuerza_enderezado * intensidad
+	# Capar fuerza máxima de auto-enderezado a 12000.0 para que sea una asistencia sutil en lugar de un giro mágico
+	var fuerza_real: float = minf(fuerza_enderezado, 12000.0)
+	var amort_real: float = minf(amort_enderezado, 2000.0)
+
+	var torque_corr: Vector3 = eje_corr * fuerza_real * intensidad
 	var omega_corr: float    = angular_velocity.dot(eje_corr)
-	var torque_am: Vector3   = -eje_corr * amort_enderezado * omega_corr
+	var torque_am: Vector3   = -eje_corr * amort_real * omega_corr
 
 	apply_torque(torque_corr + torque_am)
 
@@ -455,6 +562,104 @@ func actualizar_carga(peso_carga: float) -> void:
 	center_of_mass.y   = centro_de_masa.y + (peso_carga_actual * 0.0001)
 
 
+## Obtiene la referencia física al remolque actualmente conectado a la quinta rueda
+func obtener_remolque() -> RigidBody3D:
+	var enganche = find_child("Enganche", true, false)
+	if enganche and enganche.get("conectado") == true:
+		var remoto = enganche.get("enganche_remoto")
+		if remoto and enganche.has_method("_buscar_cuerpo"):
+			return enganche._buscar_cuerpo(remoto) as RigidBody3D
+	return null
+
+
+## Devuelve la masa física total en kg del remolque conectado (tara + peso de carga)
+func obtener_peso_remolque() -> float:
+	var remolque = obtener_remolque()
+	if is_instance_valid(remolque):
+		return remolque.mass
+	return 0.0
+
+
+## Aplica la torsión de par motor (Torque Twist) y levantamiento de trompa cuando el camión arranca o hace fuerza con carga pesada
+func _aplicar_torsion_chasis_carga(delta: float) -> void:
+	if not activo:
+		_torsion_par_suave = move_toward(_torsion_par_suave, 0.0, delta * 3.0)
+		_levantamiento_trompa_suave = move_toward(_levantamiento_trompa_suave, 0.0, delta * 3.0)
+		return
+
+	var peso_remolque: float = obtener_peso_remolque()
+	var masa_arrastrada: float = peso_remolque + peso_carga_actual
+
+	var iv = is_instance_valid(get_node_or_null("/root/InputVehiculo"))
+	var gas: float = 0.0
+	if iv:
+		gas = clampf(get_node("/root/InputVehiculo").get("gas"), 0.0, 1.0)
+	elif motor and "gas_suavizado" in motor:
+		gas = motor.gas_suavizado
+
+	if gas < 0.05:
+		_torsion_par_suave = move_toward(_torsion_par_suave, 0.0, delta * 5.0)
+		_levantamiento_trompa_suave = move_toward(_levantamiento_trompa_suave, 0.0, delta * 5.0)
+		return
+
+	var vel_kmh: float = linear_velocity.length() * 3.6
+
+	# 1. Torsión lateral (Roll del chasis y desvío sutil al arrancar con carga)
+	if habilitar_torque_twist and masa_arrastrada >= 12000.0:
+		var factor_baja_vel: float = clampf((24.0 - vel_kmh) / 24.0, 0.0, 1.0)
+		var factor_peso_twist: float = clampf((masa_arrastrada - 12000.0) / 38000.0, 0.0, 1.0)
+		var target_twist: float = gas * factor_baja_vel * factor_peso_twist
+		var vel_lerp: float = 5.0 if target_twist > _torsion_par_suave else 3.0
+		_torsion_par_suave = lerpf(_torsion_par_suave, target_twist, clampf(delta * vel_lerp, 0.0, 1.0))
+
+		if _torsion_par_suave > 0.005:
+			var eje_roll: Vector3 = global_transform.basis.z.normalized()
+			var torque_roll: Vector3 = eje_roll * (intensidad_torsion_roll * _torsion_par_suave)
+			apply_torque(torque_roll)
+
+			var pos_frontal_local: Vector3 = Vector3(0.0, 0.1, -2.4)
+			var pos_frontal_global: Vector3 = global_transform.basis * pos_frontal_local
+			var dir_lateral: Vector3 = global_transform.basis.x.normalized()
+			var fuerza_lateral: Vector3 = dir_lateral * (intensidad_desvio_frontal * _torsion_par_suave)
+			apply_force(fuerza_lateral, pos_frontal_global)
+	else:
+		_torsion_par_suave = move_toward(_torsion_par_suave, 0.0, delta * 3.0)
+
+	# 2. Levantamiento de Trompa (Wheelie):
+	# El camión soporta fácilmente hasta 40 toneladas sin despegar las ruedas directrices.
+	# A partir de peso_umbral_levantamiento_kg (por defecto 42,000 kg, pleno hacia 50,000 kg),
+	# el camión hace su esfuerzo de tracción y las ruedas delanteras se levantan sutilmente,
+	# manteniéndose en el aire hasta que el camión coge impulso y velocidad (> velocidad_fin_levantamiento_kmh).
+	if habilitar_levantamiento_carga and masa_arrastrada >= peso_umbral_levantamiento_kg:
+		var factor_gas_full: float = pow(gas, 1.2)
+		var factor_vel_trompa: float = clampf((velocidad_fin_levantamiento_kmh - vel_kmh) / velocidad_fin_levantamiento_kmh, 0.0, 1.0)
+		var rango_peso: float = maxf(peso_pleno_levantamiento_kg - peso_umbral_levantamiento_kg, 1000.0)
+		var factor_sobrecarga: float = clampf((masa_arrastrada - peso_umbral_levantamiento_kg) / rango_peso, 0.0, 1.3)
+
+		# Límite de seguridad de pitch para que el morro no sobrepase un ángulo seguro
+		var inclinacion_frontal_rad: float = -global_transform.basis.z.dot(Vector3.UP)
+		var factor_seguridad_pitch: float = clampf((max_angulo_levantamiento_rad - inclinacion_frontal_rad) / max_angulo_levantamiento_rad, 0.0, 1.0)
+
+		var target_lift: float = factor_gas_full * factor_vel_trompa * factor_sobrecarga * factor_seguridad_pitch
+		var vel_lift_lerp: float = 5.0 if target_lift > _levantamiento_trompa_suave else 3.0
+		_levantamiento_trompa_suave = lerpf(_levantamiento_trompa_suave, target_lift, clampf(delta * vel_lift_lerp, 0.0, 1.0))
+
+		if _levantamiento_trompa_suave > 0.005:
+			# Torque de cabeceo hacia arriba (pitch-up)
+			var eje_pitch: Vector3 = global_transform.basis.x.normalized()
+			var torque_lift: Vector3 = -eje_pitch * (torque_levantamiento_frontal * _levantamiento_trompa_suave * factor_seguridad_pitch)
+			apply_torque(torque_lift)
+
+			# Asistencia vertical en el frontal: eleva suavemente el eje delantero separando las ruedas del suelo
+			# sin restar peso ni adherencia al eje motriz trasero
+			var fuerza_arriba: Vector3 = global_transform.basis.y * (fuerza_elevacion_frontal * _levantamiento_trompa_suave * factor_seguridad_pitch)
+			var pos_morro_local: Vector3 = Vector3(0.0, 0.1, -2.4)
+			var pos_morro_global: Vector3 = global_transform.basis * pos_morro_local
+			apply_force(fuerza_arriba, pos_morro_global)
+	else:
+		_levantamiento_trompa_suave = move_toward(_levantamiento_trompa_suave, 0.0, delta * 3.0)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # SUBIR / BAJAR JUGADOR
 # ═══════════════════════════════════════════════════════════════════════
@@ -475,6 +680,9 @@ func subir_jugador(p_jugador: Node3D) -> void:
 		return
 	activo      = true
 	jugador_ref = p_jugador
+	if is_instance_valid(icono_entrada) and icono_entrada.has_method("ocultar"):
+		icono_entrada.ocultar()
+	GestorVehiculos.subir_jugador_a_vehiculo(p_jugador, self)
 
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass      = centro_de_masa
@@ -485,19 +693,23 @@ func subir_jugador(p_jugador: Node3D) -> void:
 
 	if p_jugador.has_method("ocultar_interfaz_pie"):
 		p_jugador.ocultar_interfaz_pie()
-	else:
-		var ui_pie = p_jugador.find_child("UIpie", true, false)
-		if ui_pie:
-			ui_pie.visible = false
+	var root_node = get_tree().get_root() if get_tree() else null
+	if root_node:
+		for pat in ["*UIpie*", "*UiPie*", "*uipie*", "*UIPie*"]:
+			for pie in root_node.find_children(pat, "", true, false):
+				if is_instance_valid(pie) and (pie is CanvasLayer or pie is Control):
+					pie.visible = false
+					pie.process_mode = Node.PROCESS_MODE_DISABLED
 
 	# Instanciar UIVehiculo de forma segura
 	if not ui_vehiculo:
-		var ui_scene := load("res://escenas/gui/UIVehiculo.tscn") as PackedScene
+		var ui_scene := load("res://interfaz/hud/conduccion/UIVehiculo.tscn") as PackedScene
 		if ui_scene:
 			ui_vehiculo = ui_scene.instantiate() as CanvasLayer
 			add_child(ui_vehiculo)
 
 	if ui_vehiculo:
+		ui_vehiculo.set("vehiculo", self)
 		ui_vehiculo.visible = true
 
 	# Conectar configuración del vehículo (velocidad máxima / rpm) a la UI
@@ -544,6 +756,8 @@ func subir_jugador(p_jugador: Node3D) -> void:
 			iv.motor_encendido = iv.motor_encendido
 
 	_collect_local_cameras()
+	if camera_manager and camera_manager.has_method("activar_camaras"):
+		camera_manager.activar_camaras()
 	if debug_vehiculo:
 		print("coche.gd: subir_jugador -> camera_manager=", camera_manager, " local_cams=", _local_cameras.size())
 
@@ -573,22 +787,7 @@ func subir_jugador(p_jugador: Node3D) -> void:
 
 	var cam_p: Camera3D = p_jugador.find_child("Camera3D", true, false) as Camera3D
 	if cam_p:
-		_jugador_cam_node = cam_p
-		_jugador_cam_original_parent = cam_p.get_parent()
-		_jugador_cam_original_global_transform = cam_p.global_transform
-		if cam_p.current:
-			cam_p.current = false
-			
-		var dest_parent: Node = self
-		if seat and is_instance_valid(seat):
-			dest_parent = seat
-		elif spring_arm and is_instance_valid(spring_arm):
-			dest_parent = spring_arm.get_parent()
-
-		if cam_p.get_parent():
-			cam_p.get_parent().remove_child(cam_p)
-		dest_parent.add_child(cam_p)
-		cam_p.global_transform = _jugador_cam_original_global_transform
+		cam_p.current = false
 
 	_conectar_senales_ui()
 	
@@ -665,38 +864,12 @@ func bajar_jugador() -> void:
 				else:
 					posicion_salida.y = global_position.y + salida_offset_vertical
 
-		var ui_pie: Node = jugador_ref.find_child("UIpie", true, false)
-		if is_instance_valid(ui_pie):
-			ui_pie.visible = true
+		GestorVehiculos.bajar_jugador_de_vehiculo(jugador_ref, self, posicion_salida)
+		jugador_ref = null
 
-		jugador_ref.show()
-		jugador_ref.process_mode   = Node.PROCESS_MODE_INHERIT
-		jugador_ref.global_position = posicion_salida
-
-		# Rescatar cámara del jugador de forma segura
-		if is_instance_valid(_jugador_cam_node):
-			var target_parent: Node = jugador_ref
-			if is_instance_valid(_jugador_cam_original_parent):
-				target_parent = _jugador_cam_original_parent
-				
-			if _jugador_cam_node.get_parent():
-				_jugador_cam_node.get_parent().remove_child(_jugador_cam_node)
-				
-			target_parent.add_child(_jugador_cam_node)
-			
-			if is_instance_valid(_jugador_cam_original_parent):
-				_jugador_cam_node.global_transform = _jugador_cam_original_global_transform
-			else:
-				_jugador_cam_node.global_transform = jugador_ref.global_transform
-				
-			_jugador_cam_node.make_current()
-			
 		_jugador_cam_node = null
 		_jugador_cam_original_parent = null
 		_jugador_cam_original_global_transform = Transform3D()
-
-		if camera_manager and camera_manager.has_method("clear_external_camera"):
-			camera_manager.clear_external_camera()
 
 		if is_instance_valid(ui_vehiculo):
 			ui_vehiculo.visible = false
@@ -717,6 +890,9 @@ func bajar_jugador() -> void:
 
 	if spring_arm:
 		spring_arm.set_process(false)
+
+	if camera_manager and camera_manager.has_method("desactivar_camaras"):
+		camera_manager.call("desactivar_camaras")
 		
 	_alternar_sistemas(false)
 	_activar_luces(false)
@@ -768,6 +944,21 @@ func limpiar_suciedad(cantidad: float) -> void:
 # DETECCIÓN DE JUGADOR
 # ═══════════════════════════════════════════════════════════════════════
 
+func _asegurar_icono_entrada(zona: Area3D) -> void:
+	if is_instance_valid(icono_entrada):
+		return
+	icono_entrada = find_child("IconoEntradaVehiculo", true, false)
+	if not icono_entrada and zona:
+		var icono_script = load("res://codigo/entidades/vehiculo/icono_entrada_vehiculo.gd")
+		if icono_script:
+			var icono_inst = icono_script.new()
+			icono_inst.name = "IconoEntradaVehiculo"
+			zona.add_child(icono_inst)
+			if offset_icono_entrada != Vector3.ZERO:
+				icono_inst.offset_posicion = offset_icono_entrada
+			icono_inst.configurar(self, zona)
+			icono_entrada = icono_inst
+
 func _conectar_deteccion() -> void:
 	var zona: Area3D = find_child("ZonaEntrada", true, false) as Area3D
 	if zona:
@@ -775,11 +966,14 @@ func _conectar_deteccion() -> void:
 			zona.body_entered.connect(_on_body_entered)
 		if not zona.body_exited.is_connected(_on_body_exited):
 			zona.body_exited.connect(_on_body_exited)
+		_asegurar_icono_entrada(zona)
 
 func _on_body_entered(body: Node3D) -> void:
-	if body and body.is_in_group("jugador"):
+	if body and body.is_in_group("jugador") and not activo:
 		jugador_cerca = true
 		jugador_ref   = body
+		if is_instance_valid(icono_entrada) and icono_entrada.has_method("mostrar"):
+			icono_entrada.mostrar(body)
 		if body.has_method("notificar_vehiculo_cerca"):
 			body.notificar_vehiculo_cerca(self)
 
@@ -787,8 +981,10 @@ func _on_body_exited(body: Node3D) -> void:
 	if body == jugador_ref and not activo:
 		jugador_cerca = false
 		jugador_ref   = null
+		if is_instance_valid(icono_entrada) and icono_entrada.has_method("ocultar"):
+			icono_entrada.ocultar()
 		if body.has_method("notificar_vehiculo_lejos"):
-			body.notificar_vehiculo_lejos()
+			body.notificar_vehiculo_lejos(self)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -816,9 +1012,20 @@ func _conectar_senales_ui() -> void:
 	if not is_instance_valid(ui_vehiculo):
 		return
 	var zona_cam: Node = ui_vehiculo.find_child("ZonaCamara", true, false)
-	if zona_cam and zona_cam.has_signal("camara_movida"):
+	if not zona_cam:
+		return
+	# Reconectar el brazo/camara en caso de que ZonaCamara se haya inicializado
+	# antes de que UIVehiculo fuera hijo del vehículo (timing de instancia dinámica)
+	if zona_cam.has_method("_buscar_brazo"):
+		zona_cam.call("_buscar_brazo")
+	# Conexión directa de respaldo — coche.gd redirige al CameraManager si existe
+	if zona_cam.has_signal("camara_movida"):
 		if not zona_cam.camara_movida.is_connected(_on_camara_movida):
 			zona_cam.camara_movida.connect(_on_camara_movida)
+	# Conectar pinch al CameraManager si existe, de lo contrario al vehículo
+	if zona_cam.has_signal("camara_pinch") and camera_manager and camera_manager.has_method("_distribuir_pinch"):
+		if not zona_cam.camara_pinch.is_connected(camera_manager._distribuir_pinch):
+			zona_cam.camara_pinch.connect(camera_manager._distribuir_pinch)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -844,6 +1051,17 @@ func _on_camara_movida(relative: Vector2) -> void:
 	if camera_manager and camera_manager.has_method("mover_camara"):
 		var idx: int = camera_manager.get("indice_actual") if typeof(camera_manager.get("indice_actual")) != TYPE_NIL else indice_camara
 		camera_manager.mover_camara(idx, relative)
+		return
+	# Fallback: sin CameraManager, enviar directamente al BrazoCamara
+	var brazo: Node = get_node_or_null("BrazoCamara")
+	if brazo and brazo.has_method("_on_camara_movida"):
+		brazo._on_camara_movida(relative)
+		return
+	# Último recurso: usar la cámara activa local
+	if _local_cameras.size() > 0:
+		var cam := _local_cameras[clamp(_active_camera_idx, 0, _local_cameras.size() - 1)]
+		if cam and cam.get_parent() and cam.get_parent().has_method("_on_camara_movida"):
+			cam.get_parent()._on_camara_movida(relative)
 
 func _collect_local_cameras() -> void:
 	_local_cameras.clear()
@@ -948,6 +1166,9 @@ func vel_vec_plano(v: Vector3) -> Vector3:
 func _input(event: InputEvent) -> void:
 	if not (event is InputEventKey and event.pressed):
 		return
+	var focus_owner = get_viewport().gui_get_focus_owner() if get_viewport() else null
+	if focus_owner and (focus_owner is LineEdit or focus_owner is TextEdit):
+		return
 	match event.keycode:
 		KEY_U: notificar_suciedad(0.1)
 		KEY_B: notificar_barro(0.1)
@@ -1049,8 +1270,11 @@ func _on_coche_body_entered(body: Node) -> void:
 
 	# Choque suave (entre 1.5 m/s y 4.0 m/s): solo sonido
 	if fuerza_choque >= 1.5 and fuerza_choque < 4.0:
+		if not _stream_choque_leve:
+			_stream_choque_leve = load("res://recursos/sonidos_vehiculo/efectos/choque_leve.mp3")
+			
 		var audio_choque = AudioStreamPlayer3D.new()
-		audio_choque.stream = load("res://recursos/sonidos_vehiculo/efectos/choque_leve.mp3")
+		audio_choque.stream = _stream_choque_leve
 		audio_choque.volume_db = 5.0
 		audio_choque.unit_size = 15.0
 		add_child(audio_choque)

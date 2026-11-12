@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="VehiculoConfig" format=3 uid="uid://c7k2h8m4n9p0q"]
+
+[ext_resource type="Script" path="res://codigo/entidades/vehiculo/motor/vehiculo_config.gd" id="1_vc"]
+[ext_resource type="Resource" path="res://Datos/vehiculos/fichas_tecnicas/Hiage_Motor.tres" id="2_hm"]
+
+[resource]
+script = ExtResource("1_vc")
+nombre = "Prolet Hiage"
+masa_kg = 2150.0
+centro_de_masa = Vector3(0, -0.22, 0)
+coef_arrastre = 0.42
+area_frontal_m2 = 2.95
+torque_antiroll = 22000.0
+amort_antiroll = 5500.0
+fuerza_enderezado = 72000.0
+amort_enderezado = 9500.0
+pitch_intensidad = 10.0
+pitch_amort = 11000.0
+pitch_suavizado = 4.2
+pitch_acel_max = 5.5
+fuerza_freno_mano = 26000.0
+angulo_max_giro = 0.54
+wheelbase = 2.98
+track_width = 1.65
+motor_config = ExtResource("2_hm")
+capacidad_combustible_l = 70.0
+nivel_combustible_l = 70.0

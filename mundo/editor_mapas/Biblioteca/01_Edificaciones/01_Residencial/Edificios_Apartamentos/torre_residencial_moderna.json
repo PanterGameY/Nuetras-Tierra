@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Torre de vivienda urbana de 6 pisos con balcones panorámicos y terraza.",
+	"icono": "🏬",
+	"id": "torre_residencial_moderna",
+	"nombre": "Torre Residencial Moderna",
+	"seccion": "01_Residencial",
+	"subcategoria": "Edificios_Apartamentos",
+	"tamano": [
+		13.0,
+		21.5,
+		13.5
+	]
+}

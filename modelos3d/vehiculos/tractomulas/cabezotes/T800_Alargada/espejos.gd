@@ -77,6 +77,14 @@ func _ready() -> void:
 						vt.viewport_path = vp.get_path()
 						mat.albedo_texture = vt
 					parent_mesh.material_override = mat
+					
+					# Evitar bucle de retroalimentación de textura en Vulkan (error de framebuffer y uniform)
+					# Mover el mesh del espejo a la Capa 2 y ocultarlo en la cámara del retrovisor
+					parent_mesh.set_layer_mask_value(1, false)
+					parent_mesh.set_layer_mask_value(2, true)
+					var cam = _find_camera_in_viewport(vp)
+					if cam:
+						cam.set_cull_mask_value(2, false)
 
 	# Diagnostics: print info about found viewports and cameras
 	for vp in _viewports:

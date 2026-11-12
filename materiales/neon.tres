@@ -1,0 +1,10 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://dsb3gqam5ruw5"]
+
+[resource]
+resource_name = "Material.003dashboard.pngdashboard.png.079dashboard.png.114dash"
+cull_mode = 2
+albedo_color = Color(0.34367728, 1.5143344, 1.4707462, 1)
+roughness = 0.4
+emission_enabled = true
+emission = Color(0, 0.9098039, 0.9647059, 1)
+emission_energy_multiplier = 7.27

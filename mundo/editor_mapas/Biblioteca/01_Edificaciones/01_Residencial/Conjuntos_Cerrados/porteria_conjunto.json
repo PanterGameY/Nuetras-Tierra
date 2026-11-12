@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Acceso vigilado para urbanizaciones con garita de seguridad y cubierta vehicular.",
+	"icono": "🚪",
+	"id": "porteria_conjunto",
+	"nombre": "Portería y Acceso Conjunto",
+	"seccion": "01_Residencial",
+	"subcategoria": "Conjuntos_Cerrados",
+	"tamano": [
+		13.0,
+		4.80000019073486,
+		6.5
+	]
+}

@@ -1,5 +1,4 @@
 extends RayCast3D
-class_name Llanta
 
 # ═══════════════════════════════════════════════════════════════════════
 # Llanta — Física de suspensión y neumático por rueda
@@ -19,6 +18,20 @@ class_name Llanta
 @export var fuerza_suspension_max: float = 50000.0
 ## Margen de longitud adicional que tiene el RayCast por debajo de la rueda en metros. Permite detectar baches profundos o suelo antes de la extensión total. Normalmente no requiere modificación.
 @export var extra_largo_rayo: float = 0.18
+## Si está activo, reproduce el sonido de golpe metálico y notifica cuando la suspensión sufre un impacto fuerte.
+@export var activar_sonido_golpe: bool = true
+
+@export_group("Suspensión Asimétrica (Rigs of Rods)")
+## Rigidez en compresión/bump (N/m). Si es 0.0, toma rigidez_muelle automáticamente.
+@export var rigidez_compresion: float = 0.0
+## Rigidez en rebote/rebound (N/m). Si es 0.0, toma 82% de rigidez_compresion.
+@export var rigidez_rebote: float = 0.0
+## Amortiguación en compresión/bump (N*s/m). Suave para absorber baches. Si es 0.0, toma amortiguacion.
+@export var amortiguacion_compresion: float = 0.0
+## Amortiguación en rebote/rebound (N*s/m). 2.4x más alto para eliminar balanceo y rebotes oscilatorios. Si es 0.0, toma 2.4 * amortiguacion_compresion.
+@export var amortiguacion_rebote: float = 0.0
+## Rigidez de la barra estabilizadora analítica inter-eje (N/m) conectada a la rueda opuesta.
+@export var rigidez_barra_estabilizadora: float = 35000.0
 
 @export_group("Neumático")
 ## Coeficiente de fricción/agarre longitudinal (aceleración y frenado directo). A mayor valor, menor derrape longitudinal. SUV ≈ 8.0, camiones ≈ 12.0.
@@ -96,6 +109,7 @@ var fuerza_normal_anterior: float = 0.0
 var aceleracion_longitudinal_coche: float = 0.0
 var velocidad_angular_rueda: float = 0.0
 var friccion_suelo_actual: float = 1.0
+var rueda_opuesta: Node = null
 
 @export_group("Personalización Física")
 ## Ángulo de inclinación de la rueda (Camber/Caída) en grados. Valores negativos inclinan la parte superior hacia adentro.
@@ -185,19 +199,50 @@ func _physics_process(delta: float) -> void:
 	var recorrido_actual: float = max(distancia - radio_rueda, 0.0)
 	var compresion: float = clamp(largo_reposo - recorrido_actual, 0.0, largo_reposo)
 
+	# Si la suspensión está totalmente extendida (la rueda se despega del suelo),
+	# no se aplican fuerzas espurias y se procesa como suspensión libre
+	if compresion <= 0.0001:
+		_aplicar_suspension_libre(delta)
+		return
+
 	velocidad_suspension = (compresion - compresion_anterior) / delta if delta > 0 else 0.0
 	compresion_anterior = compresion
 
 	var vel_punto: Vector3 = coche.linear_velocity + coche.angular_velocity.cross(radio_vec)
 	var vel_vertical: float = up.dot(vel_punto)
 
-	var factor_peso_rep: float = max(coche.mass / 1400.0, 1.0) if coche else 1.0
-	var rigidez_dinamica: float = rigidez_muelle * factor_peso_rep
-	var amortiguacion_dinamica: float = amortiguacion * factor_peso_rep
+	var peso_remolque: float = 0.0
+	if coche and coche.has_method("obtener_peso_remolque"):
+		peso_remolque = coche.obtener_peso_remolque()
 
-	var fuerza_muelle: float = compresion * rigidez_dinamica
-	var fuerza_amortiguador: float = -vel_vertical * amortiguacion_dinamica
+	var masa_efectiva: float = coche.mass if coche else 1400.0
+	if not es_directriz and peso_remolque > 0.0:
+		# La quinta rueda transfiere aproximadamente el 35% del peso del remolque a los ejes traseros
+		masa_efectiva += peso_remolque * 0.35
+
+	var factor_peso_rep: float = max(masa_efectiva / 1400.0, 1.0)
+	var k_comp: float = (rigidez_compresion if rigidez_compresion > 0.0 else rigidez_muelle) * factor_peso_rep
+	var k_reb: float = (rigidez_rebote if rigidez_rebote > 0.0 else k_comp * 0.82) * factor_peso_rep
+	var d_comp: float = (amortiguacion_compresion if amortiguacion_compresion > 0.0 else amortiguacion) * factor_peso_rep
+	var d_reb: float = (amortiguacion_rebote if amortiguacion_rebote > 0.0 else d_comp * 2.4) * factor_peso_rep
+
+	# 1. Amortiguación Asimétrica de RoR (Rebound vs Bump)
+	var k_actual: float = k_comp if velocidad_suspension >= 0.0 else k_reb
+	var d_actual: float = d_comp if velocidad_suspension >= 0.0 else d_reb
+
+	# Progresión cuadrática en topes de suspensión (evita topes secos y simula ballestas pesadas)
+	var factor_progresivo: float = pow(compresion / maxf(largo_reposo, 0.05), 2.0)
+	k_actual *= (1.0 + 1.2 * factor_progresivo)
+
+	var fuerza_muelle: float = compresion * k_actual
+	var fuerza_amortiguador: float = velocidad_suspension * d_actual
 	var fuerza_suspension_base: float = fuerza_muelle + fuerza_amortiguador
+
+	# 2. Barra Estabilizadora Analítica Inter-Eje (Anti-Roll Bar)
+	if is_instance_valid(rueda_opuesta) and "compresion_anterior" in rueda_opuesta:
+		var comp_opuesta: float = float(rueda_opuesta.compresion_anterior)
+		var dif_compresion: float = compresion - comp_opuesta
+		fuerza_suspension_base += dif_compresion * rigidez_barra_estabilizadora * factor_peso_rep
 
 	var inv_basis = coche.global_transform.basis.inverse()
 	var vel_local = inv_basis * coche.linear_velocity
@@ -210,12 +255,13 @@ func _physics_process(delta: float) -> void:
 	else:
 		fuerza_anti_geometrica = aceleracion_coche * coche.mass * coeficiente_geometria
 
-	var fuerza_normal_total: float = clamp(fuerza_suspension_base + fuerza_anti_geometrica, 0.0, fuerza_suspension_max)
+	var f_max_dinamica: float = maxf(fuerza_suspension_max, (masa_efectiva * 9.81) * 2.5)
+	var fuerza_normal_total: float = clamp(fuerza_suspension_base + fuerza_anti_geometrica, 0.0, f_max_dinamica)
 	fuerza_normal_anterior = fuerza_normal_total
 
 	# Detectar golpe fuerte en la suspension: si el vehiculo va a 40 km/h o mas y hay una compresion drastica (>= 1.8 m/s)
 	var vel_kmh = coche.linear_velocity.length() * 3.6 if coche else 0.0
-	if vel_kmh >= 40.0 and velocidad_suspension >= 1.8:
+	if activar_sonido_golpe and vel_kmh >= 40.0 and velocidad_suspension >= 1.8:
 		_reproducir_golpe_metal()
 		var tiempo_actual = Time.get_ticks_msec() / 1000.0
 		if tiempo_actual - _ultimo_tiempo_aviso_golpe > 5.0:
@@ -319,24 +365,24 @@ func _aplicar_suspension_libre(delta: float) -> void:
 	if polvo_emisor:
 		polvo_emisor.emitting = false
 
-	if rueda_visual:
-
-		var ty: float = -largo_reposo
-		if ty < rueda_visual.position.y:
-			rueda_visual.position.y = lerp(rueda_visual.position.y, ty, delta * 12.0)
-		else:
-			rueda_visual.position.y = ty
+	# En el aire desacelerar suavemente el rodado de la rueda
+	vel_rodado_visual = lerp(vel_rodado_visual, 0.0, clamp(delta * 2.5, 0.0, 1.0))
+	_actualizar_visual(delta)
 
 func _actualizar_visual(delta: float) -> void:
 	if not rueda_visual:
 		return
 
-	var ty: float = -largo_reposo + radio_rueda
+	var ty: float = -largo_reposo
 	if is_colliding():
 		# Usar coordenadas locales del punto de colisión para determinar la altura
 		var local_punto: Vector3 = to_local(get_collision_point())
-		ty = local_punto.y + radio_rueda
-	var velocidad_lerp := 10.0 if ty < rueda_visual.position.y else 5.0
+		# El tope físico inferior de la suspensión es -largo_reposo.
+		# Clampear a -largo_reposo permite que cuando el chasis se levante, la rueda no baje más
+		# de su límite mecánico y se separe visiblemente del suelo.
+		ty = maxf(local_punto.y + radio_rueda, -largo_reposo)
+
+	var velocidad_lerp := 12.0 if ty < rueda_visual.position.y else 6.0
 	rueda_visual.position.y = lerp(rueda_visual.position.y, ty, delta * velocidad_lerp)
 
 	var q_direccion: Quaternion = Quaternion(Vector3.UP, -angulo_direccion)
@@ -382,7 +428,7 @@ func _is_ground_tierra(collider: Node) -> bool:
 	var p_name = collider.get_parent().name.to_lower() if collider.get_parent() else ""
 	
 	# Imprimir depuración si coche.debug_vehiculo está activo
-	if coche and coche.debug_vehiculo:
+	if coche and "debug_vehiculo" in coche and coche.debug_vehiculo:
 		print("[Llanta Debug] Colisiona con: ", n_name, " | Padre: ", p_name)
 	
 	var keywords = ["tierra", "dirt", "terreno", "barro", "mud", "sand", "arena", "pasto", "grass", "suelo", "road", "trocha", "via", "ruta", "hierba", "weed", "foliage", "gridmap"]

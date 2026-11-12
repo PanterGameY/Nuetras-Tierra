@@ -108,11 +108,17 @@ func _apply_basis_preserve_scale(node: Node3D, delta_basis: Basis, offset_local:
 	else:
 		_orig_transform[id] = node.transform
 
+	# En vehículos de tráfico cinemáticos (congelados), anular offsets verticales de suspensión
+	# para garantizar que las ruedas nunca se hundan ni se desplacen fuera de su posición visual
+	if coche != null and coche.freeze:
+		offset_local = Vector3.ZERO
+
 	# Aplicar rotación relativa sobre la base original y preservar scale y posición local (origin)
 	var final_basis: Basis = orig_rot * delta_basis
 	var final_origin: Vector3 = orig_tr.origin + offset_local
 	node.transform = Transform3D(final_basis, final_origin)
 	node.scale = prev_scale
+	node.visible = true
 
 func _record_orig_basis(node: Node3D) -> void:
 	if not is_instance_valid(node):
@@ -139,6 +145,11 @@ func _ready() -> void:
 	if not coche:
 		push_warning("Ruedas_IA: no se encontró RigidBody3D ancestro.")
 		return
+
+	# En vehículos de tráfico cinemáticos (freeze = true), desactivar rayos físicos
+	# de suspensión para maximizar FPS y evitar interferencias visuales.
+	if coche.freeze:
+		auto_agregar_llanta = false
 
 	if auto_agregar_llanta:
 		call_deferred("_setup_rayos")
@@ -171,6 +182,11 @@ func _ready() -> void:
 
 func _setup_rayos() -> void:
 	if not is_instance_valid(coche):
+		return
+
+	# Si el vehículo es cinemático (Tráfico IA freeze = true), no instanciar rayos físicos.
+	# La inclinación de suspensión y el cabeceo se calculan analíticamente en _process con costo O(1).
+	if coche.freeze:
 		return
 
 	# Reunir ruedas a procesar
@@ -238,6 +254,11 @@ func _process(delta: float) -> void:
 	if not is_instance_valid(coche):
 		return
 
+	# Optimización de rendimiento LOD: si la cámara está a más de 95m, omitir giro fino y balanceo
+	var cam := get_viewport().get_camera_3d() if get_viewport() else null
+	if cam != null and global_position.distance_squared_to(cam.global_position) > 9025.0:
+		return
+
 	# ── Cálculo del ángulo de dirección desde TraficoAI ─────────────────────
 	var forward_local: Vector3 = -coche.global_transform.basis.z
 	var max_rad: float  = deg_to_rad(angulo_giro)
@@ -250,31 +271,48 @@ func _process(delta: float) -> void:
 
 	# ── Cabeceo + Balanceo lateral: pitch X + roll Z sobre el nodo visual ──────
 	if is_instance_valid(_nodo_visual):
-		var vel_actual: float = coche.linear_velocity.dot(forward_local)
-		var _aceleracion: float = (vel_actual - _vel_anterior) / max(delta, 0.001)
+		var vel_actual: float = coche.velocidad_actual if ("velocidad_actual" in coche and float(coche.velocidad_actual) > 0.0) else coche.linear_velocity.dot(forward_local)
+		var accel: float = (vel_actual - _vel_anterior) / max(delta, 0.001)
 		_vel_anterior = vel_actual
 
-		# calcular velocidad lateral y aceleración lateral para balanceo de suspensión
+		# Calcular velocidad lateral y aceleración centrífuga
 		var right_local: Vector3 = coche.global_transform.basis.x
 		var vel_lateral: float = coche.linear_velocity.dot(right_local)
 		_lat_acc = (vel_lateral - _vel_lateral_anterior) / max(delta, 0.001)
 		_vel_lateral_anterior = vel_lateral
 
-		# Usar targets derivados de la suspensión física calculada en _physics_process
-		_cabeceo_actual = lerp(_cabeceo_actual, _susp_pitch_target,
-				clamp(cabeceo_suavizado * delta, 0.0, 1.0))
-		_balanceo_actual = lerp(_balanceo_actual, _susp_roll_target,
-				clamp(balanceo_suavizado * delta, 0.0, 1.0))
+		# Si no hay rayos físicos (tráfico cinemático o auto_agregar_llanta = false),
+		# calcular pitch y roll analíticos directamente de la cinemática
+		if _rayos.is_empty() or coche.freeze:
+			# Frenada: nose-down (+X), Aceleración: nose-up (-X)
+			var target_pitch: float = 0.0
+			if accel < 0.0:
+				target_pitch = clampf(-accel / max(cabeceo_accel_ref, 0.5) * deg_to_rad(cabeceo_frenada_deg), -deg_to_rad(cabeceo_frenada_deg), deg_to_rad(cabeceo_frenada_deg))
+			else:
+				target_pitch = clampf(-accel / max(cabeceo_accel_ref, 0.5) * deg_to_rad(cabeceo_aceleracion_deg), -deg_to_rad(cabeceo_frenada_deg), deg_to_rad(cabeceo_aceleracion_deg))
+
+			# Curva: carrocería se inclina centrífugamente hacia el exterior del viraje
+			var lat_centrifuga: float = (vel_actual * vel_actual * sin(_angulo_steering_actual)) / max(distancia_ejes, 1.5)
+			var target_roll: float = clampf(-lat_centrifuga / max(balanceo_accel_ref, 1.0) * deg_to_rad(balanceo_max_deg), -deg_to_rad(balanceo_max_deg), deg_to_rad(balanceo_max_deg))
+
+			_susp_pitch_target = target_pitch
+			_susp_roll_target = target_roll
+			_susp_avg_comp = 0.0
+
+		# Suavizar suavemente cabeceo y balanceo
+		_cabeceo_actual = lerpf(_cabeceo_actual, _susp_pitch_target,
+				clampf(cabeceo_suavizado * delta, 0.0, 1.0))
+		_balanceo_actual = lerpf(_balanceo_actual, _susp_roll_target,
+				clampf(balanceo_suavizado * delta, 0.0, 1.0))
 
 		# ─ Componer pitch + roll sin Euler: Basis(pitch_X) * Basis(roll_Z) ──────
 		var basis_pitch := Basis(Vector3(1, 0, 0), _cabeceo_actual)
 		var basis_roll_viz := Basis(Vector3(0, 0, 1), _balanceo_actual)
-		# Aplicar también un desplazamiento vertical local basado en la compresión promedio
-		var offset_local: Vector3 = Vector3(0.0, -_susp_avg_comp, 0.0)
+		var offset_local: Vector3 = Vector3(0.0, -_susp_avg_comp, 0.0) if not coche.freeze else Vector3.ZERO
 		_apply_basis_preserve_scale(_nodo_visual, basis_roll_viz * basis_pitch, offset_local)
 
 	# ── Rodadura: rotar todas las ruedas según velocidad del vehículo ────────
-	var vel_adelante: float = coche.linear_velocity.dot(forward_local)
+	var vel_adelante: float = coche.velocidad_actual if ("velocidad_actual" in coche and float(coche.velocidad_actual) > 0.0) else coche.linear_velocity.dot(forward_local)
 	var omega: float = vel_adelante / llanta_radio_rueda
 	_rot_ruedas += omega * delta
 	var eje: Vector3 = eje_rodadura.normalized()
@@ -360,7 +398,7 @@ func _process(delta: float) -> void:
 			_apply_basis_preserve_scale(rueda, delta_basis, offset_local)
 
 func _physics_process(delta: float) -> void:
-	if not is_instance_valid(coche) or _rayos.is_empty():
+	if not is_instance_valid(coche) or _rayos.is_empty() or coche.freeze:
 		return
 	var _delta: float = delta  # alias para compatibilidad con el código existente
 

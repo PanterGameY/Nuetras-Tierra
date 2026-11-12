@@ -1,0 +1,8 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://2s5gt1bmb8xr"]
+
+[resource]
+resource_name = "Chasis"
+cull_mode = 2
+albedo_color = Color(0.3522635, 0.3522635, 0.3522635, 1)
+metallic = 0.24637681
+roughness = 0.24057971

@@ -56,7 +56,9 @@ func _hacer_materiales_unicos() -> void:
 		if mat:
 			mesh.set_surface_override_material(0, mat.duplicate())
 		elif mesh.mesh and mesh.mesh.get_surface_count() > 0:
-			mesh.set_surface_override_material(0, mesh.mesh.surface_get_material(0).duplicate())
+			var base_mat = mesh.mesh.surface_get_material(0)
+			if base_mat:
+				mesh.set_surface_override_material(0, base_mat.duplicate())
 	_mallas_listas = true
 
 

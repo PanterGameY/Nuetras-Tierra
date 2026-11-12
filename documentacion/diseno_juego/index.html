@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Workspace de desarrollo de Nuestra Tierra Job Simulator — tablero Kanban, calendario, Devlog y métricas.">
+    <title>Nuestra Tierra — Dev Board Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style/style.css">
+</head>
+<body>
+<div class="app-container">
+
+    <!-- ─── SIDEBAR ──────────────────────────────── -->
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="logo-icon">🚜</div>
+            <div class="brand-text">
+                <h2>Nuestra Tierra</h2>
+                <span>Dev Board Suite</span>
+            </div>
+        </div>
+
+        <!-- Global Progress -->
+        <div class="stats-panel">
+            <div class="stat-header">
+                <span>Progreso Global</span>
+                <span id="global-percentage">0%</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="global-progress-fill" style="width:0%"></div>
+            </div>
+            <span id="global-stats-count">0 / 0 completados</span>
+        </div>
+
+        <!-- Suite Apps Navigation -->
+        <nav class="suite-nav">
+            <div class="section-title"><span>Herramientas</span></div>
+            <ul>
+                <li class="suite-nav-item active" data-tab="tab-board">
+                    <span>📋</span> Tablero de Desarrollo
+                </li>
+                <li class="suite-nav-item" data-tab="tab-calendar">
+                    <span>📅</span> Calendario & Milestones
+                </li>
+                <li class="suite-nav-item" data-tab="tab-devlog">
+                    <span>📖</span> Bitácora (Devlog)
+                </li>
+                <li class="suite-nav-item" data-tab="tab-metrics">
+                    <span>📊</span> Métricas del Proyecto
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Category Nav (Solo visible cuando se está en el Tablero de Desarrollo) -->
+        <nav class="categories-nav" id="categories-sidebar-nav">
+            <div class="section-title">
+                <span>Categorías</span>
+                <button class="btn-icon" id="btn-add-category" title="Nueva Categoría">
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            <ul id="categories-list"></ul>
+        </nav>
+
+        <!-- Sincronización Local / Cloud -->
+        <div class="sidebar-footer">
+            <div class="sync-panel">
+                <div class="sync-status-row">
+                    <span class="sync-indicator offline" id="sync-dot"></span>
+                    <span class="sync-status-text" id="sync-text">Archivo no vinculado</span>
+                </div>
+                <button class="btn-primary" id="btn-link-file" style="padding: 7px 10px; font-size: 0.72rem; width: 100%; justify-content: center; margin-top: 5px;">
+                    🔗 Vincular JSON Local
+                </button>
+                <span style="font-size:0.6rem; color:var(--text-muted); margin-top: 4px; display:block; text-align:center;">
+                    Guarda los cambios automáticamente en tu archivo local.
+                </span>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ─── MAIN ──────────────────────────────────── -->
+    <main class="main-content">
+
+        <!-- ═══════ SECCIÓN 1: TABLERO KANBAN / TAREAS ═══════ -->
+        <div class="tab-pane active" id="tab-board">
+            <header class="main-header">
+                <div class="header-info">
+                    <h1 id="current-category-title">Todas las Categorías</h1>
+                    <p id="current-category-desc">Visión general del desarrollo del juego.</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" id="btn-new-task">
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        Nueva tarea
+                    </button>
+                </div>
+            </header>
+
+            <section class="toolbar">
+                <div class="search-box">
+                    <span class="search-icon">
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.4"/><path d="m10 10 3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    </span>
+                    <input type="text" id="search-input" placeholder="Buscar tareas…" autocomplete="off">
+                </div>
+
+                <div class="sort-control">
+                    <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <select id="sort-select">
+                        <option value="priority">Por Prioridad</option>
+                        <option value="status">Por Estado</option>
+                        <option value="date">Por Fecha</option>
+                        <option value="alpha">A → Z</option>
+                    </select>
+                </div>
+
+                <div class="filter-group" id="filter-group">
+                    <button class="filter-btn active" data-status="all">Todos</button>
+                    <button class="filter-btn" data-status="pendiente">⏳</button>
+                    <button class="filter-btn" data-status="proceso">⚡</button>
+                    <button class="filter-btn" data-status="bloqueado">🔴</button>
+                    <button class="filter-btn" data-status="en-espera">⏸️</button>
+                    <button class="filter-btn" data-status="revision">🔍</button>
+                    <button class="filter-btn" data-status="idea">💡</button>
+                    <button class="filter-btn" data-status="completado">✅</button>
+                    <button class="filter-btn" data-status="descartado">❌</button>
+                </div>
+            </section>
+
+            <section class="dash-stats" id="dash-stats" style="display:none"></section>
+            <section class="tasks-container" id="tasks-list"></section>
+        </div>
+
+        <!-- ═══════ SECCIÓN 2: CALENDARIO & MILESTONES ═══════ -->
+        <div class="tab-pane" id="tab-calendar">
+            <header class="main-header">
+                <div class="header-info">
+                    <h1>Calendario & Roadmap</h1>
+                    <p>Planifica las fases del proyecto (Milestones) y visualiza las tareas por fecha de creación.</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" id="btn-add-milestone">
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        Nuevo Milestone
+                    </button>
+                </div>
+            </header>
+
+            <div class="calendar-layout">
+                <!-- Columna Milestones / Roadmap -->
+                <div class="milestones-panel">
+                    <h3 class="panel-section-title">Ruta de Versiones (Milestones)</h3>
+                    <div id="milestones-timeline-list" class="milestones-list"></div>
+                </div>
+
+                <!-- Columna Grid de Calendario Mensual -->
+                <div class="calendar-grid-panel">
+                    <div class="calendar-header-nav">
+                        <button class="btn-icon" id="btn-prev-month">◀</button>
+                        <h2 id="calendar-month-year">Julio 2026</h2>
+                        <button class="btn-icon" id="btn-next-month">▶</button>
+                    </div>
+                    <div class="calendar-week-days">
+                        <div>Dom</div><div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div>
+                    </div>
+                    <div class="calendar-days-grid" id="calendar-days-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════ SECCIÓN 3: DEVLOG (BITÁCORA) ═══════ -->
+        <div class="tab-pane" id="tab-devlog">
+            <header class="main-header">
+                <div class="header-info">
+                    <h1>Bitácora de Desarrollo (Devlog)</h1>
+                    <p>Documenta el progreso del desarrollo del juego. Útil para publicar parches o diarios del desarrollo.</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-primary" id="btn-new-devlog">
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                        Nueva Entrada
+                    </button>
+                </div>
+            </header>
+
+            <div class="devlog-layout">
+                <div class="devlog-list-container" id="devlog-entries-list"></div>
+            </div>
+        </div>
+
+        <!-- ═══════ SECCIÓN 4: MÉTRICAS ═══════ -->
+        <div class="tab-pane" id="tab-metrics">
+            <header class="main-header">
+                <div class="header-info">
+                    <h1>Métricas y Análisis del Proyecto</h1>
+                    <p>Estadísticas del estado de las tareas, distribución del trabajo y progreso general del videojuego.</p>
+                </div>
+            </header>
+
+            <div class="metrics-grid">
+                <!-- Tarjeta 1: Distribución por tipo de trabajo -->
+                <div class="metric-card">
+                    <h3>Distribución de Tareas por Tipo</h3>
+                    <div class="chart-container">
+                        <div class="css-chart-bar-list" id="metrics-type-chart"></div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 2: Tareas críticas activas -->
+                <div class="metric-card">
+                    <h3>Estado Crítico del Proyecto</h3>
+                    <div class="critical-stats-box" id="metrics-critical-box"></div>
+                </div>
+
+                <!-- Tarjeta 3: Distribución por categoría -->
+                <div class="metric-card">
+                    <h3>Progreso por Categoría</h3>
+                    <div class="css-chart-bar-list" id="metrics-cat-chart"></div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ═══════ MODAL — Nueva Categoría ═══════ -->
+<div class="modal" id="modal-category">
+    <div class="modal-content">
+        <button class="close-btn" id="close-category-modal" aria-label="Cerrar">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1 1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <h3 class="modal-title">Nueva Categoría</h3>
+        <form id="form-category">
+            <div class="form-group">
+                <label for="category-name">Nombre de la categoría</label>
+                <input type="text" id="category-name" required placeholder="Ej: Audio y Sonidos" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-text" id="btn-cancel-category">Cancelar</button>
+                <button type="submit" class="btn-primary">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════ MODAL — Nueva / Editar Tarea ═══════ -->
+<div class="modal" id="modal-task">
+    <div class="modal-content modal-content--wide">
+        <button class="close-btn" id="close-task-modal" aria-label="Cerrar">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1 1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <h3 class="modal-title" id="task-modal-title">Nueva tarea</h3>
+        <form id="form-task">
+            <input type="hidden" id="task-id">
+
+            <!-- Título -->
+            <div class="form-group">
+                <label for="task-title">Título de la tarea</label>
+                <input type="text" id="task-title" required placeholder="Ej: Arreglar físicas del Kenworth" autocomplete="off">
+            </div>
+
+            <!-- Categoría + Estado -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="task-category">Categoría</label>
+                    <select id="task-category" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="task-status">Estado</label>
+                    <select id="task-status" required>
+                        <option value="pendiente">⏳ Pendiente</option>
+                        <option value="proceso">⚡ En Proceso</option>
+                        <option value="bloqueado">🔴 Bloqueado</option>
+                        <option value="en-espera">⏸️ En Espera</option>
+                        <option value="revision">🔍 En Revisión</option>
+                        <option value="idea">💡 Idea</option>
+                        <option value="completado">✅ Completado</option>
+                        <option value="descartado">❌ Descartado</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Tipo de Tarea + Prioridad + Versión -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="task-type">Tipo de Tarea</label>
+                    <select id="task-type">
+                        <option value="codigo">👾 Código / Programación</option>
+                        <option value="arte">🎨 Arte / Modelado 3D</option>
+                        <option value="diseno">✍️ Diseño de Juego / Niveles</option>
+                        <option value="audio">🔊 Sonido y Música</option>
+                        <option value="bug">🐛 Corrección de Bug</option>
+                        <option value="ajustes">⚙️ Configuración / Balance</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="task-priority">Prioridad</label>
+                    <select id="task-priority">
+                        <option value="alta">🔥 Alta</option>
+                        <option value="media" selected>🟡 Media</option>
+                        <option value="baja">🔵 Baja</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="task-version">Versión / Milestone</label>
+                    <input type="text" id="task-version" placeholder="Ej: v1.0 Alpha" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="task-link">Enlace de Referencia / Assets</label>
+                    <input type="url" id="task-link" placeholder="https://drive.google.com/... o enlace de assets" autocomplete="off">
+                </div>
+            </div>
+
+            <!-- Subtareas / Checklist -->
+            <div class="form-group">
+                <label>Lista de Subtareas (Una por línea)</label>
+                <textarea id="task-subtasks" rows="3" placeholder="Paso 1: Modelar en Blender&#10;Paso 2: Texturizar en Substance&#10;Paso 3: Configurar colisiones en Unity/Unreal"></textarea>
+            </div>
+
+            <!-- Notas -->
+            <div class="form-group">
+                <label for="task-details">Notas / Descripción</label>
+                <textarea id="task-details" rows="3" placeholder="Bugs, referencias, recursos necesarios…"></textarea>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn-text" id="btn-cancel-task">Cancelar</button>
+                <button type="submit" class="btn-primary" id="btn-save-task">Guardar tarea</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════ MODAL — Nuevo Milestone ═══════ -->
+<div class="modal" id="modal-milestone">
+    <div class="modal-content">
+        <button class="close-btn" id="close-milestone-modal" aria-label="Cerrar">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1 1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <h3 class="modal-title">Nuevo Milestone / Versión</h3>
+        <form id="form-milestone">
+            <div class="form-group">
+                <label for="milestone-version">Versión / Nombre</label>
+                <input type="text" id="milestone-version" required placeholder="Ej: v1.0 Alpha" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="milestone-date">Fecha de Lanzamiento</label>
+                <input type="date" id="milestone-date" required>
+            </div>
+            <div class="form-group">
+                <label for="milestone-objective">Objetivo principal</label>
+                <input type="text" id="milestone-objective" required placeholder="Ej: Físicas de vehículos estables y HUD básico" autocomplete="off">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-text" id="btn-cancel-milestone">Cancelar</button>
+                <button type="submit" class="btn-primary">Guardar Milestone</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ═══════ MODAL — Nueva Entrada Devlog ═══════ -->
+<div class="modal" id="modal-devlog">
+    <div class="modal-content modal-content--wide">
+        <button class="close-btn" id="close-devlog-modal" aria-label="Cerrar">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1 1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <h3 class="modal-title">Nueva Entrada de Bitácora</h3>
+        <form id="form-devlog">
+            <div class="form-group">
+                <label for="devlog-title">Título de la Entrada</label>
+                <input type="text" id="devlog-title" required placeholder="Ej: Día 12 - Ajuste de la suspensión del Kenworth" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label for="devlog-content">Contenido / Bitácora</label>
+                <textarea id="devlog-content" rows="8" required placeholder="Escribe lo que has logrado hacer hoy, bugs resueltos, notas, ideas..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-text" id="btn-cancel-devlog">Cancelar</button>
+                <button type="submit" class="btn-primary">Guardar Entrada</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="script/script.js"></script>
+</body>
+</html>

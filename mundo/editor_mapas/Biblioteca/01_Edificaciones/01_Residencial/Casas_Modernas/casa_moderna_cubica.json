@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Residencia de arquitectura moderna con 2 plantas, ventanales panorámicos y pérgola.",
+	"icono": "🏢",
+	"id": "casa_moderna_cubica",
+	"nombre": "Casa Moderna Cúbica",
+	"seccion": "01_Residencial",
+	"subcategoria": "Casas_Modernas",
+	"tamano": [
+		10.0,
+		6.5,
+		9.5
+	]
+}

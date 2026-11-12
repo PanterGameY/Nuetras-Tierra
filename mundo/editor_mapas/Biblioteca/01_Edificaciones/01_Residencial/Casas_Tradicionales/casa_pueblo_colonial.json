@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Casona de dos plantas con balcón de madera tallada y arquitectura colonial.",
+	"icono": "🏛️",
+	"id": "casa_pueblo_colonial",
+	"nombre": "Casa de Pueblo Colonial",
+	"seccion": "01_Residencial",
+	"subcategoria": "Casas_Tradicionales",
+	"tamano": [
+		8.5,
+		8.5,
+		9.5
+	]
+}

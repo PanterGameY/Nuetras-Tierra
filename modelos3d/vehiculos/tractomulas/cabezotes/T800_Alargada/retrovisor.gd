@@ -62,5 +62,13 @@ func _ready() -> void:
 		retrovisor_mesh.material_override = mat
 
 	mat.albedo_texture = textura_viva
+
+	# Evitar bucle de retroalimentación de textura en Vulkan (error de framebuffer y uniform)
+	# Mover el mesh del espejo a la Capa 2 y ocultarlo en la cámara del retrovisor
+	retrovisor_mesh.set_layer_mask_value(1, false)
+	retrovisor_mesh.set_layer_mask_value(2, true)
+	if cam:
+		cam.set_cull_mask_value(2, false)
+
 	if debug_retrovisor:
 		print("[retrovisor] Textura asignada al material del espejo")

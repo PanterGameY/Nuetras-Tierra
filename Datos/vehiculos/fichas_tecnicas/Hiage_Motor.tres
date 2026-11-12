@@ -1,0 +1,9 @@
+[gd_resource type="Resource" format=3 uid="uid://d3m7iak1p4q2s"]
+
+[ext_resource type="Script" path="res://codigo/entidades/vehiculo/motor/motor_config.gd" id="1_m"]
+
+[resource]
+script = ExtResource("1_m")
+rpm_minimas = 750.0
+rpm_maximas = 4400.0
+velocidad_maxima_kmh = 145.0

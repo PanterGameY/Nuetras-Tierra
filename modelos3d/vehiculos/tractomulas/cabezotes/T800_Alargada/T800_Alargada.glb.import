@@ -13,7 +13,7 @@ dest_files=["res://.godot/imported/T800_Alargada.glb-fc71f9f088e955ebdc09121cd53
 
 [params]
 
-nodes/root_type=""
+nodes/root_type="RigidBody3D"
 nodes/root_name=""
 nodes/root_script=null
 mesh_library/use_node_names_as_mesh_names=false

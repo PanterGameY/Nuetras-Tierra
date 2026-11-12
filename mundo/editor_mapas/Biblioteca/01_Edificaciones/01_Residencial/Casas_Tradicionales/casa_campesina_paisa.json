@@ -1,0 +1,14 @@
+{
+	"categoria_raiz": "01_Edificaciones",
+	"descripcion": "Vivienda tradicional campesina con tejas de barro, zócalo de color y corredor frontal.",
+	"icono": "🏠",
+	"id": "casa_campesina_paisa",
+	"nombre": "Casa Campesina Paisa",
+	"seccion": "01_Residencial",
+	"subcategoria": "Casas_Tradicionales",
+	"tamano": [
+		9.5,
+		5.5,
+		9.0
+	]
+}

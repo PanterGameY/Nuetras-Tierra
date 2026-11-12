@@ -69,6 +69,9 @@ func _preparar_subsistemas() -> void:
 	if llantas_motrices.is_empty():
 		_auto_configurar_motrices()
 
+	# Emparejamiento analítico de ruedas izquierda-derecha para barra estabilizadora (Anti-Roll Bar)
+	_emparejar_ruedas_eje()
+
 	# DEBUG: informar sobre llantas encontradas
 	if debug_finder:
 		# Propagar debug a ruedas para obtener más información
@@ -157,6 +160,24 @@ func _auto_configurar_motrices() -> void:
 			l.es_tractriz = true
 			if not llantas_motrices.has(l):
 				llantas_motrices.append(l)
+
+func _emparejar_ruedas_eje() -> void:
+	for a in llantas_todas:
+		if not is_instance_valid(a):
+			continue
+		var mejor_opuesta: Node = null
+		var menor_dist_z: float = INF
+		for b in llantas_todas:
+			if b == a or not is_instance_valid(b):
+				continue
+			# Rueda opuesta al otro lado (signos opuestos en X respecto al chasis)
+			if (a.position.x * b.position.x) < 0.0:
+				var dist_z = absf(a.position.z - b.position.z)
+				if dist_z < 0.40 and dist_z < menor_dist_z:
+					menor_dist_z = dist_z
+					mejor_opuesta = b
+		if mejor_opuesta:
+			a.set("rueda_opuesta", mejor_opuesta)
 
 func recibir_par_motor(torque_total: float) -> void:
 	if llantas_motrices.is_empty():

@@ -1,0 +1,19 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://daadugxgsdujg"]
+
+[ext_resource type="Texture2D" uid="uid://cd43s7dagjv0r" path="res://materiales/Mapa/Aceras/aceras.png" id="1_ak122"]
+[ext_resource type="Texture2D" uid="uid://bia550httftmr" path="res://materiales/Mapa/Aceras/atlas_aceras_PBR_AO.png" id="2_wyint"]
+[ext_resource type="Texture2D" uid="uid://ci6otbs8ig0po" path="res://materiales/Mapa/Aceras/atlas_aceras_PBR_HEIGHT.png" id="3_0q0tm"]
+[ext_resource type="Texture2D" uid="uid://kq2nrmako2ij" path="res://materiales/Mapa/Aceras/atlas_aceras_PBR_NORMAL.png" id="4_c4f0l"]
+[ext_resource type="Texture2D" uid="uid://bgs7wspnsrus3" path="res://materiales/Mapa/Aceras/atlas_aceras_PBR_ROUGHNESS.png" id="5_mky4x"]
+
+[resource]
+albedo_texture = ExtResource("1_ak122")
+roughness = 0.78
+roughness_texture = ExtResource("5_mky4x")
+normal_enabled = true
+normal_scale = 9.06
+normal_texture = ExtResource("4_c4f0l")
+ao_enabled = true
+ao_texture = ExtResource("2_wyint")
+heightmap_scale = 0.963
+heightmap_texture = ExtResource("3_0q0tm")

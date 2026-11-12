@@ -44,6 +44,9 @@ func _ready() -> void:
 	_actualizar_material()
 
 func _input(event: InputEvent) -> void:
+	var focus_owner = get_viewport().gui_get_focus_owner() if get_viewport() else null
+	if focus_owner and (focus_owner is LineEdit or focus_owner is TextEdit):
+		return
 	# Boton para reparar el parabrisas con fines de pruebas (tecla P)
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_P:

@@ -200,7 +200,7 @@ func _process(_delta: float) -> void:
 	if not _p or not _mat:
 		return
 
-	var iv = InputVehiculo
+	var iv = get_node_or_null("/root/InputVehiculo") if is_inside_tree() else null
 	if not is_instance_valid(iv):
 		return
 

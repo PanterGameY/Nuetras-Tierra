@@ -11,7 +11,7 @@ func _ready() -> void:
 	add_child(viewport)
 
 	# Instance CelularUI
-	var celular_ui = load("res://escenas/gui/movil/CelularUI.tscn").instantiate()
+	var celular_ui = load("res://interfaz/celular/sistema/CelularUI.tscn").instantiate()
 	
 	# Set start properties before adding to tree
 	celular_ui.current_app = "waze"

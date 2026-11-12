@@ -5,7 +5,7 @@ extends Node3D
 # ═══════════════════════════════════════════════════════════════════════
 
 @export_group("Configuración")
-@export var config: MotorConfig = null
+@export var config: Resource = null
 
 @export_group("Asistencias")
 @export var auto_hold_habilitado: bool = true
@@ -18,6 +18,35 @@ extends Node3D
 @export var nivel_combustible_l: float = 200.0
 @export var consumo_l_por_s_a_full: float = 0.02
 
+@export_group("Física Analítica Pesada (Rigs of Rods)")
+@export var habilitar_fisica_analitica: bool = true
+@export var torque_max_nm: float = 2400.0         ## Torque máximo (Nm) típicamente 2000-2800 en camiones pesados
+@export var rpm_idle: float = 600.0              ## Ralentí
+@export var rpm_min_trabajo: float = 1100.0      ## Entrada de turbo
+@export var rpm_max: float = 2300.0              ## Corte de inyección diésel pesado
+@export var rpm_stall: float = 350.0             ## Calado de motor
+@export var inercia_volante: float = 18.0        ## Inercia rotacional del cigüeñal (kg*m^2)
+@export var relaciones_caja: Array[float] = [
+	-13.8,  # R
+	0.0,    # N
+	14.4,   # 1ra
+	10.8,   # 2da
+	7.8,    # 3ra
+	5.7,    # 4ta
+	4.1,    # 5ta
+	3.0,    # 6ta
+	2.2,    # 7ma
+	1.6,    # 8va
+	1.2,    # 9na
+	0.86    # 10ma (Sobremarcha)
+]
+@export var relacion_diferencial: float = 3.73
+@export var tiempo_cambio_analitico: float = 0.55 ## Segundos que toma engranar marcha neumática
+@export var torque_jake_max: float = 2100.0      ## Capacidad máxima de absorción del freno de compresión
+@export var fuerza_frenos_servicio: float = 32000.0 ## Freno neumático de servicio (N)
+var estado_embrague: float = 1.0 # 0.0 = desacoplado, 1.0 = acoplado
+var reloj_cambio: float = 0.0
+
 @export_group("Debug")
 @export var debug_transmission: bool = false
 
@@ -26,8 +55,6 @@ var rpm_motor: float = 0.0
 var par_actual: float = 0.0
 var freno_suavizado: float = 0.0
 var gas_suavizado: float = 0.0
-var audio_freno_motor: AudioStreamPlayer = null
-var stream_freno_motor: AudioStream = null
 var freno_motor_activo: bool = false
 var _enganche_node: Node = null
 var _con_remolque: bool = false
@@ -47,34 +74,38 @@ var _shift_target_gear: int = -1
 @onready var llantas_ctrl: Node3D = null
 @onready var rpm_logic: ControladorRPM = $ControladorRPM
 
+var _velocidad_marchas: Array = [20.0, 35.0, 50.0, 65.0, 80.0, 100.0, 120.0]
 
 func _ready() -> void:
-	# Cargar el sonido de freno de motor una sola vez al inicio para evitar lag/demora al sonar
-	stream_freno_motor = load("res://recursos/sonidos_vehiculo/freno_motor/FrenoM1.wav")
-	if stream_freno_motor:
-		if "loop_mode" in stream_freno_motor:
-			stream_freno_motor.set("loop_mode", 1) # LOOP_FORWARD es 1 en Godot 4
-		elif "loop" in stream_freno_motor:
-			stream_freno_motor.set("loop", true)
-	
 	if coche:
 		llantas_ctrl = coche.get_node_or_null("ControladorLlantas")
 		if not llantas_ctrl:
 			llantas_ctrl = coche.get_node_or_null("ControladosRuedas")
 		_enganche_node = coche.find_child("Enganche", true, false)
+	# Propagar config al controlador de RPM para que use los límites correctos del vehículo
+	if rpm_logic and config:
+		rpm_logic.config = config
+	_actualizar_velocidad_marchas()
 
 func _get_iv() -> Node:
-	# Intentar obtener el singleton/autoload por su nombre en /root
-	var n = get_node_or_null("/root/InputVehiculo")
-	if n:
-		return n
-	# Si el autoload está disponible como variable global (project autoload), úsala
-	if is_instance_valid(InputVehiculo):
-		return InputVehiculo
-	return null
+	if not is_inside_tree():
+		return null
+	return get_node_or_null("/root/InputVehiculo")
 
-func set_config(cfg: MotorConfig) -> void:
+func _actualizar_velocidad_marchas() -> void:
+	if config:
+		var arr = config.get("velocidad_marchas")
+		if arr != null and not arr.is_empty():
+			_velocidad_marchas = arr
+		else:
+			_velocidad_marchas = [20.0, 35.0, 50.0, 65.0, 80.0, 100.0, 120.0]
+
+func set_config(cfg: Resource) -> void:
 	config = cfg
+	# Propagar al ControladorRPM para que use los límites correctos (rpm_minimas, rpm_maximas)
+	if rpm_logic:
+		rpm_logic.config = cfg
+	_actualizar_velocidad_marchas()
 
 func set_info_combustible(tipo: String, capacidad_l: float, nivel_l: float) -> void:
 	tipo_combustible = tipo
@@ -90,7 +121,7 @@ func _physics_process(delta: float) -> void:
 	if not config or not coche or not coche.get("activo") or not llantas_ctrl:
 		return
 
-	var c: MotorConfig = config
+	var c: Resource = config
 
 	# ── Velocidad actual ─────────────────────────────────────────────
 	var vel_local: Vector3 = coche.global_transform.basis.inverse() * coche.linear_velocity
@@ -150,8 +181,22 @@ func _physics_process(delta: float) -> void:
 	# ── Procesar cambio ──────────────────────────────────────────────
 	if _shifting:
 		_shift_timer -= delta
-		if _shift_timer <= 0.0:
+		reloj_cambio += delta
+		var dur_cambio: float = tiempo_cambio_analitico if habilitar_fisica_analitica else (config.tiempo_cambio if config else 0.5)
+		var mitad_tiempo: float = dur_cambio * 0.5
+		if reloj_cambio < mitad_tiempo:
+			var t_norm: float = reloj_cambio / maxf(mitad_tiempo, 0.001)
+			estado_embrague = pow(1.0 - t_norm, 2.0)
+		else:
+			_current_gear = _shift_target_gear
+			var t_norm: float = (reloj_cambio - mitad_tiempo) / maxf(mitad_tiempo, 0.001)
+			estado_embrague = sqrt(clampf(t_norm, 0.0, 1.0))
+
+		if _shift_timer <= 0.0 or reloj_cambio >= dur_cambio:
 			_completar_cambio()
+	else:
+		estado_embrague = 1.0
+		reloj_cambio = 0.0
 
 	# ── Evaluar cambio automático (solo con gas pisado) ──────────────
 	if en_drive and motor_on and not _shifting and gas > 0.1:
@@ -172,20 +217,27 @@ func _physics_process(delta: float) -> void:
 	var frenando_motor = false
 	if motor_on and en_drive and iv and iv.get("freno_motor") and pedal_raw < 0.05 and coche.linear_velocity.length() > 0.1:
 		frenando_motor = true
-		var factor_rpm = clamp(rpm_motor / c.rpm_maximas, 0.2, 1.0)
-		# Freno de motor sin factor_peso_rep para una desaceleración suave y realista
-		var fuerza_freno_motor = -c.fuerza_motor * 0.35 * factor_rpm
-		var mult_marcha: float = 1.0
-		var total = c.velocidad_marchas.size()
-		if total > 1:
-			mult_marcha = lerpf(1.0, 0.25, float(_current_gear) / float(total - 1))
-		fuerza = fuerza_freno_motor * mult_marcha
+		if habilitar_fisica_analitica:
+			var idx_m = clamp(_current_gear + 2, 2, relaciones_caja.size() - 1)
+			var ratio_caja = absf(relaciones_caja[idx_m]) * relacion_diferencial
+			var factor_rpm = clampf((rpm_motor - rpm_idle) / maxf(rpm_max - rpm_idle, 1.0), 0.35, 1.0)
+			var torque_retardo = (torque_jake_max + (torque_max_nm * 0.20)) * factor_rpm * ratio_caja * 0.35
+			fuerza = -signf(speed_ms) * torque_retardo
+		else:
+			var factor_rpm = clamp(rpm_motor / c.rpm_maximas, 0.2, 1.0)
+			# Freno de motor sin factor_peso_rep para una desaceleración suave y realista
+			var fuerza_freno_motor = -c.fuerza_motor * 0.35 * factor_rpm
+			var mult_marcha: float = 1.0
+			var total = _velocidad_marchas.size()
+			if total > 1:
+				mult_marcha = lerpf(1.0, 0.25, float(_current_gear) / float(total - 1))
+			fuerza = fuerza_freno_motor * mult_marcha
 
 	freno_motor_activo = frenando_motor
-	_actualizar_sonido_freno_motor(frenando_motor)
-	
-	if iv and iv.get("freno_motor") and Engine.get_frames_drawn() % 30 == 0:
-		print("[Motor Debug] Freno Motor Activado | motor_on:", motor_on, " | en_drive:", en_drive, " | pedal:", pedal_raw, " | vel:", coche.linear_velocity.length() if coche else 0.0, " | frenando:", frenando_motor)
+	# Delegar el sonido de freno de motor al nodo Sonidos (respeta el stream asignado en escena)
+	var _sonidos = get_node_or_null("Sonidos")
+	if _sonidos and _sonidos.has_method("set_freno_motor"):
+		_sonidos.set_freno_motor(frenando_motor)
 
 	# ── Aplicar fuerza a las ruedas ──────────────────────────────────
 	var par_motor_aplicar = fuerza
@@ -215,20 +267,24 @@ func _physics_process(delta: float) -> void:
 
 # ═══════════════════════════════════════════════════════════════════════
 
-func _evaluar_cambio(c: MotorConfig, speed_kmh: float) -> void:
-	var total: int = c.velocidad_marchas.size()
+func _evaluar_cambio(_c, speed_kmh: float) -> void:
+	var total: int = _velocidad_marchas.size()
 	if total == 0 or _current_gear >= total:
 		return
 
-	var velocidad_objetivo: float = c.velocidad_marchas[_current_gear]
+	var velocidad_objetivo: float = _velocidad_marchas[_current_gear]
 	# Subir marcha si el camión alcanza al menos el 95% de la velocidad objetivo de la marcha actual.
-	# Esto permite exprimir todo el torque del motor y evitar subidas de marcha prematuras.
-	if speed_kmh >= velocidad_objetivo * 0.95:
+	# Con remolque pesado, debe estirar más la marcha (98.5%) antes de cambiar para no perder impulso.
+	var factor_umbral_cambio: float = 0.95
+	if coche and coche.has_method("obtener_peso_remolque") and coche.obtener_peso_remolque() > 6000.0:
+		factor_umbral_cambio = 0.985
+
+	if speed_kmh >= velocidad_objetivo * factor_umbral_cambio:
 		if _current_gear < total - 1:
 			_iniciar_cambio(_current_gear + 1)
 
 
-func _evaluar_bajar_marcha(c: MotorConfig, speed_kmh: float) -> void:
+func _evaluar_bajar_marcha(c, speed_kmh: float) -> void:
 	if _current_gear <= 0:
 		return
 
@@ -237,14 +293,16 @@ func _evaluar_bajar_marcha(c: MotorConfig, speed_kmh: float) -> void:
 	if _time_in_gear < 0.8:
 		return
 
-	var velocidad_marcha_anterior: float = c.velocidad_marchas[_current_gear - 1]
+	var velocidad_marcha_anterior: float = _velocidad_marchas[_current_gear - 1]
 	
 	# Si estamos acelerando (gas > 0.15) pero la velocidad cae, bajamos marcha antes (96%)
-	# para recuperar torque rápido en pendientes.
+	# para recuperar torque rápido en pendientes. Con remolque pesado, el límite es 98%
 	# También forzamos el rebaje si las RPM caen cerca de ralentí (evita ahogarse en subida)
 	var iv = _get_iv()
 	var gas_in: float = iv.gas if iv else 0.0
 	var limite_bajada = 0.96 if gas_in > 0.15 else 0.90
+	if coche and coche.has_method("obtener_peso_remolque") and coche.obtener_peso_remolque() > 6000.0:
+		limite_bajada = 0.98
 	
 	if speed_kmh < velocidad_marcha_anterior * limite_bajada or rpm_motor < c.rpm_minimas + 80.0:
 		_iniciar_cambio(_current_gear - 1)
@@ -253,8 +311,9 @@ func _evaluar_bajar_marcha(c: MotorConfig, speed_kmh: float) -> void:
 func _iniciar_cambio(marcha_destino: int) -> void:
 	_shift_target_gear = marcha_destino
 	_shifting          = true
-	_shift_timer       = config.tiempo_cambio if config else 0.5
+	_shift_timer       = tiempo_cambio_analitico if habilitar_fisica_analitica else (config.tiempo_cambio if config else 0.5)
 	_time_in_gear      = 0.0
+	reloj_cambio       = 0.0
 
 	var sonidos = get_node_or_null("Sonidos")
 	if sonidos and sonidos.has_method("set_shifting"):
@@ -264,6 +323,8 @@ func _iniciar_cambio(marcha_destino: int) -> void:
 func _completar_cambio() -> void:
 	_shifting = false
 	_shift_timer = 0.0
+	reloj_cambio = 0.0
+	estado_embrague = 1.0
 	_current_gear = _shift_target_gear
 	_shift_target_gear = -1
 
@@ -275,19 +336,59 @@ func _completar_cambio() -> void:
 		var gas_val: float = 0.0
 		if iv:
 			gas_val = clamp(iv.gas, 0.0, 1.0)
-		sonidos.reproducir_cambio(_current_gear, config.velocidad_marchas.size(), gas_val, 0.5)
+		sonidos.reproducir_cambio(_current_gear, _velocidad_marchas.size(), gas_val, 0.5)
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # CÁLCULO DE FUERZA
 # ═══════════════════════════════════════════════════════════════════════
 
-func _calcular_fuerza_drive(c: MotorConfig, gas: float, speed_kmh: float) -> float:
-	var total: int = c.velocidad_marchas.size()
+# FÓRMULA DE CURVA DE TORQUE DIÉSEL (RoR Spline Approximation)
+func _calcular_factor_torque_diesel(rpm: float) -> float:
+	if rpm < rpm_stall:
+		return 0.1
+	elif rpm < rpm_idle:
+		return lerpf(0.3, 0.75, (rpm - rpm_stall) / maxf(rpm_idle - rpm_stall, 1.0))
+	elif rpm <= 1800.0:
+		# Meseta de torque máximo diésel entre 1100 y 1800 RPM
+		return 1.0
+	elif rpm <= rpm_max:
+		# Caída de torque suave post-meseta
+		return lerpf(1.0, 0.70, (rpm - 1800.0) / maxf(rpm_max - 1800.0, 1.0))
+	else:
+		# Corte por inyección
+		return clampf(lerpf(0.70, 0.0, (rpm - rpm_max) / 250.0), 0.0, 1.0)
+
+func _calcular_fuerza_drive(c: Resource, gas: float, speed_kmh: float) -> float:
+	var total: int = _velocidad_marchas.size()
 	if total == 0 or _current_gear >= total:
 		return 0.0
 
-	var velocidad_objetivo: float = c.velocidad_marchas[_current_gear]
+	var velocidad_objetivo: float = _velocidad_marchas[_current_gear]
+
+	if habilitar_fisica_analitica:
+		var idx_marcha = clamp(_current_gear + 2, 2, relaciones_caja.size() - 1)
+		var ratio_caja = relaciones_caja[idx_marcha] * relacion_diferencial
+		var factor_diesel = _calcular_factor_torque_diesel(rpm_motor)
+		var fuerza_analitica: float = torque_max_nm * factor_diesel * gas * ratio_caja * estado_embrague
+		
+		# Compensación por remolque acoplado
+		if _con_remolque and coche and coche.has_method("obtener_peso_remolque"):
+			var p_rem = coche.obtener_peso_remolque()
+			if p_rem > 5000.0:
+				fuerza_analitica *= (1.0 + clampf(p_rem / 40000.0, 0.0, 0.50))
+		
+		if speed_kmh >= velocidad_objetivo:
+			fuerza_analitica *= 0.15
+
+		var freno: float = 0.0
+		var iv = _get_iv()
+		if iv:
+			freno = clamp(iv.freno, 0.0, 1.0)
+		if freno > 0.05:
+			fuerza_analitica *= clamp(1.0 - freno * 1.2, 0.0, 1.0)
+
+		return fuerza_analitica
 
 	# Fuerza base escalada por marcha (mayor torque en marchas bajas, menos torque en marchas altas)
 	var mult_marcha: float = 1.0
@@ -296,32 +397,43 @@ func _calcular_fuerza_drive(c: MotorConfig, gas: float, speed_kmh: float) -> flo
 		# Esto evita que el camión se quede sin fuerza y se tranque a 40-45 km/h
 		mult_marcha = lerpf(1.0, 0.70, float(_current_gear) / float(total - 1))
 	
-	# Escalar la fuerza según el peso del chasis, pero dosificando más fuerza principalmente en subidas
-	# para evitar aceleraciones exageradas de deportivo en plano mientras mantenemos fuerza de arrastre y trepada
+	# Escalar la fuerza según el peso total del conjunto (camión + remolque)
 	var factor_peso_rep: float = 1.0
+	var masa_total_arrastre: float = coche.mass if coche else 1400.0
 	if coche:
-		var peso_base = max(coche.mass / 1400.0, 1.0)
-		var inclinacion: float = 0.0
+		if coche.has_method("obtener_peso_remolque"):
+			var p_rem: float = coche.obtener_peso_remolque()
+			if p_rem > 0.0:
+				masa_total_arrastre += p_rem
+		elif _con_remolque and _enganche_node:
+			var remoto = _enganche_node.get("enganche_remoto")
+			if remoto and _enganche_node.has_method("_buscar_cuerpo"):
+				var b = _enganche_node._buscar_cuerpo(remoto)
+				if b and "mass" in b:
+					masa_total_arrastre += b.mass
+
+		var peso_base = max(masa_total_arrastre / 1400.0, 1.0)
 		var dir_adelante = -coche.global_transform.basis.z
-		inclinacion = dir_adelante.y # Positivo en subidas, negativo en bajadas
-		var inclinacion_subida = clamp(inclinacion, 0.0, 0.5)
-		
-		# En plano (inclinación = 0) la fuerza es moderada (se escala solo un 30% del peso para simular torque de camión pesado sin acelerar como deportivo)
-		# En subidas, se escala gradualmente hasta el 100% del peso para vencer la gravedad
-		factor_peso_rep = lerpf(1.0 + (peso_base - 1.0) * 0.30, peso_base, inclinacion_subida * 3.5)
+		var inclinacion_subida: float = clampf(dir_adelante.dot(Vector3.UP), 0.0, 1.0)
+		# Escala de fuerza en función del peso total arrastrado:
+		# En marchas bajas (1ª y 2ª), el camión cuenta con suficiente torque para arrancar
+		# con soltura llevando 20, 30 y 40 toneladas, y arrastrar con fuerza 50 toneladas.
+		var mult_torque_peso: float = 0.88 if _current_gear <= 1 else 0.70
+		factor_peso_rep = lerpf(1.0 + (peso_base - 1.0) * mult_torque_peso, peso_base, inclinacion_subida * 3.0)
 	
 	var fuerza: float = c.fuerza_motor * gas * mult_marcha * factor_peso_rep
 
 	# Simular el acople del convertidor de torque/embrague a baja velocidad en marchas bajas
 	if _current_gear == 0 and speed_kmh < 15.0:
-		var factor_acople: float = lerpf(0.55, 1.0, speed_kmh / 15.0)
+		var acople_base: float = 0.80 if _con_remolque else 0.60
+		var factor_acople: float = lerpf(acople_base, 1.0, speed_kmh / 15.0)
 		fuerza *= factor_acople
 
 	# Si ya alcanzó la velocidad objetivo, mantener velocidad
 	if speed_kmh >= velocidad_objetivo:
 		return fuerza * 0.1 
 
-	# Boost por remolque
+	# Multiplicador de potencia por remolque
 	if _con_remolque:
 		fuerza *= c.fuerza_remolque_mult
 
@@ -340,10 +452,21 @@ func _calcular_fuerza_drive(c: MotorConfig, gas: float, speed_kmh: float) -> flo
 	return fuerza
 
 
-func _calcular_fuerza_reversa(c: MotorConfig, gas: float, speed_kmh: float) -> float:
+func _calcular_fuerza_reversa(c: Resource, gas: float, speed_kmh: float) -> float:
 	# Limitar velocidad en reversa
-	if speed_kmh >= c.velocidad_max_reversa:
+	var max_rev = c.get("velocidad_max_reversa")
+	if max_rev == null:
+		max_rev = 15.0
+	if speed_kmh >= max_rev:
 		return 0.0
+
+	if habilitar_fisica_analitica:
+		var ratio_rev = relaciones_caja[0] * relacion_diferencial
+		var factor_diesel = _calcular_factor_torque_diesel(rpm_motor)
+		var torque_motor = torque_max_nm * factor_diesel * gas * ratio_rev * estado_embrague
+		if _con_remolque:
+			torque_motor *= 1.2
+		return torque_motor
 
 	# Fuerza negativa para ir hacia atrás - RESTAURADA
 	var factor_peso_rep: float = 1.0
@@ -361,7 +484,7 @@ func _calcular_fuerza_reversa(c: MotorConfig, gas: float, speed_kmh: float) -> f
 # RPM VISUAL
 # ═══════════════════════════════════════════════════════════════════════
 
-func _actualizar_rpm_visual(c: MotorConfig, speed_kmh: float, gas: float,
+func _actualizar_rpm_visual(c: Resource, speed_kmh: float, gas: float,
 		motor_on: bool, en_neutro: bool) -> void:
 
 	if not rpm_logic:
@@ -372,6 +495,29 @@ func _actualizar_rpm_visual(c: MotorConfig, speed_kmh: float, gas: float,
 		rpm_logic.set_rpm(rpm_motor, 0.0)
 		return
 
+	if habilitar_fisica_analitica:
+		var delta_t = get_physics_process_delta_time()
+		if en_neutro:
+			var torque_comb = torque_max_nm * _calcular_factor_torque_diesel(rpm_motor) * gas
+			var torque_fric = (torque_max_nm * 0.20) * (rpm_motor / rpm_max) * (1.0 - gas)
+			var delta_rpm = ((torque_comb - torque_fric) / inercia_volante) * delta_t * 9.54929
+			rpm_motor = clampf(rpm_motor + delta_rpm, rpm_idle, rpm_max + 200.0)
+		elif _shifting:
+			rpm_motor = lerpf(rpm_motor, lerpf(1150.0, 1380.0, gas), clampf(delta_t * 8.0, 0.0, 1.0))
+		else:
+			var idx_m = clamp(_current_gear + 2, 2, relaciones_caja.size() - 1)
+			var ratio_rpm = absf(relaciones_caja[idx_m]) * relacion_diferencial
+			var speed_ms = (speed_kmh / 3.6)
+			var radio_r = 0.52
+			var vel_rueda_rad = (speed_ms / maxf(radio_r, 0.1))
+			var rpm_transmision = vel_rueda_rad * ratio_rpm * 9.54929
+			var rpm_obj = clampf(maxf(rpm_idle, rpm_transmision) + (gas * 140.0), rpm_idle, rpm_max)
+			var vel_inercia = 10.0 * (18.0 / maxf(inercia_volante, 1.0))
+			rpm_motor = lerpf(rpm_motor, rpm_obj, clampf(delta_t * vel_inercia, 0.0, 1.0))
+		
+		rpm_logic.set_rpm(rpm_motor, 0.0)
+		return
+
 	var rpm_obj: float
 
 	if en_neutro:
@@ -379,21 +525,21 @@ func _actualizar_rpm_visual(c: MotorConfig, speed_kmh: float, gas: float,
 	elif _shifting:
 		rpm_obj = c.rpm_minimas + 200.0
 	else:
-		var total: int = c.velocidad_marchas.size()
+		var total: int = _velocidad_marchas.size()
 		if total > 0 and _current_gear < total:
-			var vel_max_marcha: float = c.velocidad_marchas[_current_gear]
+			var vel_max_marcha: float = _velocidad_marchas[_current_gear]
 			var ratio: float = clamp(speed_kmh / max(vel_max_marcha, 1.0), 0.0, 1.0)
 			rpm_obj = c.rpm_minimas + ratio * (c.rpm_maximas - c.rpm_minimas)
 		else:
 			rpm_obj = c.rpm_minimas
 
-	rpm_motor = lerp(rpm_motor, rpm_obj, 0.1)
-	rpm_logic.set_rpm(rpm_motor, 0.0 if _shifting else get_physics_process_delta_time())
+	rpm_motor = lerp(rpm_motor, rpm_obj, 0.12)
+	rpm_logic.set_rpm(rpm_motor, 0.0)
 
 
-# ═══════════════════════════════════════════════════════════════════════
+# -----------------------------------------------------------------------
 # COMBUSTIBLE
-# ═══════════════════════════════════════════════════════════════════════
+# -----------------------------------------------------------------------
 
 func _procesar_combustible(delta: float, motor_on: bool, gas: float) -> void:
 	if not motor_on:
@@ -420,31 +566,11 @@ func _procesar_combustible(delta: float, motor_on: bool, gas: float) -> void:
 			sd.reproducir_apagar()
 
 
-# ═══════════════════════════════════════════════════════════════════════
+# -----------------------------------------------------------------------
 # UTILIDADES
-# ═══════════════════════════════════════════════════════════════════════
+# -----------------------------------------------------------------------
 
 func _get_rigidbody_parent(n: Node) -> RigidBody3D:
 	if n == null or n is RigidBody3D:
 		return n
 	return _get_rigidbody_parent(n.get_parent())
-
-
-func _actualizar_sonido_freno_motor(debe_sonar: bool) -> void:
-	if debe_sonar:
-		if not audio_freno_motor:
-			audio_freno_motor = AudioStreamPlayer.new()
-			audio_freno_motor.stream = stream_freno_motor
-			audio_freno_motor.volume_db = 16.0 # Máximo volumen global (duro duro)
-			audio_freno_motor.bus = &"Master"
-			add_child(audio_freno_motor)
-		
-		# Modula el pitch según las RPM del motor
-		if config and config.rpm_maximas > 0.0:
-			audio_freno_motor.pitch_scale = lerp(0.65, 1.35, rpm_motor / config.rpm_maximas)
-		
-		if not audio_freno_motor.playing:
-			audio_freno_motor.play()
-	else:
-		if audio_freno_motor and audio_freno_motor.playing:
-			audio_freno_motor.stop()

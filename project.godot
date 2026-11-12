@@ -11,22 +11,23 @@ config_version=5
 [application]
 
 config/name="NuestraTierra2.0"
-run/main_scene="uid://c6mce6jf8tm5m"
+run/main_scene="uid://b8wm3nku8u1p"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
 [autoload]
 
-InputVehiculo="*uid://kcwmcprswmtr"
-DatosUsuario="*res://Datos/DatosUsuario.gd"
-MenuSystem="*res://escenas/gui/MenuSystem.gd"
+InputVehiculo="*res://codigo/entidades/vehiculo/InputVehiculo.gd"
+DatosUsuario="*res://Datos/usuario/DatosUsuario.gd"
+MenuSystem="*res://interfaz/sistema/MenuSystem.gd"
 Firebase="*uid://1tu2hgwphuxb"
-SettingsManager="*res://Scripts/SettingsManager.gd"
-NotificationManager="*res://escenas/gui/NotificationManager.gd"
-FpScontador="*uid://bgt6fnnvasd2k"
-BetaPopupManager="*uid://dk2tnrs1f11tc"
-Network="*res://Scripts/Network.gd"
-PlayersManager="*res://Scripts/PlayersManager.gd"
+SettingsManager="*res://codigo/nucleo/sistema/SettingsManager.gd"
+FpScontador="*res://codigo/nucleo/sistema/FPScontador.gd"
+BetaPopupManager="*res://codigo/nucleo/sistema/BetaPopupManager.gd"
+Network="*res://codigo/nucleo/red/Network.gd"
+PlayersManager="*res://codigo/nucleo/red/PlayersManager.gd"
+GestorVehiculos="*res://codigo/entidades/vehiculo/GestorVehiculos.gd"
+GestorAnuncios="*res://codigo/sistemas/anuncios/GestorAnuncios.gd"
 
 [display]
 
@@ -34,10 +35,15 @@ window/size/viewport_width=2392
 window/size/viewport_height=1080
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/dpi/allow_hidpi=false
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/GodotFirebaseAndroid/plugin.cfg", "res://addons/admob/plugin.cfg", "res://addons/sky_3d/plugin.cfg")
+enabled=PackedStringArray("res://addons/GodotFirebaseAndroid/plugin.cfg", "res://addons/admob/plugin.cfg")
+
+[global_group]
+
+Vehiculo=""
 
 [input]
 
@@ -256,6 +262,10 @@ first_person={
 
 pointing/emulate_touch_from_mouse=true
 
+[internationalization]
+
+locale/translations=PackedStringArray("res://addons/admob/gdscript/sample/translations/admob_sample.en.translation", "res://addons/admob/gdscript/sample/translations/admob_sample.pt_BR.translation", "res://addons/admob/gdscript/sample/translations/admob_sample.es.translation", "res://addons/admob/gdscript/sample/translations/admob_sample.zh_CN.translation", "res://addons/admob/gdscript/sample/translations/admob_sample.ja.translation")
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
@@ -264,4 +274,7 @@ pointing/emulate_touch_from_mouse=true
 
 renderer/rendering_method="mobile"
 textures/vram_compression/import_etc2_astc=true
+lights_and_shadows/directional_shadow/size=1024
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1
 occlusion_culling/use_occlusion_culling=true
+viewport/scaling_3d/mode=0

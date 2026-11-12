@@ -1,0 +1,23 @@
+[gd_resource type="StandardMaterial3D" format=3 uid="uid://cnx76xoaovup"]
+
+[ext_resource type="Texture2D" uid="uid://bqubki6yb6cfb" path="res://materiales/Mapa/ground/Ground103_1K-JPG_NormalDX.jpg" id="4_4n07d"]
+[ext_resource type="Texture2D" uid="uid://dmen80mjfln3k" path="res://materiales/Mapa/ground/Ground103_1K-JPG_AmbientOcclusion.jpg" id="AmbientOcclusion"]
+[ext_resource type="Texture2D" uid="uid://bhbvo5iwty5m6" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Color.jpg" id="Color"]
+[ext_resource type="Texture2D" uid="uid://cvh5gfc432ydo" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Displacement.jpg" id="Displacement"]
+[ext_resource type="Texture2D" uid="uid://cnehrasvyylbq" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Roughness.jpg" id="Roughness"]
+
+[resource]
+albedo_texture = ExtResource("Color")
+roughness = 0.48
+roughness_texture = ExtResource("Roughness")
+roughness_texture_channel = 4
+normal_enabled = true
+normal_scale = 4.2
+normal_texture = ExtResource("4_4n07d")
+ao_enabled = true
+ao_light_affect = 0.59
+ao_texture = ExtResource("AmbientOcclusion")
+ao_texture_channel = 4
+heightmap_enabled = true
+heightmap_scale = 1.333
+heightmap_texture = ExtResource("Displacement")

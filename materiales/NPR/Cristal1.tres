@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://6gpc03ydyfup"]
+
+[ext_resource type="Shader" uid="uid://dpatmn5m5bqa4" path="res://materiales/NPR/Cristal1.gdshader" id="1_642dn"]
+[ext_resource type="Texture2D" uid="uid://s13aadjrbj3" path="res://materiales/imagenes/cristal_roto1.jpg" id="2_7fbqt"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_642dn")
+shader_parameter/base_color = Color(0.03876, 0.09985284, 0.07016479, 0.53000003)
+shader_parameter/roughness = 0.02
+shader_parameter/metallic = 0.8
+shader_parameter/fresnel_power = 4.0
+shader_parameter/reflection_intensity = 0.3
+shader_parameter/ior = 1.52
+shader_parameter/dispersion = 0.018
+shader_parameter/sun_strip_thickness = 0.2
+shader_parameter/sun_strip_pos = 0.88
+shader_parameter/sun_strip_opacity = 0.75
+shader_parameter/sun_strip_color = Color(0, 0, 0, 0.8)
+shader_parameter/dirt_intensity = 0.08
+shader_parameter/crack_tex = ExtResource("2_7fbqt")
+shader_parameter/crack_scale = 1.0

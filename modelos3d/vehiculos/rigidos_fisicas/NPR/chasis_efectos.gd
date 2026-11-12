@@ -83,6 +83,10 @@ func _physics_process(delta: float) -> void:
 	var roll_from_centrif: float = rad_to_deg(atan(a_centrip / 9.81)) * factor_lateral
 	# Invertir signo para que el chasis se incline hacia el exterior de la curva
 	var target_roll: float = clamp(-(roll_from_accel + roll_from_centrif), -max_angulo, max_angulo)
+	# Reacción de torsión de cabina por alto par motor arrastrando carga pesada
+	if _coche and "_torsion_par_suave" in _coche:
+		var extra_twist = _coche.get("_torsion_par_suave") * 3.5
+		target_roll = clamp(target_roll + extra_twist, -max_angulo * 1.6, max_angulo * 1.6)
 	var target_pose = Vector3(target_pitch, 0, target_roll)
 
 	# 3. SISTEMA DE MUELLE (Spring-Damper)
@@ -94,17 +98,9 @@ func _physics_process(delta: float) -> void:
 	_vel_angular_chasis += aceleracion_chasis * delta
 	_rot_actual += _vel_angular_chasis * delta
 
-	# 4. VIBRACIÓN DEL MOTOR (Sutil y de alta frecuencia)
-	var rpm_factor = 0.0
-	if is_instance_valid(InputVehiculo):
-		rpm_factor = InputVehiculo.gas # O usa las RPM reales del script de motor
-	
-	_vibe_fuerza = lerp(_vibe_fuerza, vib_base + (vib_gas * rpm_factor), delta * suavizado_motor)
-	var motor_offset = Vector3(
-		randf_range(-_vibe_fuerza, _vibe_fuerza),
-		randf_range(-_vibe_fuerza, _vibe_fuerza),
-		0
-	)
+	# 4. VIBRACIÓN DEL MOTOR DESACTIVADA (Para turismos suaves y NPR sin temblor molesto)
+	_vibe_fuerza = 0.0
+	var motor_offset = Vector3.ZERO
 
 	# 5. APLICAR ROTACIÓN FINAL
 	rotation_degrees = _rot_actual + motor_offset

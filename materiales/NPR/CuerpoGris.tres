@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://pw6bvl3vqo77"]
+
+[ext_resource type="Shader" path="res://materiales/NPR/CuerpoGris.gdshader" id="1_x2ro8"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_x2ro8")
+shader_parameter/color_vehiculo = Color(0.7748788, 0.7372491, 0.76619613, 1)
+shader_parameter/metalicidad = 0.8
+shader_parameter/rugosidad = 0.2
+shader_parameter/brillo_laca = 1.0

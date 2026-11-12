@@ -55,17 +55,16 @@ float _fbm(vec2 p) {
 	return v;
 }
 
-// ─── Vértice: billboard esférico manual ──────────────────────────────────────
+// ─── Billboard ─────────────────────────────────────────────────────────────
 
 void vertex() {
-	// Cancela la rotación world-space y la reemplaza por los ejes de la cámara.
-	// Preserva la posición (MODEL_MATRIX[3]) y la escala de las partículas.
-	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(
-		INV_VIEW_MATRIX[0],
-		INV_VIEW_MATRIX[1],
-		INV_VIEW_MATRIX[2],
+	mat4 mat_world = mat4(
+		normalize(INV_VIEW_MATRIX[0]) * length(MODEL_MATRIX[0].xyz),
+		normalize(INV_VIEW_MATRIX[1]) * length(MODEL_MATRIX[1].xyz),
+		normalize(INV_VIEW_MATRIX[2]) * length(MODEL_MATRIX[2].xyz),
 		MODEL_MATRIX[3]
 	);
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat_world;
 }
 
 // ─── Fragmento ───────────────────────────────────────────────────────────────

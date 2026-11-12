@@ -70,9 +70,8 @@ void fragment() {
 
     // relleno uniforme según `amount` (mismo valor en todo el pedal)
     float amt = clamp(amount, 0.0, 1.0);
-    vec3 filled = baseGrad;
-    // ligero tinte hacia accent cuando se presiona (muy sutil)
-    filled = mix(filled, mix(filled, accent_color.rgb, 0.05), amt * 0.6);
+    // Relleno progresivo elegante: tinte de vidrio ahumado hacia el color de acento
+    vec3 filled = mix(baseGrad, mix(baseGrad, accent_color.rgb, 0.25), amt);
 
     // brillo
     float glossMask = pow(smoothstep(0.6, 1.0, localY), 2.0) * gloss_strength * inner;
@@ -82,17 +81,17 @@ void fragment() {
     rim *= 0.6;
 
     // color del outline cambia hacia `accent_color` según `amount`
-    vec3 outlineCol = mix(outline_color.rgb, accent_color.rgb, pow(amt, 0.9));
-    float outlineAlpha = mix(outline_color.a, 1.0, pow(amt, 0.9));
+    vec3 outlineCol = mix(outline_color.rgb, accent_color.rgb, clamp(pow(amt, 0.75) + 0.15, 0.0, 1.0));
+    float outlineAlpha = mix(outline_color.a, 1.0, pow(amt, 0.8));
 
     // composición
     vec3 color = filled;
     color += vec3(1.0) * glossMask * 0.12;
     // rim acentuado por accent color
-    color += accent_color.rgb * rim * amt * 0.9;
+    color += accent_color.rgb * rim * (0.25 + amt * 0.75);
     // glow exterior usando accent color
-    float glowMask = 1.0 - smoothstep(0.0, aa * 6.0, sd);
-    color += accent_color.rgb * glow * glowMask * amt * 0.6;
+    float glowMask = 1.0 - smoothstep(0.0, aa * 8.0, sd);
+    color += accent_color.rgb * glow * glowMask * (0.2 + amt * 0.8);
     // aplicar outline coloreado
     color = mix(color, outlineCol, outlineMask * outlineAlpha);
 
@@ -103,6 +102,6 @@ void fragment() {
     vec3 finalColor = mix(vec3(0.0), color, inside);
     finalColor = mix(finalColor, vec3(0.0), shadowMask * 0.6);
 
-    float finalAlpha = clamp(inside * alphaCenter, 0.0, 1.0);
+    float finalAlpha = clamp(inside * alphaCenter * COLOR.a, 0.0, 1.0);
     COLOR = vec4(finalColor, finalAlpha);
 }

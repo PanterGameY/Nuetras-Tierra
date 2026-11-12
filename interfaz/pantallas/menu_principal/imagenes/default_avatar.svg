@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14181f"/>
+      <stop offset="100%" stop-color="#0a0c0f"/>
+    </linearGradient>
+    <linearGradient id="metalRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e0ad47" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#c7cfd9" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#e0ad47" stop-opacity="0.8"/>
+    </linearGradient>
+    <linearGradient id="driverGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e2e8f0"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background Base -->
+  <rect x="2" y="2" width="124" height="124" rx="28" fill="url(#bgGrad)" stroke="url(#metalRim)" stroke-width="2.5"/>
+
+  <!-- Steering Wheel / Truck Glow Graphic in Backdrop -->
+  <circle cx="64" cy="64" r="38" fill="none" stroke="#e0ad47" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.35"/>
+
+  <!-- Stylized Driver Silhouette -->
+  <!-- Cap / Gorra de camionero -->
+  <path d="M46 47 C46 39, 54 33, 64 33 C74 33, 82 39, 82 47 C82 49, 78 51, 64 51 C50 51, 46 49, 46 47 Z" fill="#e0ad47"/>
+  <path d="M48 48 C55 52, 73 52, 86 48 C89 49, 90 52, 85 54 C74 57, 56 57, 47 54 C45 52, 46 49, 48 48 Z" fill="#c99632"/>
+
+  <!-- Driver Head -->
+  <ellipse cx="64" cy="56" rx="14" ry="15" fill="url(#driverGrad)"/>
+
+  <!-- Sunglasses / Gafas de aviador del conductor -->
+  <path d="M53 53 C53 50, 61 50, 62 53 C63 56, 61 59, 55 59 C53 59, 53 56, 53 53 Z" fill="#0f172a"/>
+  <path d="M66 53 C67 50, 75 50, 75 53 C75 56, 75 59, 69 59 C67 59, 66 56, 66 53 Z" fill="#0f172a"/>
+  <line x1="61" y1="53" x2="67" y2="53" stroke="#e0ad47" stroke-width="1.5"/>
+
+  <!-- Shoulders / Jacket -->
+  <path d="M30 106 C30 86, 44 76, 56 74 L64 82 L72 74 C84 76, 98 86, 98 106 Z" fill="url(#driverGrad)"/>
+  <!-- Collar / Amber trim -->
+  <path d="M56 74 L64 82 L72 74 L67 88 L61 88 Z" fill="#e0ad47"/>
+</svg>

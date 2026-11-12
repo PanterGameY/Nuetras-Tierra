@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg version="1.0" xmlns="http://www.w3.org/2000/svg"
+ width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <!-- Background Badge Circle -->
+  <circle cx="256" cy="256" r="236" fill="#121318" stroke="#ff5500" stroke-width="24" stroke-opacity="0.9" />
+  <circle cx="256" cy="256" r="216" fill="none" stroke="#ff3b00" stroke-width="6" stroke-dasharray="16 12" stroke-opacity="0.6" />
+
+  <!-- Coupling Mechanism Detaching -->
+  <g fill="#ffffff" transform="translate(0, 0)">
+    <!-- Tractor Hitch Base (Bottom Bracket) -->
+    <path d="M 176 340 L 336 340 C 348 340 358 350 358 362 L 358 382 C 358 394 348 404 336 404 L 176 404 C 164 404 154 394 154 382 L 154 362 C 154 350 164 340 176 340 Z"/>
+    
+    <!-- Kingpin release jaw left -->
+    <path d="M 188 230 C 188 214 200 202 216 202 L 230 202 L 230 320 L 198 320 C 192 320 188 316 188 310 Z"/>
+    <!-- Kingpin release jaw right -->
+    <path d="M 324 230 C 324 214 312 202 296 202 L 282 202 L 282 320 L 314 320 C 320 320 324 316 324 310 Z"/>
+    
+    <!-- Kingpin / Pin lifting UP out of hitch -->
+    <path d="M 242 130 L 270 130 C 276 130 280 134 280 140 L 280 260 C 280 266 276 270 270 270 L 242 270 C 236 270 232 266 232 260 L 232 140 C 232 134 236 130 242 130 Z"/>
+    <!-- Upward Release Arrow on Pin -->
+    <polygon points="256,70 294,124 268,124 268,160 244,160 244,124 218,124"/>
+
+    <!-- Left Separation Arrow -->
+    <polygon points="86,260 142,216 142,244 172,244 172,276 142,276 142,304"/>
+
+    <!-- Right Separation Arrow -->
+    <polygon points="426,260 370,216 370,244 340,244 340,276 370,276 370,304"/>
+  </g>
+</svg>

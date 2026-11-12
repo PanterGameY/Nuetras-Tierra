@@ -1,7 +1,20 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+.vs/
+.vscode/
 
-# Ignore large APK packages
+# Build and export outputs
+exports/
+compilaciones/
 *.apk
 *.idsig
+*.pck
+*.bak
+*.tmp
+desktop.ini
+Desktop.ini
+Thumbs.db
+window_dump.xml
+city_optimizer_distances.txt
+

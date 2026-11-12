@@ -1,0 +1,54 @@
+[gd_resource type="ShaderMaterial" format=3 uid="uid://bfkcfwaceyrww"]
+
+[ext_resource type="Shader" uid="uid://0nxdsdkigp2u" path="res://materiales/Mapa/Trocha/Trocha.gdshader" id="1_trocha"]
+[ext_resource type="Texture2D" uid="uid://bhbvo5iwty5m6" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Color.jpg" id="2_color"]
+[ext_resource type="Texture2D" uid="uid://spdue7femww0" path="res://materiales/Mapa/ground/Ground103_1K-JPG_NormalGL.jpg" id="3_normal"]
+[ext_resource type="Texture2D" uid="uid://cnehrasvyylbq" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Roughness.jpg" id="4_rough"]
+[ext_resource type="Texture2D" uid="uid://cvh5gfc432ydo" path="res://materiales/Mapa/ground/Ground103_1K-JPG_Displacement.jpg" id="5_height"]
+[ext_resource type="Texture2D" uid="uid://72g6h2xr3nni" path="res://materiales/Mapa/Trocha/trocha_cascajo_albedo.png" id="6_piedras_col"]
+[ext_resource type="Texture2D" uid="uid://dghhy1hb66vcn" path="res://materiales/Mapa/Trocha/trocha_cascajo_normal.png" id="7_piedras_nrm"]
+[ext_resource type="Texture2D" uid="uid://413lciud54kp" path="res://materiales/Mapa/Cesped/Grass004_2K_Color.jpg" id="8_maleza_col"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_trocha")
+shader_parameter/textura_tierra = ExtResource("2_color")
+shader_parameter/textura_normal = ExtResource("3_normal")
+shader_parameter/textura_rugosidad = ExtResource("4_rough")
+shader_parameter/textura_relieve = ExtResource("5_height")
+shader_parameter/textura_piedras = ExtResource("6_piedras_col")
+shader_parameter/textura_piedras_normal = ExtResource("7_piedras_nrm")
+shader_parameter/textura_maleza = ExtResource("8_maleza_col")
+shader_parameter/escala_uv = Vector2(0.35, 0.35)
+shader_parameter/escala_piedras_uv = Vector2(0.45, 0.45)
+shader_parameter/fuerza_normal = 2.2
+shader_parameter/activar_huellones = true
+shader_parameter/rotar_camino_90 = true
+shader_parameter/modo_via_procedural = false
+shader_parameter/desfase_lateral = 0.0
+shader_parameter/separacion_huellas = 0.44
+shader_parameter/ancho_rodada = 0.15
+shader_parameter/profundidad_huellas = 0.85
+shader_parameter/compactacion_huellas = 0.65
+shader_parameter/meandro_huellas = 0.015
+shader_parameter/fuerza_labrado_llantas = 0.65
+shader_parameter/activar_camellon_central = true
+shader_parameter/color_tierra_seca = Color(0.56, 0.46, 0.34, 1)
+shader_parameter/color_barro_humedo = Color(0.28, 0.18, 0.11, 1)
+shader_parameter/cantidad_barro = 0.28
+shader_parameter/escala_manchas_barro = 0.04
+shader_parameter/rugosidad_tierra_seca = 0.92
+shader_parameter/rugosidad_barro = 0.32
+shader_parameter/nivel_charcos = 0.32
+shader_parameter/color_agua_charco = Color(0.24, 0.18, 0.12, 1)
+shader_parameter/turbidez_agua = 0.85
+shader_parameter/humedad = 0.35
+shader_parameter/cantidad_piedras = 0.48
+shader_parameter/escala_piedras = 0.08
+shader_parameter/rugosidad_piedras = 0.82
+shader_parameter/activar_maleza_bordes = true
+shader_parameter/color_maleza = Color(0.48, 0.56, 0.24, 1)
+shader_parameter/ancho_maleza = 0.16
+shader_parameter/usar_coordenadas_mundo = false
+shader_parameter/distancia_detalle = 35.0
+shader_parameter/distancia_desvanecido = 120.0

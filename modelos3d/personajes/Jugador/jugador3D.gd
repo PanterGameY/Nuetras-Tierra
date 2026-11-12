@@ -7,13 +7,13 @@ const LERP_ROTACION = 10.0
 const LERP_ROTACION_1P = 3.5
 const ZOOM_MIN = 1.8
 const ZOOM_MAX = 6.5
-const FOV_1P = 85.0
+const FOV_1P = 72.0
 const TILT_MAX = 0.045
 const TILT_LERP = 8.0
 const BOB_FREQ_CAMINAR = 1.8
 const BOB_FREQ_CORRER = 2.6
-const BOB_AMP_Y = 0.06
-const BOB_AMP_X = 0.03
+const BOB_AMP_Y = 0.025
+const BOB_AMP_X = 0.015
 const COYOTE_TIME = 0.12
 const LERP_AGACHAR = 12.0
 const BLEND_LOCOMOCION = 0.2
@@ -54,7 +54,9 @@ const ANIM_CONDUCIR = "Conducir"
 @export var solo_touch_camara: bool = true
 @export_range(0.0001, 0.01, 0.0001) var sensibilidad_raton: float = 0.003
 @export_range(1.0, 10.0, 0.1) var zoom_default: float = 3.0
-@export_range(60.0, 100.0, 1.0) var fov_base: float = 70.0
+@export_range(50.0, 95.0, 1.0) var fov_base: float = 72.0
+## Aumento dinámico suave del FOV al correr (sprint)
+@export_range(0.0, 10.0, 0.5) var fov_sprint_boost: float = 3.5
 
 @export_group("Configuracion Vehiculo")
 @export var asiento_offset_pos: Vector3 = Vector3.ZERO
@@ -128,7 +130,7 @@ var esta_agachado: bool:
 		return _agachado
 	set(value):
 		_set_agachado(value)
-var _primera_persona = false
+var _primera_persona = true
 var _agachado_t = 0.0
 var _anim_lock = false
 var _reproduciendo_agachado_reverso = false
@@ -147,6 +149,8 @@ var _pos_objetivo: Vector3 = Vector3.ZERO
 var _rot_y_objetivo: float = 0.0
 var celular: CanvasLayer = null
 var inventario: CanvasLayer = null
+var item_en_mano_ctrl: ControladorItemEnMano = null
+var tienda_ui: TiendaUI = null
 var mano_izq_ik: SkeletonIK3D = null
 var mano_der_ik: SkeletonIK3D = null
 var caja_agarrada: Node3D = null
@@ -234,13 +238,19 @@ func _ready():
 		# Asegurar que la cámara del jugador NUNCA renderice la capa 2 (GPS/Minimapa)
 		_camera.cull_mask = _camera.cull_mask & ~2
 	
-	var root = get_tree().current_scene if get_tree() else self
+	var root = get_tree().current_scene if (get_tree() and get_tree().current_scene) else self
 	_camara_1p = root.find_child("PrimeraPersona", true, false)
+	if _camara_1p:
+		_camara_1p.fov = fov_base
 	if _camara_1p:
 		# Asegurar que la cámara de 1ª persona tampoco renderice la capa 2 (GPS/Minimapa)
 		_camara_1p.cull_mask = _camara_1p.cull_mask & ~2
 	_cabeza = root.find_child("Cabeza", true, false)
 	_collision_shape = _buscar_nodo_tipo(self, "CollisionShape3D")
+	
+	# Evitar que el jugador absorba velocidades de cuerpos cinemáticos (tráfico) y salga despedido
+	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
+	platform_floor_layers = 1
 	
 	_pos_objetivo = global_position
 	_rot_y_objetivo = rotation.y
@@ -259,28 +269,29 @@ func _ready():
 				_rot_y_objetivo = rotation.y
 				print("[jugador3D] Cargada posición guardada: ", global_position)
 
-	# Instanciar UIPie dinámicamente si no está presente en la escena
+	# Instanciar UIPie dinámicamente si no está presente en la escena (solo si somos autoridad local)
 	var ui_node = ui_pie if ui_pie else null
-	if not ui_node:
-		if get_tree() and get_tree().has_method("get_current_scene"):
-			var cs = get_tree().get_current_scene()
-			if cs:
-				ui_node = cs.find_child("UIpie", true, false)
-	
-	if not ui_node:
-		var uipie_scene_path = "res://escenas/UIpie/UiPie.tscn"
-		if ResourceLoader.exists(uipie_scene_path):
-			var uipie_scene = load(uipie_scene_path)
-			if uipie_scene:
-				ui_node = uipie_scene.instantiate()
-				# Añadirlo al root o a la escena actual para que no sea afectado por transformaciones 3D
-				if get_tree() and get_tree().current_scene:
-					get_tree().current_scene.add_child.call_deferred(ui_node)
-				else:
-					add_child(ui_node)
-				print("[jugador3D] UIpie instanciada e integrada por código dinámicamente.")
-		else:
-			printerr("[jugador3D] No se encontró el archivo de escena: ", uipie_scene_path)
+	if not multiplayer.has_multiplayer_peer() or is_multiplayer_authority():
+		if not ui_node:
+			if get_tree() and get_tree().has_method("get_current_scene"):
+				var cs = get_tree().get_current_scene()
+				if cs:
+					ui_node = cs.find_child("UIpie", true, false)
+		
+		if not ui_node:
+			var uipie_scene_path = "res://interfaz/hud/a_pie/UiPie.tscn"
+			if ResourceLoader.exists(uipie_scene_path):
+				var uipie_scene = load(uipie_scene_path)
+				if uipie_scene:
+					ui_node = uipie_scene.instantiate()
+					# Añadirlo al root o a la escena actual para que no sea afectado por transformaciones 3D
+					if get_tree() and get_tree().current_scene:
+						get_tree().current_scene.add_child.call_deferred(ui_node)
+					else:
+						add_child(ui_node)
+					print("[jugador3D] UIpie instanciada e integrada por código dinámicamente.")
+			else:
+				printerr("[jugador3D] No se encontró el archivo de escena: ", uipie_scene_path)
 
 	if ui_node:
 		# Aceptar tanto CanvasLayer (UIPie) como Control (zona específica)
@@ -310,6 +321,8 @@ func _ready():
 			if not ui_pie.is_connected("camara_movida", Callable(self, "_manejar_camara_tactil")):
 				ui_pie.connect("camara_movida", Callable(self, "_manejar_camara_tactil"))
 				_zona_camara_activa = true
+			if ui_pie.has_signal("camara_pinch") and not ui_pie.is_connected("camara_pinch", Callable(self, "_on_camara_pinch")):
+				ui_pie.connect("camara_pinch", Callable(self, "_on_camara_pinch"))
 		else:
 			# buscar zona interna o por grupo
 			if ui_pie:
@@ -320,6 +333,8 @@ func _ready():
 				if not z.is_connected("camara_movida", Callable(self, "_manejar_camara_tactil")):
 					z.connect("camara_movida", Callable(self, "_manejar_camara_tactil"))
 					_zona_camara_activa = true
+				if z.has_signal("camara_pinch") and not z.is_connected("camara_pinch", Callable(self, "_on_camara_pinch")):
+					z.connect("camara_pinch", Callable(self, "_on_camara_pinch"))
 
 	# Conectar dinámicamente las zonas de entrada de vehículos al jugador
 	# para que entrar en la collision de la puerta habilite la interacción.
@@ -402,6 +417,7 @@ func _ready():
 			if cam_propia:
 				_camera = cam_propia
 				_camera.cull_mask = _camera.cull_mask & ~2  # Nunca mostrar capa 2 (GPS/Minimapa) en cámara principal
+				_camera.fov = fov_base
 				_camera.make_current()
 				_screen_log("[jugador3D] Camara activada para peer local: " + str(multiplayer.get_unique_id()) + " en nodo " + name)
 			else:
@@ -412,20 +428,21 @@ func _ready():
 
 	# Cargar tutorial/cinemática si es primera vez y no estamos en multijugador
 	var debug_info = ""
-	if DatosUsuario:
-		var tutor_comp = DatosUsuario.tutorial_completado
-		var is_multi = false # multiplayer.has_multiplayer_peer() - Desactivado temporalmente a peticion del usuario
+	var datos_usuario = get_node_or_null("/root/DatosUsuario")
+	if datos_usuario:
+		var tutor_comp = datos_usuario.tutorial_completado
+		var is_multi = multiplayer.has_multiplayer_peer() and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 		debug_info += "DatosUsuario: OK\n"
 		debug_info += "tutorial_completado: " + str(tutor_comp) + "\n"
-		debug_info += "es_multijugador: " + str(is_multi) + " (forzado false)\n"
+		debug_info += "es_multijugador: " + str(is_multi) + "\n"
 		
-		print("[jugador3D DEBUG] DatosUsuario detectado. tutorial_completado = ", tutor_comp, ", es_multijugador = ", is_multi, " (forzado false)")
+		print("[jugador3D DEBUG] DatosUsuario detectado. tutorial_completado = ", tutor_comp, ", es_multijugador = ", is_multi)
 		
 		# Resetear temporalmente a false para pruebas si el usuario quiere probar de inmediato
 		# DatosUsuario.tutorial_completado = false
 		
 		if not tutor_comp and not is_multi:
-			var intro_script_path = "res://Scripts/IntroCinematic.gd"
+			var intro_script_path = "res://codigo/sistemas/narrativa/IntroCinematic.gd"
 			var exists = ResourceLoader.exists(intro_script_path)
 			debug_info += "Existe IntroCinematic.gd: " + str(exists) + "\n"
 			print("[jugador3D DEBUG] ¿Existe el script en la ruta '", intro_script_path, "'? ", exists)
@@ -454,7 +471,9 @@ func _ready():
 
 	# Instanciar el celular para el jugador local
 	if not multiplayer.has_multiplayer_peer() or is_multiplayer_authority():
-		var celular_scene_path = "res://escenas/gui/movil/CelularUI.tscn"
+		var celular_scene_path = "res://interfaz/celular/sistema/CelularUI.tscn"
+		if not ResourceLoader.exists(celular_scene_path):
+			celular_scene_path = "res://interfaz/celular/CelularUI.tscn"
 		if ResourceLoader.exists(celular_scene_path):
 			var scene = load(celular_scene_path)
 			if scene:
@@ -464,7 +483,9 @@ func _ready():
 				celular = cel_node
 				print("[jugador3D] CelularUI instanciado desde escena visual para el jugador local.")
 				
-		var inv_scene_path = "res://escenas/gui/InventarioUI.tscn"
+		var inv_scene_path = "res://interfaz/sistema/InventarioUI.tscn"
+		if not ResourceLoader.exists(inv_scene_path):
+			inv_scene_path = "res://interfaz/inventario/InventarioUI.tscn"
 		if ResourceLoader.exists(inv_scene_path):
 			var scene = load(inv_scene_path)
 			if scene:
@@ -474,7 +495,36 @@ func _ready():
 				inventario = inv_node
 				print("[jugador3D] InventarioUI instanciado para el jugador local.")
 
+		# Instanciar el controlador de item en mano / viewmodel para primera persona (estilo Minecraft)
+		item_en_mano_ctrl = ControladorItemEnMano.new()
+		item_en_mano_ctrl.name = "ControladorItemEnMano"
+		add_child(item_en_mano_ctrl)
+		var cam_init: Camera3D = get_camara_activa()
+		if cam_init:
+			item_en_mano_ctrl.vincular_jugador(self, cam_init)
 
+		# Instanciar TiendaUI para el jugador
+		tienda_ui = TiendaUI.new()
+		tienda_ui.name = "TiendaUI"
+		add_child(tienda_ui)
+		tienda_ui.jugador_ref = self
+
+		# Equipar Bloque de Provisiones estilo Minecraft por defecto
+		equipar_item_en_mano("bloque_suministros")
+
+	# A pie: forzar primera persona y ocultar modelo 3D
+	_set_primera_persona(true)
+	if _modelo:
+		_modelo.hide()
+
+
+
+func get_camara_activa() -> Camera3D:
+	if is_instance_valid(_camera):
+		return _camera
+	if is_instance_valid(_camara_1p):
+		return _camara_1p
+	return get_viewport().get_camera_3d()
 
 func _input(e):
 	if has_meta("cinematic_active") and get_meta("cinematic_active"):
@@ -488,10 +538,28 @@ func _input(e):
 			if celular and celular.has_method("toggle_phone"):
 				celular.toggle_phone()
 				get_viewport().set_input_as_handled()
+		elif e.keycode == KEY_T:
+			if tienda_ui:
+				tienda_ui.toggle_tienda()
+				get_viewport().set_input_as_handled()
 		elif e.keycode == KEY_I:
 			if inventario and inventario.has_method("toggle_inventario"):
 				inventario.toggle_inventario()
 				get_viewport().set_input_as_handled()
+		elif e.keycode == KEY_G:
+			if item_en_mano_ctrl and item_en_mano_ctrl.tiene_item_equipado():
+				item_en_mano_ctrl.guardar_en_inventario()
+				get_viewport().set_input_as_handled()
+		elif e.keycode == KEY_E:
+			if item_en_mano_ctrl and item_en_mano_ctrl.tiene_item_equipado() and (not tienda_ui or not tienda_ui.visible):
+				item_en_mano_ctrl.usar_item()
+				get_viewport().set_input_as_handled()
+
+	# Clic izquierdo para golpear / usar el objeto en mano (estilo Minecraft)
+	if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		if item_en_mano_ctrl and item_en_mano_ctrl.tiene_item_equipado():
+			if not (tienda_ui and tienda_ui.visible) and not (celular and celular.visible):
+				item_en_mano_ctrl.usar_item()
 	if _conduciendo:
 		return
 	if e is InputEventMouseMotion and not (_zona_camara_activa or solo_touch_camara):
@@ -509,7 +577,7 @@ func _input(e):
 	if _accion_event(e, ["crouch"]): # Solo crouch (tecla C)
 		_set_agachado(not _agachado)
 	if _accion_event(e, ["first_person"]): # first_person (tecla O)
-		_set_primera_persona(not _primera_persona)
+		pass # 3ra persona a pie desactivada
 
 func _physics_process(delta: float) -> void:
 	if multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
@@ -657,6 +725,11 @@ func _physics_process(delta: float) -> void:
 	_agachado_t = lerp(_agachado_t, float(_agachado), delta * LERP_AGACHAR)
 	_aplicar_camara(delta, idir, run)
 	
+	# Clamp de seguridad física anti-expulsión astronómica
+	velocity.y = clampf(velocity.y, -45.0, 15.0)
+	velocity.x = clampf(velocity.x, -25.0, 25.0)
+	velocity.z = clampf(velocity.z, -25.0, 25.0)
+
 	# Lógica para subir aceras/escalones
 	if suelo and idir.length() > 0.1:
 		move_and_slide()
@@ -679,6 +752,11 @@ func _physics_process(delta: float) -> void:
 					move_and_slide()
 	else:
 		move_and_slide()
+		
+	# Limitar velocidad resultante después de colisiones con cuerpos rígidos
+	velocity.y = clampf(velocity.y, -45.0, 15.0)
+	velocity.x = clampf(velocity.x, -25.0, 25.0)
+	velocity.z = clampf(velocity.z, -25.0, 25.0)
 		
 	_anim_loco(idir, run, suelo)
 	
@@ -751,7 +829,9 @@ func _aplicar_camara(delta, idir, run):
 	
 	_shake_mag = move_toward(_shake_mag, 0, delta)
 	var s = Vector3(randf_range(-1,1), randf_range(-1,1), 0) * _shake_mag
-	var off_h = _bob_offset.x + s.x
+	var lean_axis := Input.get_axis("inclin-izq", "inclin-der")
+	_camara_tilt = lerp(_camara_tilt, -lean_axis * 0.22 - idir.x * TILT_MAX * (1.5 if run else 1.0), delta * TILT_LERP)
+	var off_h = _bob_offset.x + s.x + lean_axis * 0.38
 	var off_v = _bob_offset.y + s.y
 	
 	if _camera:
@@ -761,23 +841,38 @@ func _aplicar_camara(delta, idir, run):
 		_camara_1p.h_offset = off_h
 		_camara_1p.v_offset = off_v
 
+	# FOV Dinámico suave al caminar y correr (sprint)
+	var target_fov: float = fov_base + (fov_sprint_boost if (run and velocity.length() > 2.0) else 0.0)
+	var cam_activa: Camera3D = get_camara_activa()
+	if is_instance_valid(cam_activa):
+		var nuevo_fov: float = lerpf(cam_activa.fov, target_fov, delta * 5.0)
+		cam_activa.fov = nuevo_fov
+		if _camera and _camera != cam_activa:
+			_camera.fov = nuevo_fov
+		if _camara_1p and _camara_1p != cam_activa:
+			_camara_1p.fov = nuevo_fov
+
 	if _primera_persona:
 		spring_arm.rotation.y = clamp(wrapf(_camara_yaw - rotation.y, -PI, PI), -YAW_1P_MAX, YAW_1P_MAX)
 		spring_arm.rotation.x = _camara_pitch
+		spring_arm.rotation.z = _camara_tilt
 		spring_arm.spring_length = ZOOM_1P
 		var fwd = Vector3(-sin(_camara_yaw), 0, -cos(_camara_yaw))
 		if _skeleton and _cabeza_bone_idx >= 0:
 			spring_arm.global_position = (_skeleton.global_transform * _skeleton.get_bone_global_pose(_cabeza_bone_idx)).origin + fwd * CAM_1P_FORWARD
 		else:
-			spring_arm.position = CAM_1P_OFFSET + fwd * CAM_1P_FORWARD
+			spring_arm.position = CAM_1P_OFFSET + fwd * CAM_1P_FORWARD - Vector3(0.0, _agachado_t * 0.5, 0.0)
 		if _camara_1p and _camera:
 			_camara_1p.global_transform = _camera.global_transform
 		if _cabeza:
 			_cabeza.visible = false
+		if is_instance_valid(caja_agarrada) and not caja_agarrada.name.to_lower().contains("tableta"):
+			if _modelo and not _modelo.visible:
+				_modelo.show()
 	else:
 		if _cabeza:
 			_cabeza.visible = true
-		spring_arm.rotation = Vector3(_camara_pitch, _camara_yaw - rotation.y, lerp(_camara_tilt, -idir.x * TILT_MAX * (1.5 if run else 1.0), delta * TILT_LERP))
+		spring_arm.rotation = Vector3(_camara_pitch, _camara_yaw - rotation.y, _camara_tilt)
 		
 		# Solo centrar la cámara si el jugador está rotando hacia la dirección de movimiento
 		# El bug ocurría porque _camara_yaw intentaba alinearse con rotation.y infinitamente
@@ -801,29 +896,37 @@ func _set_agachado(v):
 			anim_player.play(ANIM_AGACHARSE, -1, -1, true)
 
 func _set_primera_persona(v):
-	_primera_persona = v
-	if _primera_persona:
+	# Modo primera persona obligatorio a pie: sin modelo 3D bloqueando la vista
+	_primera_persona = true
+	if spring_arm:
 		_zoom_guardado = spring_arm.spring_length
-		if _camara_1p: _camara_1p.make_current()
-		if _vigneta_layer: _vigneta_layer.show()
-	else:
-		spring_arm.spring_length = _zoom_guardado
-		if _camera: _camera.make_current()
-		if _vigneta_layer: _vigneta_layer.hide()
+	var cam_activa: Camera3D = get_camara_activa()
+	if is_instance_valid(cam_activa):
+		cam_activa.fov = fov_base
+		cam_activa.make_current()
+	if _camera:
+		_camera.fov = fov_base
+	if _camara_1p:
+		_camara_1p.fov = fov_base
+	if _cabeza:
+		_cabeza.visible = false
+	if _modelo and not _conduciendo and not is_instance_valid(caja_agarrada):
+		_modelo.hide()
+	if _vigneta_layer:
+		_vigneta_layer.hide()
 
 func _subir_al_vehiculo(v):
 	_conduciendo = true
 	_vehiculo_actual = v
 	_asiento_cache = v.find_child("AsientoConductor", true, false)
 	velocity = Vector3.ZERO
+	if item_en_mano_ctrl:
+		item_en_mano_ctrl.visible = false
+	if tienda_ui and tienda_ui.visible:
+		tienda_ui.cerrar_tienda(false)
 	if _collision_shape: _collision_shape.disabled = true
 	
-	if ui_pie:
-		var walk_controls = ui_pie.get_node_or_null("Controles")
-		if walk_controls:
-			walk_controls.visible = false
-		else:
-			ui_pie.hide()
+	ocultar_interfaz_pie()
 	
 	if _modelo and ocultar_modelo_conduciendo: _modelo.hide()
 	_reproducir_anim(ANIM_CONDUCIR)
@@ -835,14 +938,14 @@ func _salir_del_vehiculo():
 	_conduciendo = false
 	_vehiculo_actual = null
 	_asiento_cache = null
-	if _modelo: _modelo.show()
+	_set_primera_persona(true)
 	
-	if ui_pie:
-		var walk_controls = ui_pie.get_node_or_null("Controles")
-		if walk_controls:
-			walk_controls.visible = true
-		else:
-			ui_pie.show()
+	mostrar_interfaz_pie()
+	var cam_activa: Camera3D = get_camara_activa()
+	if item_en_mano_ctrl:
+		item_en_mano_ctrl.visible = true
+		if is_instance_valid(cam_activa):
+			item_en_mano_ctrl.vincular_jugador(self, cam_activa)
 			
 	if v.has_method("bajar_jugador"): v.bajar_jugador()
 	if _collision_shape: _collision_shape.disabled = false
@@ -851,6 +954,80 @@ func _salir_del_vehiculo():
 
 func salir_del_vehiculo():
 	_salir_del_vehiculo()
+
+## Llamado por GestorVehiculos al descender del vehiculo para restaurar la camara 1P limpia
+func restaurar_camara_salida_vehiculo() -> void:
+	_conduciendo = false
+	_vehiculo_actual = null
+	_asiento_cache = null
+	_set_primera_persona(true)
+	var cam_activa: Camera3D = get_camara_activa()
+	if is_instance_valid(cam_activa):
+		cam_activa.fov = fov_base
+		cam_activa.make_current()
+	mostrar_interfaz_pie()
+	if item_en_mano_ctrl:
+		item_en_mano_ctrl.visible = true
+		if is_instance_valid(cam_activa):
+			item_en_mano_ctrl.vincular_jugador(self, cam_activa)
+
+func equipar_item_en_mano(item_id: String) -> void:
+	if not item_en_mano_ctrl:
+		item_en_mano_ctrl = ControladorItemEnMano.new()
+		item_en_mano_ctrl.name = "ControladorItemEnMano"
+		add_child(item_en_mano_ctrl)
+	var cam_activa: Camera3D = get_camara_activa()
+	if cam_activa:
+		item_en_mano_ctrl.vincular_jugador(self, cam_activa)
+	item_en_mano_ctrl.equipar_item(item_id)
+
+func desequipar_item_en_mano() -> void:
+	if item_en_mano_ctrl:
+		item_en_mano_ctrl.desequipar_item(true)
+
+func abrir_tienda() -> void:
+	if tienda_ui:
+		tienda_ui.abrir_tienda(self)
+
+func ocultar_interfaz_pie() -> void:
+	if is_instance_valid(ui_pie):
+		ui_pie.visible = false
+		ui_pie.process_mode = Node.PROCESS_MODE_DISABLED
+		var walk_controls = ui_pie.get_node_or_null("Controles")
+		if walk_controls:
+			walk_controls.visible = false
+
+	var tree := get_tree()
+	if tree and tree.get_root():
+		for pat in ["*UIpie*", "*UiPie*", "*uipie*", "*UIPie*"]:
+			var encontrados = tree.get_root().find_children(pat, "", true, false)
+			for n in encontrados:
+				if is_instance_valid(n) and (n is CanvasLayer or n is Control):
+					n.visible = false
+					n.process_mode = Node.PROCESS_MODE_DISABLED
+					var c = n.get_node_or_null("Controles")
+					if c:
+						c.visible = false
+
+func mostrar_interfaz_pie() -> void:
+	if is_instance_valid(ui_pie):
+		ui_pie.process_mode = Node.PROCESS_MODE_INHERIT
+		ui_pie.visible = true
+		var walk_controls = ui_pie.get_node_or_null("Controles")
+		if walk_controls:
+			walk_controls.visible = true
+
+	var tree := get_tree()
+	if tree and tree.get_root():
+		for pat in ["*UIpie*", "*UiPie*", "*uipie*", "*UIPie*"]:
+			var encontrados = tree.get_root().find_children(pat, "", true, false)
+			for n in encontrados:
+				if is_instance_valid(n) and (n is CanvasLayer or n is Control):
+					n.process_mode = Node.PROCESS_MODE_INHERIT
+					n.visible = true
+					var c = n.get_node_or_null("Controles")
+					if c:
+						c.visible = true
 
 func guardar_progreso_conductor() -> void:
 	# Guardado robusto: construir un diccionario de datos y usar la API pública del plugin cuando sea posible.
@@ -944,12 +1121,97 @@ func _procesar_interaccion_vehiculo():
 		if _accion_just_pressed(["interactuar"]): # Cambiado a la acción definida en project.godot
 			_subir_al_vehiculo(_vehiculo_cerca)
 
+func puede_interactuar() -> bool:
+	if _conduciendo:
+		return false
+	if is_instance_valid(_vehiculo_cerca):
+		return true
+	for v in get_tree().get_nodes_in_group("vehiculo"):
+		if v and v.get("jugador_cerca") == true:
+			_vehiculo_cerca = v
+			return true
+	return false
+
+func interactuar_contextual() -> void:
+	if _conduciendo:
+		_salir_del_vehiculo()
+		return
+	if not is_instance_valid(_vehiculo_cerca):
+		for v in get_tree().get_nodes_in_group("vehiculo"):
+			if v and v.get("jugador_cerca") == true:
+				_vehiculo_cerca = v
+				break
+	if is_instance_valid(_vehiculo_cerca):
+		_subir_al_vehiculo(_vehiculo_cerca)
+
+func ejecutar_salto_tactil(fuerza_v: float, impulso_h: Vector3 = Vector3.ZERO) -> void:
+	if _conduciendo:
+		return
+	if is_on_floor() or _coyote_timer > 0.0:
+		_recien_bajado_timer = 0.0
+		velocity.y = maxf(fuerza_v, v_salto)
+		var fwd_jump := Vector3(-sin(_camara_yaw), 0.0, -cos(_camara_yaw)).normalized()
+		var side_jump := Vector3(cos(_camara_yaw), 0.0, -sin(_camara_yaw)).normalized()
+		if impulso_h.length() > 0.05:
+			_vel_horizontal += (side_jump * impulso_h.x + fwd_jump * -impulso_h.z)
+		else:
+			_vel_horizontal += fwd_jump * impulso_salto_fwd
+		_coyote_timer = 0.0
+		_en_aire = true
+		if _agachado:
+			_set_agachado(false)
+
+func alternar_linterna_jugador(estado: Variant = null) -> bool:
+	var luz := find_child("LinternaJugador", true, false) as SpotLight3D
+	if not luz and _camera:
+		luz = SpotLight3D.new()
+		luz.name = "LinternaJugador"
+		luz.light_energy = 2.8
+		luz.spot_range = 28.0
+		luz.spot_angle = 38.0
+		luz.shadow_enabled = false
+		luz.visible = false
+		_camera.add_child(luz)
+	if not luz:
+		return false
+	if estado is bool:
+		luz.visible = estado
+	else:
+		luz.visible = not luz.visible
+	return luz.visible
+
+func ajustar_fov_suave(nuevo_fov: float) -> void:
+	var fov_clamped := clampf(nuevo_fov, 45.0, 95.0)
+	fov_base = fov_clamped
+	var cam_activa: Camera3D = get_camara_activa()
+	if is_instance_valid(cam_activa):
+		var tw: Tween = create_tween()
+		tw.tween_property(cam_activa, "fov", fov_clamped, 0.2)
+		if _camera and _camera != cam_activa:
+			_camera.fov = fov_clamped
+		if _camara_1p and _camara_1p != cam_activa:
+			_camara_1p.fov = fov_clamped
+
+func saludar() -> void:
+	if _conduciendo or _anim_lock:
+		return
+	if anim_player:
+		for candidate in ["Saludar", "saludar", "Wave", "wave"]:
+			if anim_player.has_animation(candidate):
+				anim_player.play(candidate, BLEND_OTROS)
+				return
+
+func _on_camara_pinch(delta_dist: float) -> void:
+	if _conduciendo:
+		return
+	_ajustar_zoom(-delta_dist * 0.01)
+
 func _actualizar_boton_interactuar():
 	if _ui_boton_interactuar:
-		_ui_boton_interactuar.visible = (_vehiculo_cerca and not _conduciendo)
+		_ui_boton_interactuar.visible = puede_interactuar()
 
 func _on_boton_entrar_pressed():
-	if _vehiculo_cerca: _subir_al_vehiculo(_vehiculo_cerca)
+	interactuar_contextual()
 
 func _on_zona_entrada_body_entered(b, veh = null):
 	# Handler flexible: puede recibir (body) o (body, veh) cuando se conecta con bind
@@ -975,8 +1237,10 @@ func _on_zona_entrada_body_exited(b, veh = null):
 func notificar_vehiculo_cerca(veh: Node3D) -> void:
 	_vehiculo_cerca = veh
 
-func notificar_vehiculo_lejos() -> void:
-	_vehiculo_cerca = null
+func notificar_vehiculo_lejos(veh: Node3D = null) -> void:
+	if veh == null or _vehiculo_cerca == veh:
+		_vehiculo_cerca = null
+
 
 func _on_animation_finished(n):
 	if n == ANIM_AGACHARSE and _reproduciendo_agachado_reverso:
@@ -1042,19 +1306,14 @@ func _manejar_camara_tactil(r):
 	_auto_center_timer = 0
 
 func _ajustar_zoom(d):
-	if spring_arm:
-		spring_arm.spring_length = clamp(spring_arm.spring_length + d, ZOOM_MIN, ZOOM_MAX)
-		_zoom_guardado = spring_arm.spring_length
+	# Desactivado zoom hacia 3ra persona a pie
+	return
 
 func _crear_vigneta():
-	_vigneta_layer = CanvasLayer.new()
-	_vigneta_layer.layer = 5
-	_vigneta_layer.hide()
-	add_child(_vigneta_layer)
-	var r = ColorRect.new()
-	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	r.color = Color(0,0,0,0.45)
-	_vigneta_layer.add_child(r)
+	# Filtro oscuro plano eliminado por completo para máxima nitidez y pureza de imagen
+	if is_instance_valid(_vigneta_layer):
+		_vigneta_layer.queue_free()
+		_vigneta_layer = null
 
 func _accion_just_pressed(a):
 	for x in a:

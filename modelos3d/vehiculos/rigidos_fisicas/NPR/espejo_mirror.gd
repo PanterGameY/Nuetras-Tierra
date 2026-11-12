@@ -30,6 +30,13 @@ func _ready():
 	
 	material_override = new_material
 
+	# Evitar bucle de retroalimentación de textura en Vulkan (error de framebuffer y uniform)
+	# Mover el mesh del espejo a la Capa 2 y ocultarlo en la cámara del retrovisor
+	set_layer_mask_value(1, false)
+	set_layer_mask_value(2, true)
+	if camera:
+		camera.set_cull_mask_value(2, false)
+
 func update_camera_position():
 	if camera:
 		var offset = Vector3(0, 1, camera_distance)
