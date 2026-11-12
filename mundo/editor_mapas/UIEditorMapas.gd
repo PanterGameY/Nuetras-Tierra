@@ -203,7 +203,8 @@ func _ready() -> void:
 		_fuente_moderniz = load("res://recursos/fonts/Moderniz.otf")
 	_construir_interfaz_completa()
 	seleccionar_categoria("terreno")
-	get_viewport().size_changed.connect(_on_viewport_size_changed)
+	if get_viewport():
+		get_viewport().size_changed.connect(_on_viewport_size_changed)
 
 func _process(_delta: float) -> void:
 	# Rotar aguja de la brújula con la orientación yaw de la cámara activa
@@ -827,7 +828,7 @@ func _construir_vista_rio() -> void:
 # F. Vías General
 func _construir_vista_vias_general(tipo_via: String) -> void:
 	var lbl_desc := Label.new()
-	lbl_desc.text = "Toca o arrastra sobre el terreno para crear tramos viales continuos con peralte y rasante inteligente."
+	lbl_desc.text = "Toca o arrastra sobre el terreno para orientar la vía y pulsa 'Colocar Punto de Vía' para trazar tramos viales continuos con peralte y rasante inteligente."
 	lbl_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_desc.add_theme_font_size_override("font_size", FONT_TEXTO_INFO) # 18px
 	lbl_desc.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
@@ -839,17 +840,52 @@ func _construir_vista_vias_general(tipo_via: String) -> void:
 	vbox_acciones.add_theme_constant_override("separation", 10)
 	_box_prop_contenido.add_child(vbox_acciones)
 
+	# 1. BOTÓN PRINCIPAL MAESTRO: COLOCAR PUNTO DE VÍA
+	var btn_colocar := Button.new()
+	btn_colocar.name = "BtnColocarPuntoVia"
+	if tipo_via in ["cruce_4", "cruce_t"]:
+		btn_colocar.text = "＋ Colocar Cruce"
+	else:
+		btn_colocar.text = "＋ Colocar Punto de Vía"
+	btn_colocar.custom_minimum_size = Vector2(0, 56)
+	btn_colocar.add_theme_font_size_override("font_size", FONT_BOTON_ACCION) # 24px
+	_estilar_boton(btn_colocar, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 12.0)
+	btn_colocar.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
+	if _fuente_ui:
+		btn_colocar.add_theme_font_override("font", _fuente_ui)
+	elif _fuente_moderniz:
+		btn_colocar.add_theme_font_override("font", _fuente_moderniz)
+	var ico_colocar := _cargar_icono_svg("act_colocar")
+	if not ico_colocar:
+		ico_colocar = _cargar_icono_svg("act_aplicar")
+	if ico_colocar:
+		btn_colocar.icon = ico_colocar
+		btn_colocar.expand_icon = true
+		btn_colocar.add_theme_constant_override("icon_max_width", 26)
+
+	btn_colocar.pressed.connect(func():
+		if btn_colocar.is_inside_tree():
+			var tween = btn_colocar.create_tween()
+			if tween:
+				tween.tween_property(btn_colocar, "scale", Vector2(0.96, 0.96), 0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				tween.tween_property(btn_colocar, "scale", Vector2(1.0, 1.0), 0.10).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		accion_colocar_solicitada.emit()
+	)
+	vbox_acciones.add_child(btn_colocar)
+	_btn_colocar_grande = btn_colocar
+
+	# 2. FINALIZAR TRAMO DE VÍA
 	var btn_terminar := Button.new()
 	btn_terminar.text = "✓ Finalizar Tramo de Vía"
-	btn_terminar.custom_minimum_size = Vector2(0, 54)
-	btn_terminar.add_theme_font_size_override("font_size", FONT_BOTON_ACCION) # 24px
-	_estilar_boton(btn_terminar, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 12.0)
-	btn_terminar.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
+	btn_terminar.custom_minimum_size = Vector2(0, 50)
+	btn_terminar.add_theme_font_size_override("font_size", FONT_BOTON_MEDIO) # 21px
+	_estilar_boton(btn_terminar, COLOR_PANEL_SEC, COLOR_BORDE, 12.0)
 	if _fuente_ui:
 		btn_terminar.add_theme_font_override("font", _fuente_ui)
 	btn_terminar.pressed.connect(func(): terminar_tramo_via_solicitado.emit())
 	vbox_acciones.add_child(btn_terminar)
 
+	# 3. CONECTAR TRAMOS VIALES
 	var btn_conectar := Button.new()
 	btn_conectar.text = "☍ Conectar Tramos Viales"
 	btn_conectar.custom_minimum_size = Vector2(0, 50)
@@ -860,6 +896,7 @@ func _construir_vista_vias_general(tipo_via: String) -> void:
 	btn_conectar.pressed.connect(func(): conectar_vias_solicitado.emit())
 	vbox_acciones.add_child(btn_conectar)
 
+	# 4. NIVELAR TERRENO BAJO CARRETERAS
 	var btn_nivelar := Button.new()
 	btn_nivelar.text = "⊞ Nivelar Terreno Bajo Carreteras"
 	btn_nivelar.custom_minimum_size = Vector2(0, 50)
@@ -870,6 +907,7 @@ func _construir_vista_vias_general(tipo_via: String) -> void:
 	btn_nivelar.pressed.connect(func(): nivelar_terreno_vias_solicitado.emit())
 	vbox_acciones.add_child(btn_nivelar)
 
+	# 5. DESHACER ÚLTIMO PUNTO
 	var btn_deshacer_pto := Button.new()
 	btn_deshacer_pto.text = "↶ Deshacer Último Punto"
 	btn_deshacer_pto.custom_minimum_size = Vector2(0, 50)
@@ -1647,10 +1685,14 @@ func mostrar_notificacion(texto: String) -> void:
 	if not _toast_hud or not _panel_toast_flotante:
 		return
 	_toast_hud.text = texto
-	var tween = create_tween()
-	tween.tween_property(_panel_toast_flotante, "modulate:a", 1.0, 0.20)
-	tween.tween_interval(2.2)
-	tween.tween_property(_panel_toast_flotante, "modulate:a", 0.0, 0.35)
+	if is_inside_tree():
+		var tween = create_tween()
+		if tween:
+			tween.tween_property(_panel_toast_flotante, "modulate:a", 1.0, 0.20)
+			tween.tween_interval(2.2)
+			tween.tween_property(_panel_toast_flotante, "modulate:a", 0.0, 0.35)
+	else:
+		_panel_toast_flotante.modulate.a = 1.0
 
 # ── 8. MÉTODOS PÚBLICOS DE COMPATIBILIDAD CON EditorMapas.gd ─────────
 func seleccionar_categoria(cat_id: String) -> void:
@@ -1715,9 +1757,24 @@ func actualizar_estado_boton_colocar(categoria: String, subherramienta: String =
 		_estilar_boton(_btn_colocar_grande, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 18.0)
 		_btn_colocar_grande.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
 	else:
-		_btn_colocar_grande.text = "  Aplicar"
-		_estilar_boton(_btn_colocar_grande, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 18.0)
-		_btn_colocar_grande.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
+		match categoria:
+			"vias":
+				if subherramienta in ["cruce_4", "cruce_t"]:
+					_btn_colocar_grande.text = "＋ Colocar Cruce"
+				elif _snap_conexion or _origen_conexion_fijado:
+					_btn_colocar_grande.text = "☍ Conectar Vías Aquí"
+				elif _sobre_cruce_existente:
+					_btn_colocar_grande.text = "✎ Editar Cruce"
+				elif _sobre_punto_existente:
+					_btn_colocar_grande.text = "✎ Editar Punto"
+				else:
+					_btn_colocar_grande.text = "＋ Colocar Punto de Vía"
+				_estilar_boton(_btn_colocar_grande, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 12.0)
+				_btn_colocar_grande.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
+			_:
+				_btn_colocar_grande.text = "  Aplicar"
+				_estilar_boton(_btn_colocar_grande, COLOR_AMARILLO_SEL, COLOR_AMARILLO_PRI, 18.0)
+				_btn_colocar_grande.add_theme_color_override("font_color", COLOR_FONDO_PRINCIPAL)
 
 func actualizar_boton_modo_conectar(_activo: bool) -> void:
 	pass
