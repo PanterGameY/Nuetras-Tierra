@@ -368,6 +368,8 @@ static func _registrar_modelos_integrados() -> void:
 				sec = "02_Comercial"; sub = "Supermercados_CentrosComerciales"
 			"gasolinera":
 				sec = "02_Comercial"; sub = "Estaciones_Servicio"
+			"garaje_camiones":
+				sec = "02_Comercial"; sub = "Garajes_Talleres"
 			"rascacielos":
 				sec = "03_Industrial_Logistica"; sub = "Fabricas_Plantas"
 			"bodega_industrial":
@@ -396,6 +398,30 @@ static func _registrar_modelos_integrados() -> void:
 		}
 		_catalogo_cargado.append(it)
 		_items_por_id[id] = it
+
+	# 3. Muros Urbanos y Cercas de Campo (Blender Atlas PBR)
+	var ctrl_muros_script = preload("res://mundo/editor_mapas/ControladorMuros.gd")
+	for m in ctrl_muros_script.obtener_catalogo_muros():
+		var m_id: String = m["id"]
+		if _items_por_id.has(m_id):
+			continue
+		var es_campo: bool = (m.get("cat", "urbano") == "campo")
+		var it_m := {
+			"id": m_id,
+			"nombre": m["nombre"],
+			"icono": "🧱" if not es_campo else "🪵",
+			"icono_textura": m["tex"],
+			"categoria_raiz": "08_Muros_y_Cercas",
+			"seccion": "02_Muros_Campo" if es_campo else "01_Muros_Urbanos",
+			"subapartado": "Cercas_Agricolas" if es_campo else "Muros_Modulares",
+			"subcategoria": "02_Campo" if es_campo else "01_Urbanos",
+			"ruta_escena": m["glb"],
+			"tamano": Vector3(0.7, 2.4, 4.0),
+			"descripcion": m["desc"],
+			"es_biblioteca_archivo": false
+		}
+		_catalogo_cargado.append(it_m)
+		_items_por_id[m_id] = it_m
 
 ## Asegura que el nodo tenga colisión física para el editor y vehículos
 static func _asegurar_colision(nodo: Node3D, info: Dictionary) -> void:

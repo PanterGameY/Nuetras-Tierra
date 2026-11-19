@@ -25,7 +25,7 @@ const ESCENA_GARAJE := "res://interfaz/pantallas/garaje/GarajeBodega.tscn"
 const ESCENA_MISIONES := "res://interfaz/pantallas/misiones/MisionesMenu.tscn"
 const ESCENA_CONFIG := "res://interfaz/pantallas/configuraciones/configuraciones.tscn"
 const ESCENA_PERFIL := "res://interfaz/pantallas/perfil/Perfil_Menu.tscn"
-const ESCENA_EDITOR_MAPAS := "res://mundo/editor_mapas/EditorMapas.tscn"
+const ESCENA_EDITOR_MAPAS := "res://mundo/editor_mapas/HubEditorMapas.tscn"
 const MENU_MUSIC_PATH := "res://recursos/Musica/Aire-de-son.mp3"
 
 # ── Tokens de diseño (diseño.md) ───────────────────────────────────────
@@ -47,6 +47,7 @@ const TINTE_TINTA_HOVER := Color(0.05, 0.04, 0.02, 1.0)
 
 var _audio_player_menu: AudioStreamPlayer = null
 var _toast_actual: PanelContainer = null
+static var _bienvenida_mostrada: bool = false
 var _ad_view = null
 
 @onready var fondo_3d: TextureRect = $Fondo3D
@@ -92,9 +93,11 @@ func _ready() -> void:
 			fondo_3d.gui_input.connect(_on_fondo_gui_input)
 
 	_estilizar_controles()
+	_aplicar_avatar_circular()
 	_conectar_botones()
 	_actualizar_datos_usuario()
 	_animar_entrada()
+	_mostrar_bienvenida_usuario()
 
 	if DatosUsuario:
 		if not DatosUsuario.nombre_usuario_cambiado.is_connected(_on_nombre_actualizado):
@@ -508,14 +511,29 @@ func _actualizar_perfil() -> void:
 	if label_nivel:
 		label_nivel.text = "NIVEL %s" % _formatear_miles(nivel)
 
+	var rango := RangoConductor.obtener_rango(nivel)
+	var color_rango: Color = rango["color"]
+	_aplicar_escudo_rango(nivel, rango)
+
 	var requerido := maxi((nivel + 1) * 300, 1)
+	var xp_clamped := clampi(experiencia, 0, requerido)
+	var pct := roundi((float(xp_clamped) / float(requerido)) * 100.0)
 	if barra_xp:
 		barra_xp.max_value = float(requerido)
-		barra_xp.value = float(clampi(experiencia, 0, requerido))
+		barra_xp.value = float(xp_clamped)
+		var sb_bg := _crear_estilo(Color(0.05, 0.06, 0.08, 0.95), Color(0.78, 0.81, 0.85, 0.20), 7, 1, 0)
+		barra_xp.add_theme_stylebox_override("background", sb_bg)
+		var sb_fill := StyleBoxFlat.new()
+		sb_fill.bg_color = color_rango
+		sb_fill.set_corner_radius_all(7)
+		sb_fill.shadow_color = Color(color_rango.r, color_rango.g, color_rango.b, 0.45)
+		sb_fill.shadow_size = 8
+		barra_xp.add_theme_stylebox_override("fill", sb_fill)
 	if label_xp:
-		label_xp.text = "%s / %s XP" % [
-			_formatear_miles(experiencia), _formatear_miles(requerido)
+		label_xp.text = "%s / %s XP (%d%%)" % [
+			_formatear_miles(experiencia), _formatear_miles(requerido), pct
 		]
+		label_xp.add_theme_color_override("font_color", color_rango.lightened(0.25))
 
 	if avatar_perfil:
 		avatar_perfil.texture = textura
@@ -524,6 +542,49 @@ func _actualizar_perfil() -> void:
 		if textura == null:
 			var inicial := nombre.substr(0, 1).to_upper()
 			avatar_inicial.text = inicial if inicial != "" else "?"
+
+
+func _aplicar_escudo_rango(nivel: int, rango: Dictionary) -> void:
+	var hbox_nivel := get_node_or_null("PerfilPanel/VBox/HBoxNivel")
+	if not hbox_nivel:
+		return
+	var escudo_rect := hbox_nivel.get_node_or_null("EscudoRango") as TextureRect
+	if not escudo_rect:
+		escudo_rect = TextureRect.new()
+		escudo_rect.name = "EscudoRango"
+		escudo_rect.custom_minimum_size = Vector2(38, 38)
+		escudo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		escudo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		hbox_nivel.add_child(escudo_rect)
+		hbox_nivel.move_child(escudo_rect, 0)
+	escudo_rect.texture = RangoConductor.obtener_textura_escudo(nivel)
+	escudo_rect.tooltip_text = str(rango["nombre"])
+
+	var color_rango: Color = rango["color"]
+	var panel_nivel := hbox_nivel.get_node_or_null("PanelNivel") as PanelContainer
+	if panel_nivel:
+		var sb_niv := _crear_estilo(Color(color_rango.r, color_rango.g, color_rango.b, 0.14), Color(color_rango.r, color_rango.g, color_rango.b, 0.72), 8, 1, 0)
+		sb_niv.content_margin_left = 12.0
+		sb_niv.content_margin_right = 12.0
+		sb_niv.content_margin_top = 4.0
+		sb_niv.content_margin_bottom = 4.0
+		panel_nivel.add_theme_stylebox_override("panel", sb_niv)
+	if label_nivel:
+		label_nivel.add_theme_color_override("font_color", color_rango.lightened(0.2))
+
+	var vbox_perfil := get_node_or_null("PerfilPanel/VBox")
+	if vbox_perfil:
+		var lbl_rango := vbox_perfil.get_node_or_null("LabelRangoConductor") as Label
+		if not lbl_rango:
+			lbl_rango = Label.new()
+			lbl_rango.name = "LabelRangoConductor"
+			lbl_rango.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lbl_rango.add_theme_font_override("font", FONT)
+			lbl_rango.add_theme_font_size_override("font_size", 11)
+			vbox_perfil.add_child(lbl_rango)
+			vbox_perfil.move_child(lbl_rango, hbox_nivel.get_index() + 1)
+		lbl_rango.text = str(rango["nombre"])
+		lbl_rango.add_theme_color_override("font_color", color_rango)
 
 
 func _actualizar_punto_pase() -> void:
@@ -725,10 +786,12 @@ func _on_soporte_pressed() -> void:
 
 func _on_ver_perfil_pressed() -> void:
 	if ResourceLoader.exists(ESCENA_PERFIL):
-		if DatosUsuario:
-			DatosUsuario.cambiar_escena(ESCENA_PERFIL)
-		else:
-			get_tree().change_scene_to_file(ESCENA_PERFIL)
+		if DatosUsuario and "escenas_precargadas" in DatosUsuario and DatosUsuario.escenas_precargadas.has(ESCENA_PERFIL):
+			var ps: PackedScene = DatosUsuario.escenas_precargadas[ESCENA_PERFIL] as PackedScene
+			if ps:
+				get_tree().change_scene_to_packed(ps)
+				return
+		get_tree().change_scene_to_file(ESCENA_PERFIL)
 	else:
 		_mostrar_toast("PERFIL NO DISPONIBLE")
 
@@ -736,6 +799,35 @@ func _on_ver_perfil_pressed() -> void:
 # ═══════════════════════════════════════════════════════════════════════
 # AVISO FLOTANTE (feedback para acciones sin escena todavía)
 # ═══════════════════════════════════════════════════════════════════════
+
+func _aplicar_avatar_circular() -> void:
+	if not avatar_perfil:
+		return
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+void fragment() {
+	vec2 d = UV - vec2(0.5);
+	float alpha = 1.0 - smoothstep(0.48, 0.5, length(d));
+	vec4 col = texture(TEXTURE, UV) * COLOR;
+	col.a *= alpha;
+	COLOR = col;
+}"""
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	avatar_perfil.material = mat
+
+
+func _mostrar_bienvenida_usuario() -> void:
+	if _bienvenida_mostrada:
+		return
+	_bienvenida_mostrada = true
+	var nombre := "Conductor"
+	if DatosUsuario:
+		var n := str(DatosUsuario.nombre_usuario).strip_edges()
+		if not n.is_empty():
+			nombre = n
+	call_deferred("_mostrar_toast", "BIENVENIDO, " + nombre)
+
 
 func _mostrar_toast(texto: String) -> void:
 	if _toast_actual and is_instance_valid(_toast_actual):

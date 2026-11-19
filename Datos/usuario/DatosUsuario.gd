@@ -14,11 +14,13 @@ var firebase_uid : String = ""
 var id_publico_numero: int = 0
 var nombre_usuario : String = ""
 var email_usuario : String = ""
+var discord_username : String = ""
 var proveedor_auth : String = ""
 var esmeraldas : int = 0
 var dinero : float = 0.0
 var next_scene : String = ""
 var previous_scene : String = ""
+var escenas_precargadas : Dictionary = {}
 
 func cambiar_escena(ruta_destino: String) -> void:
 	next_scene = ruta_destino
@@ -32,7 +34,7 @@ var avatar_texture: Texture2D = null
 var vehiculos_personalizados : Dictionary = {}
 var vehiculos_comprados : Dictionary = {}
 var remolques_activos : Dictionary = {}
-var tutorial_completado : bool = false
+var tutorial_completado : bool = true
 var tutorial_celular_completado : bool = false
 var mision_licencia_completada : bool = false
 var mision_reparto_completada : bool = false
@@ -79,8 +81,8 @@ const LOCAL_SAVE_PATH := "user://datos_usuario.cfg"
 const FIRESTORE_ACCOUNTS_COLLECTION := "conductores"
 const FIRESTORE_META_COLLECTION := "meta"
 const FIRESTORE_PUBLIC_ID_COUNTER_DOCUMENT := "public_id_counter"
-const USER_PUBLIC_ID_PREFIX := "NT"
-const USER_PUBLIC_ID_MIN_DIGITS := 2
+const USER_PUBLIC_ID_PREFIX := ""
+const USER_PUBLIC_ID_MIN_DIGITS := 3
 
 func _emit_nombre_usuario_actualizado() -> void:
 	emit_signal("nombre_usuario_cambiado", nombre_usuario)
@@ -222,6 +224,7 @@ func _ejecutar_guardado_disco() -> bool:
 	cfg.set_value("usuario", "id_publico_numero", id_publico_numero)
 	cfg.set_value("usuario", "nombre_usuario", nombre_usuario)
 	cfg.set_value("usuario", "email_usuario", email_usuario)
+	cfg.set_value("usuario", "discord_username", discord_username)
 	cfg.set_value("usuario", "proveedor_auth", proveedor_auth)
 	cfg.set_value("usuario", "esmeraldas", esmeraldas)
 	cfg.set_value("usuario", "dinero", dinero)
@@ -256,6 +259,10 @@ func _ejecutar_guardado_disco() -> bool:
 	var err: int = cfg.save(LOCAL_SAVE_PATH)
 	if err == OK:
 		print("[DatosUsuario] Guardado local en:", LOCAL_SAVE_PATH)
+		if has_node("/root/SupabaseManager"):
+			var sb := get_node("/root/SupabaseManager")
+			if sb and sb.has_method("esta_autenticado") and sb.esta_autenticado() and sb.has_method("programar_guardado_perfil"):
+				sb.programar_guardado_perfil()
 		return true
 	else:
 		printerr("[DatosUsuario] Error guardando localmente:", err)
@@ -272,6 +279,7 @@ func load_local() -> bool:
 			id_publico_numero = int(cfg.get_value("usuario", "id_publico_numero", 0))
 			nombre_usuario = str(cfg.get_value("usuario", "nombre_usuario", ""))
 			email_usuario = str(cfg.get_value("usuario", "email_usuario", ""))
+			discord_username = str(cfg.get_value("usuario", "discord_username", ""))
 			proveedor_auth = str(cfg.get_value("usuario", "proveedor_auth", ""))
 			esmeraldas = int(cfg.get_value("usuario", "esmeraldas", 0))
 			dinero = float(cfg.get_value("usuario", "dinero", 0.0))
@@ -279,7 +287,7 @@ func load_local() -> bool:
 			vehiculos_personalizados = cfg.get_value("usuario", "vehiculos_personalizados", {})
 			vehiculos_comprados = cfg.get_value("usuario", "vehiculos_comprados", {})
 			remolques_activos = cfg.get_value("usuario", "remolques_activos", {})
-			tutorial_completado = bool(cfg.get_value("usuario", "tutorial_completado", false))
+			tutorial_completado = bool(cfg.get_value("usuario", "tutorial_completado", true))
 			tutorial_celular_completado = bool(cfg.get_value("usuario", "tutorial_celular_completado", false))
 			mision_licencia_completada = bool(cfg.get_value("usuario", "mision_licencia_completada", false))
 			mision_reparto_completada = bool(cfg.get_value("usuario", "mision_reparto_completada", false))

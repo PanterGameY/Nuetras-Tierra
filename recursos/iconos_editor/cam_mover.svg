@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Ejes cruzados de paneo -->
+  <path d="M32 10 L32 54 M10 32 L54 32" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+  <!-- Flecha arriba -->
+  <path d="M24 18 L32 10 L40 18" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Flecha abajo -->
+  <path d="M24 46 L32 54 L40 46" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Flecha izquierda -->
+  <path d="M18 24 L10 32 L18 40" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Flecha derecha -->
+  <path d="M46 24 L54 32 L46 40" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Centro -->
+  <circle cx="32" cy="32" r="5" fill="#ffffff" fill-opacity="0.28" stroke="#ffffff" stroke-width="2.4"/>
+</svg>

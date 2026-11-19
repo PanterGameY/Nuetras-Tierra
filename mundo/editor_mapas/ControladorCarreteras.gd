@@ -12,19 +12,29 @@ signal tramo_finalizado()
 signal cruce_seleccionado_cambiado(cruce: RoadIntersection)
 signal ramal_cruce_seleccionado_cambiado(ramal: RoadPoint)
 signal punto_carretera_seleccionado_cambiado(rp: RoadPoint)
+signal telemetria_trazo_actualizada(activa: bool, distancia_m: float, pendiente_pct: float)
 
 enum TipoVia {
 	CALLE_2_VIAS,
 	AVENIDA_4_VIAS,
 	AUTOPISTA_6_VIAS,
-	TROCHA
+	TROCHA,
+	CALLE_1_CARRIL,
+	CARRETERA_NACIONAL,
+	DOBLE_CALZADA_8C,
+	VIA_ADOQUINADA,
+	VIA_RECEBO,
+	CICLOVIA_PEATONAL
 }
 
 const RUTA_MATERIAL_TROCHA: String = "res://materiales/Mapa/Trocha/Trocha.tres"
 const RUTA_KIT_TROCHA_GLB: String = "res://mundo/editor_mapas/modelos/trocha_rural_latinoamericana.glb"
+const RUTA_SHADER_VIA_PERS: String = "res://mundo/editor_mapas/via_superficie_personalizada.gdshader"
 
 @export var tipo_via_actual: TipoVia = TipoVia.CALLE_2_VIAS
 @export var elevacion_sobre_terreno: float = 0.25
+@export var auto_nivelar_al_trazar: bool = true
+@export var umbral_altura_puente: float = 3.0
 
 var road_manager: Node3D
 var equipamiento_controller: Node = null
@@ -56,10 +66,18 @@ var _linea_instance: MeshInstance3D
 
 var modo_conectar_activo: bool = false
 var punto_snap_detectado: RoadPoint = null
+var snap_angulo_activo: bool = true
+var modo_mejorar_via: bool = false
+var angulo_trazo_actual: float = 0.0
+var _angulo_snap_activo_actual: bool = false
+var _pos_cursor_snapped: Vector3 = Vector3.ZERO
 var _punto_origen_conexion: RoadPoint = null
 var rotacion_cruce_grados: float = 0.0
 var subherramienta_via_actual: String = "calle_2"
+var rotonda_salidas: int = 4
 var _marcador_preview_cruce: Node3D = null
+var _marcador_preview_rotonda: Node3D = null
+var _salidas_preview_rotonda: int = 0
 var cruce_seleccionado: RoadIntersection = null
 var ramal_cruce_seleccionado: RoadPoint = null
 var punto_carretera_seleccionado: RoadPoint = null
@@ -73,6 +91,7 @@ func _ready() -> void:
 	_crear_marcador_preview()
 	_crear_marcador_seleccion_conexion()
 	_crear_marcador_preview_cruce()
+	_crear_marcador_preview_rotonda()
 	_crear_marcador_cruce_seleccionado()
 	_crear_marcador_ramal_seleccionado()
 	_crear_contenedor_seleccionadores()
@@ -210,6 +229,56 @@ func _crear_marcador_preview_cruce() -> void:
 	
 	_marcador_preview_cruce.visible = false
 	add_child(_marcador_preview_cruce)
+
+func _crear_marcador_preview_rotonda() -> void:
+	if _marcador_preview_rotonda and is_instance_valid(_marcador_preview_rotonda):
+		_marcador_preview_rotonda.queue_free()
+	_marcador_preview_rotonda = Node3D.new()
+	_marcador_preview_rotonda.name = "MarcadorPreviewRotonda"
+
+	var n_sal: int = clampi(rotonda_salidas, 3, 6)
+	_salidas_preview_rotonda = n_sal
+
+	var mat_ghost := StandardMaterial3D.new()
+	mat_ghost.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat_ghost.albedo_color = Color(0.88, 0.68, 0.28, 0.45)
+	mat_ghost.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat_ghost.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat_ghost.no_depth_test = true
+	mat_ghost.render_priority = 10
+
+	var ruta_glb := "res://mundo/editor_mapas/modelos/rotonda_%d_salidas.glb" % n_sal
+	if ResourceLoader.exists(ruta_glb):
+		var esc_rot := load(ruta_glb) as PackedScene
+		if esc_rot:
+			var inst := esc_rot.instantiate()
+			_aplicar_material_fantasma_recursivo(inst, mat_ghost)
+			_marcador_preview_rotonda.add_child(inst)
+
+	# Indicadores de acceso radiales para ver dónde quedarán los puntos de conexión
+	var ancho_via: float = _obtener_ancho_total_via(tipo_via_actual)
+	var r_outer: float = 18.0 + ancho_via * 0.5
+	for i in range(n_sal):
+		var ang: float = float(i) * (TAU / float(n_sal))
+		var rad := Vector3(cos(ang), 0.0, -sin(ang))
+		var mi_acc := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 1.6
+		cyl.bottom_radius = 1.6
+		cyl.height = 0.25
+		mi_acc.mesh = cyl
+		mi_acc.material_override = mat_ghost
+		mi_acc.position = rad * (r_outer + 11.5)
+		_marcador_preview_rotonda.add_child(mi_acc)
+
+	_marcador_preview_rotonda.visible = false
+	add_child(_marcador_preview_rotonda)
+
+func _aplicar_material_fantasma_recursivo(nodo: Node, mat: Material) -> void:
+	if nodo is MeshInstance3D:
+		(nodo as MeshInstance3D).material_override = mat
+	for hijo in nodo.get_children():
+		_aplicar_material_fantasma_recursivo(hijo, mat)
 
 func _crear_marcador_cruce_seleccionado() -> void:
 	_marcador_cruce_seleccionado = Node3D.new()
@@ -436,6 +505,18 @@ func activar_modo_conexion() -> void:
 		_linea_instance.visible = false
 	carretera_actualizada.emit()
 
+func iniciar_conexion_desde_punto(rp: RoadPoint) -> bool:
+	if not is_instance_valid(rp):
+		return false
+	activar_modo_conexion()
+	_punto_origen_conexion = rp
+	seleccionar_punto_carretera(null)
+	if _marcador_seleccion_conexion:
+		_marcador_seleccion_conexion.global_position = rp.global_position + Vector3(0, 0.15, 0)
+		_marcador_seleccion_conexion.visible = true
+	carretera_actualizada.emit()
+	return true
+
 func desactivar_modo_conexion() -> void:
 	modo_conectar_activo = false
 	_punto_origen_conexion = null
@@ -462,6 +543,7 @@ func buscar_punto_cercano_snap(pos_mundo: Vector3, radio_snap: float = 6.0, solo
 func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> void:
 	var target_pos := Vector3(pos_mundo.x, pos_mundo.y + elevacion_sobre_terreno + 0.05, pos_mundo.z)
 	var es_cruce = subherramienta_via_actual in ["cruce_4", "cruce_t"]
+	var es_rotonda = (subherramienta_via_actual == "rotonda")
 	
 	if not visible_en_pantalla:
 		if _contenedor_seleccionadores_puntos:
@@ -472,13 +554,34 @@ func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> voi
 			_marcador_preview.visible = false
 		if _marcador_preview_cruce:
 			_marcador_preview_cruce.visible = false
+		if _marcador_preview_rotonda:
+			_marcador_preview_rotonda.visible = false
 		if _marcador_seleccion_conexion and _punto_origen_conexion == null:
 			_marcador_seleccion_conexion.visible = false
 		punto_snap_detectado = null
+		telemetria_trazo_actualizada.emit(false, 0.0, 0.0)
 		return
 		
 	if _contenedor_seleccionadores_puntos:
 		_contenedor_seleccionadores_puntos.visible = true
+
+	if es_rotonda:
+		if _marcador_preview:
+			_marcador_preview.visible = false
+		if _linea_instance:
+			_linea_instance.visible = false
+		if _marcador_preview_cruce:
+			_marcador_preview_cruce.visible = false
+		if _salidas_preview_rotonda != clampi(rotonda_salidas, 3, 6) or not is_instance_valid(_marcador_preview_rotonda):
+			_crear_marcador_preview_rotonda()
+		if _marcador_preview_rotonda:
+			_marcador_preview_rotonda.visible = true
+			_marcador_preview_rotonda.global_position = target_pos + Vector3(0.0, 0.25, 0.0)
+		telemetria_trazo_actualizada.emit(false, 0.0, 0.0)
+		return
+
+	if _marcador_preview_rotonda:
+		_marcador_preview_rotonda.visible = false
 		
 	if es_cruce:
 		if _marcador_preview:
@@ -503,8 +606,10 @@ func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> voi
 	
 	var punto_snap = buscar_punto_cercano_snap(pos_mundo, 6.0, not modo_conectar_activo)
 	punto_snap_detectado = punto_snap
+	_angulo_snap_activo_actual = false
 	
 	var es_snap_valido = (punto_snap != null and punto_snap != _ultimo_road_point and punto_snap != _punto_origen_conexion)
+	var ref_pt: RoadPoint = _punto_origen_conexion if modo_conectar_activo else _ultimo_road_point
 	
 	if es_snap_valido:
 		target_pos = punto_snap.global_position + Vector3(0, 0.1, 0)
@@ -512,14 +617,19 @@ func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> voi
 		if _marcador_preview.material_override:
 			_marcador_preview.material_override.albedo_color = Color(0.2, 0.85, 1.0, 0.95)
 	else:
-		# Cursor normal (Ámbar)
+		if snap_angulo_activo and ref_pt and is_instance_valid(ref_pt):
+			var snapped_xz := _aplicar_snap_angulo(ref_pt.global_position, target_pos)
+			if snapped_xz != target_pos:
+				target_pos = snapped_xz
+				_angulo_snap_activo_actual = true
+		# Cursor normal (Ámbar) o Esmeralda si está alineado a 45°/90°
 		if _marcador_preview.material_override:
-			_marcador_preview.material_override.albedo_color = Color(0.88, 0.68, 0.28, 0.85)
+			_marcador_preview.material_override.albedo_color = Color(0.25, 0.92, 0.55, 0.95) if _angulo_snap_activo_actual else Color(0.88, 0.68, 0.28, 0.85)
 			
+	_pos_cursor_snapped = target_pos
 	_marcador_preview.global_position = target_pos
 	
 	# Si hay un punto de referencia activo (último punto trazado o primer punto de conexión), actualizar línea guía
-	var ref_pt: RoadPoint = _punto_origen_conexion if modo_conectar_activo else _ultimo_road_point
 	if ref_pt and is_instance_valid(ref_pt) and _linea_preview:
 		_linea_instance.visible = true
 		_linea_preview.clear_surfaces()
@@ -533,9 +643,14 @@ func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> voi
 		if datos_cruce_prev.get("hay_cruce", false) and not es_snap_valido:
 			if _marcador_preview.material_override:
 				_marcador_preview.material_override.albedo_color = Color(1.0, 0.52, 0.12, 0.95) # Naranja cruce
+		var dist_h: float = Vector2(target_pos.x - ref_pt.global_position.x, target_pos.z - ref_pt.global_position.z).length()
+		var dy: float = absf(target_pos.y - ref_pt.global_position.y)
+		var pend_pct: float = (dy / maxf(dist_h, 0.5)) * 100.0
+		telemetria_trazo_actualizada.emit(true, dist_h, pend_pct)
 	else:
 		if _linea_instance:
 			_linea_instance.visible = false
+		telemetria_trazo_actualizada.emit(false, 0.0, 0.0)
 			
 	# Feedback hover sobre seleccionadores de puntos
 	var rp_hover = buscar_punto_carretera_cercano(pos_mundo, 5.0)
@@ -803,10 +918,22 @@ func _desconectar_puntos(rp_a: RoadPoint, rp_b: RoadPoint) -> bool:
 ## Crea y configura un ramal (RoadPoint) perteneciente a una RoadIntersection apuntando hacia un objetivo exterior
 func _obtener_ancho_total_via(tipo: TipoVia) -> float:
 	match tipo:
+		TipoVia.CALLE_1_CARRIL:
+			return 1.0 * 4.0 + 2.0 * 0.4 # 4.8m
+		TipoVia.CARRETERA_NACIONAL:
+			return 2.0 * 4.0 + 2.0 * 2.2 # 12.4m
 		TipoVia.AVENIDA_4_VIAS:
 			return 4.0 * 3.5 + 2.0 * 1.2 # 16.4m
 		TipoVia.AUTOPISTA_6_VIAS:
 			return 6.0 * 3.6 + 2.0 * 1.8 # 25.2m
+		TipoVia.DOBLE_CALZADA_8C:
+			return 8.0 * 3.6 + 2.0 * 2.2 # 33.2m
+		TipoVia.VIA_ADOQUINADA:
+			return 2.0 * 3.3 + 2.0 * 0.6 # 7.8m
+		TipoVia.VIA_RECEBO:
+			return 2.0 * 3.4 + 2.0 * 0.6 # 8.0m
+		TipoVia.CICLOVIA_PEATONAL:
+			return 1.0 * 2.6 + 2.0 * 0.3 # 3.2m
 		TipoVia.TROCHA:
 			return 2.0 * 2.8 + 2.0 * 0.9 # 7.4m
 		_:
@@ -1089,6 +1216,18 @@ func ejecutar_paso_conexion(pos_mundo: Vector3) -> Dictionary:
 		else:
 			return {"exito": false, "mensaje": "No se pudieron conectar las vías (ambos extremos podrían estar ocupados)"}
 
+func continuar_trazo_desde_punto(rp: RoadPoint) -> bool:
+	if not is_instance_valid(rp):
+		return false
+	var tiene_puerto_libre: bool = rp.prior_pt_init.is_empty() or rp.next_pt_init.is_empty()
+	if not tiene_puerto_libre:
+		return false
+	tipo_via_actual = _obtener_tipo_via_de_punto(rp)
+	_ultimo_road_point = rp
+	seleccionar_punto_carretera(null)
+	carretera_actualizada.emit()
+	return true
+
 func agregar_punto_carretera(pos_mundo: Vector3) -> RoadPoint:
 	if not road_container:
 		return null
@@ -1144,7 +1283,10 @@ func agregar_punto_carretera(pos_mundo: Vector3) -> RoadPoint:
 		_ultimo_road_point.connect_roadpoint(dir_origen, rp, RoadPoint.PointInit.PRIOR)
 		_actualizar_orientaciones_y_curvaturas()
 		road_container.rebuild_segments(true)
-		nivelar_terreno_bajo_carreteras()
+		if auto_nivelar_al_trazar:
+			adaptar_terreno_en_tramo(obtener_segmentos_de_punto(rp))
+		else:
+			nivelar_terreno_bajo_carreteras()
 	else:
 		# Primer punto de la vía
 		rp.global_transform.basis = Basis.IDENTITY
@@ -1641,12 +1783,20 @@ func _obtener_etiqueta_cardinal(centro: Vector3, pos_ramal: Vector3) -> String:
 func _obtener_tipo_via_de_punto(rp: RoadPoint) -> TipoVia:
 	if not is_instance_valid(rp):
 		return TipoVia.CALLE_2_VIAS
-	if bool(rp.get_meta("es_trocha", false)) or int(rp.get_meta("tipo_via", -1)) == int(TipoVia.TROCHA):
+	if rp.has_meta("tipo_via"):
+		var tv := int(rp.get_meta("tipo_via", 0))
+		if tv >= 0 and tv <= int(TipoVia.CICLOVIA_PEATONAL):
+			return tv as TipoVia
+	if bool(rp.get_meta("es_trocha", false)):
 		return TipoVia.TROCHA
-	if rp.traffic_dir.size() >= 6:
+	if rp.traffic_dir.size() >= 8:
+		return TipoVia.DOBLE_CALZADA_8C
+	elif rp.traffic_dir.size() >= 6:
 		return TipoVia.AUTOPISTA_6_VIAS
 	elif rp.traffic_dir.size() >= 4:
 		return TipoVia.AVENIDA_4_VIAS
+	elif rp.traffic_dir.size() == 1:
+		return TipoVia.CALLE_1_CARRIL
 	else:
 		return TipoVia.CALLE_2_VIAS
 
@@ -1691,14 +1841,7 @@ func _calcular_radio_cruce(inter: RoadIntersection) -> float:
 func _obtener_tipo_via_de_puntos(puntos: Array[RoadPoint]) -> TipoVia:
 	for rp in puntos:
 		if is_instance_valid(rp):
-			if bool(rp.get_meta("es_trocha", false)) or int(rp.get_meta("tipo_via", -1)) == int(TipoVia.TROCHA):
-				return TipoVia.TROCHA
-			if rp.traffic_dir.size() >= 6:
-				return TipoVia.AUTOPISTA_6_VIAS
-			elif rp.traffic_dir.size() >= 4:
-				return TipoVia.AVENIDA_4_VIAS
-			else:
-				return TipoVia.CALLE_2_VIAS
+			return _obtener_tipo_via_de_punto(rp)
 	return TipoVia.CALLE_2_VIAS
 
 func obtener_datos_cruce_seleccionado() -> Dictionary:
@@ -1711,8 +1854,65 @@ func obtener_datos_cruce_seleccionado() -> Dictionary:
 		"radio": _calcular_radio_cruce(cruce_seleccionado),
 		"num_brazos": cruce_seleccionado.edge_points.size(),
 		"tipo_via": _obtener_tipo_via_de_puntos(cruce_seleccionado.edge_points),
-		"flatten_terrain": cruce_seleccionado.flatten_terrain
+		"flatten_terrain": cruce_seleccionado.flatten_terrain,
+		"control_trafico": str(cruce_seleccionado.get_meta("control_trafico", "semaforo"))
 	}
+
+func establecer_control_cruce_seleccionado(modo: String) -> void:
+	if is_instance_valid(cruce_seleccionado):
+		cruce_seleccionado.set_meta("control_trafico", modo)
+
+func _aplicar_snap_angulo(origen: Vector3, destino: Vector3) -> Vector3:
+	var dv := Vector2(destino.x - origen.x, destino.z - origen.z)
+	var dist := dv.length()
+	if dist < 2.0:
+		return destino
+	var ang := atan2(dv.y, dv.x)
+	var paso := PI * 0.25 # 45 grados
+	var ang_snap := roundf(ang / paso) * paso
+	if absf(wrapf(ang - ang_snap, -PI, PI)) <= deg_to_rad(6.5):
+		angulo_trazo_actual = wrapf(rad_to_deg(ang_snap), 0.0, 360.0)
+		var nuevo := Vector3(origen.x + cos(ang_snap) * dist, destino.y, origen.z + sin(ang_snap) * dist)
+		if controlador_terreno and controlador_terreno.has_method("obtener_altura"):
+			nuevo.y = float(controlador_terreno.obtener_altura(nuevo)) + elevacion_sobre_terreno + 0.05
+		return nuevo
+	angulo_trazo_actual = wrapf(rad_to_deg(ang), 0.0, 360.0)
+	return destino
+
+func obtener_posicion_trazo_snapped(pos_mundo: Vector3) -> Vector3:
+	if _angulo_snap_activo_actual and _pos_cursor_snapped != Vector3.ZERO:
+		return _pos_cursor_snapped
+	return pos_mundo
+
+func cambiar_elevacion_paso(delta_m: float) -> float:
+	elevacion_sobre_terreno = clampf(elevacion_sobre_terreno + delta_m, -15.0, 24.0)
+	return elevacion_sobre_terreno
+
+func resetear_elevacion() -> float:
+	elevacion_sobre_terreno = 0.0
+	return 0.0
+
+func mejorar_segmento_en_posicion(pos_mundo: Vector3, nuevo_tipo: int) -> bool:
+	if not road_container or not is_instance_valid(road_container):
+		return false
+	var mejor_seg: RoadSegment = null
+	var mejor_d := 12.0
+	for obj in road_container.get_segments():
+		var seg := obj as RoadSegment
+		if not is_instance_valid(seg) or not seg.curve:
+			continue
+		var loc := seg.to_local(pos_mundo) if seg.is_inside_tree() else (pos_mundo - seg.position)
+		var cl := seg.curve.get_closest_point(loc)
+		var w_cl := seg.to_global(cl) if seg.is_inside_tree() else (seg.position + cl)
+		var d := pos_mundo.distance_to(w_cl)
+		if d < mejor_d:
+			mejor_d = d
+			mejor_seg = seg
+	if mejor_seg:
+		var arr: Array[RoadSegment] = [mejor_seg]
+		cambiar_tipo_via_segmentos(arr, nuevo_tipo)
+		return true
+	return false
 
 func modificar_radio_cruce(nuevo_radio: float) -> void:
 	if not is_instance_valid(cruce_seleccionado):
@@ -1956,12 +2156,24 @@ func _aplicar_tipo_via_a_punto(rp: RoadPoint, tipo: TipoVia) -> void:
 	rp.set_meta("tipo_via", int(tipo))
 	rp.set_meta("es_trocha", tipo == TipoVia.TROCHA)
 	match tipo:
+		TipoVia.CALLE_1_CARRIL:
+			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.FORWARD]
+			rp.traffic_dir = dirs
+			rp.lane_width = 4.0
+			rp.shoulder_width_l = 0.4
+			rp.shoulder_width_r = 0.4
 		TipoVia.CALLE_2_VIAS:
 			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.FORWARD]
 			rp.traffic_dir = dirs
 			rp.lane_width = 3.6
 			rp.shoulder_width_l = 0.8
 			rp.shoulder_width_r = 0.8
+		TipoVia.CARRETERA_NACIONAL:
+			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.FORWARD]
+			rp.traffic_dir = dirs
+			rp.lane_width = 4.0
+			rp.shoulder_width_l = 2.2
+			rp.shoulder_width_r = 2.2
 		TipoVia.AVENIDA_4_VIAS:
 			var dirs: Array[RoadPoint.LaneDir] = [
 				RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.REVERSE,
@@ -1980,6 +2192,45 @@ func _aplicar_tipo_via_a_punto(rp: RoadPoint, tipo: TipoVia) -> void:
 			rp.lane_width = 3.8
 			rp.shoulder_width_l = 1.8
 			rp.shoulder_width_r = 1.8
+		TipoVia.DOBLE_CALZADA_8C:
+			var dirs: Array[RoadPoint.LaneDir] = [
+				RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.REVERSE,
+				RoadPoint.LaneDir.FORWARD, RoadPoint.LaneDir.FORWARD, RoadPoint.LaneDir.FORWARD, RoadPoint.LaneDir.FORWARD
+			]
+			rp.traffic_dir = dirs
+			rp.lane_width = 3.6
+			rp.shoulder_width_l = 2.2
+			rp.shoulder_width_r = 2.2
+		TipoVia.VIA_ADOQUINADA:
+			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.FORWARD]
+			rp.traffic_dir = dirs
+			rp.lane_width = 3.3
+			rp.shoulder_width_l = 0.6
+			rp.shoulder_width_r = 0.6
+			if not rp.has_meta("superficie_via"):
+				rp.set_meta("superficie_via", 3)
+			if not rp.has_meta("demarcacion_via"):
+				rp.set_meta("demarcacion_via", 3)
+		TipoVia.VIA_RECEBO:
+			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.FORWARD]
+			rp.traffic_dir = dirs
+			rp.lane_width = 3.4
+			rp.shoulder_width_l = 0.6
+			rp.shoulder_width_r = 0.6
+			if not rp.has_meta("superficie_via"):
+				rp.set_meta("superficie_via", 4)
+			if not rp.has_meta("demarcacion_via"):
+				rp.set_meta("demarcacion_via", 3)
+		TipoVia.CICLOVIA_PEATONAL:
+			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.FORWARD]
+			rp.traffic_dir = dirs
+			rp.lane_width = 2.6
+			rp.shoulder_width_l = 0.3
+			rp.shoulder_width_r = 0.3
+			if not rp.has_meta("superficie_via"):
+				rp.set_meta("superficie_via", 5)
+			if not rp.has_meta("demarcacion_via"):
+				rp.set_meta("demarcacion_via", 3)
 		TipoVia.TROCHA:
 			var dirs: Array[RoadPoint.LaneDir] = [RoadPoint.LaneDir.REVERSE, RoadPoint.LaneDir.FORWARD]
 			rp.traffic_dir = dirs
@@ -2057,7 +2308,18 @@ func _actualizar_segmentos_trocha() -> void:
 			if det_prev:
 				seg.remove_child(det_prev)
 				det_prev.queue_free()
-			if _mat_trocha_via and seg.material == _mat_trocha_via:
+			var sup := 0
+			var dem := 0
+			if is_instance_valid(seg.start_point):
+				sup = int(seg.start_point.get_meta("superficie_via", 0))
+				dem = int(seg.start_point.get_meta("demarcacion_via", 0))
+			if (sup == 0 and dem == 0) and is_instance_valid(seg.end_point):
+				sup = int(seg.end_point.get_meta("superficie_via", 0))
+				dem = int(seg.end_point.get_meta("demarcacion_via", 0))
+			if sup > 0 or dem > 0:
+				_aplicar_estilo_personalizado_a_segmento(seg, sup, dem)
+			elif (_mat_trocha_via and seg.material == _mat_trocha_via) or seg.has_meta("estilo_pers_aplicado"):
+				seg.remove_meta("estilo_pers_aplicado")
 				seg.material = road_container.material_resource
 				seg.material_underside = road_container.material_underside
 				seg.is_dirty = true
@@ -2087,7 +2349,55 @@ func _aplicar_uvs_y_material_trocha_a_segmento(seg: RoadSegment) -> void:
 	seg.material_underside = _mat_trocha_talud
 	seg.set_meta("es_trocha", true)
 	seg.road_mesh.set_meta("es_trocha", true)
+	_normalizar_uvs_curva_segmento(seg, _mat_trocha_via, _mat_trocha_talud)
 
+func _aplicar_estilo_personalizado_a_segmento(seg: RoadSegment, superficie: int, _demarcacion: int) -> void:
+	if not is_instance_valid(seg.road_mesh):
+		return
+	if superficie <= 0:
+		if seg.has_meta("estilo_pers_aplicado"):
+			seg.remove_meta("estilo_pers_aplicado")
+			seg.material = road_container.material_resource
+			seg.road_mesh.set_surface_override_material(0, road_container.material_resource)
+		return
+	var mat_p := StandardMaterial3D.new()
+	mat_p.uv1_triplanar = true
+	mat_p.uv1_world_triplanar = true
+	mat_p.uv1_scale = Vector3(0.22, 0.22, 0.22)
+	var ruta_alb := "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/roca_gris.png"
+	var ruta_nrm := "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/roca_gris_normal.png"
+	match superficie:
+		1: # Asfalto Nuevo
+			mat_p.albedo_color = Color(0.18, 0.19, 0.21)
+			mat_p.roughness = 0.68
+		2: # Asfalto Desgastado
+			mat_p.albedo_color = Color(0.45, 0.46, 0.47)
+			mat_p.roughness = 0.88
+		3: # Adoquín
+			mat_p.albedo_color = Color(0.72, 0.66, 0.58)
+			mat_p.roughness = 0.85
+			mat_p.uv1_scale = Vector3(0.35, 0.35, 0.35)
+		4: # Recebo
+			ruta_alb = "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/cascajo_recebo.png"
+			ruta_nrm = "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/cascajo_recebo_normal.png"
+			mat_p.albedo_color = Color(0.92, 0.88, 0.82)
+			mat_p.roughness = 0.94
+		5: # Ciclovía
+			ruta_alb = "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/barro_arcilla.png"
+			ruta_nrm = "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/barro_arcilla_normal.png"
+			mat_p.albedo_color = Color(0.72, 0.32, 0.24)
+			mat_p.roughness = 0.78
+	if ResourceLoader.exists(ruta_alb):
+		mat_p.albedo_texture = load(ruta_alb)
+	if ResourceLoader.exists(ruta_nrm):
+		mat_p.normal_enabled = true
+		mat_p.normal_texture = load(ruta_nrm)
+		mat_p.normal_scale = 0.65
+	seg.material = mat_p
+	seg.set_meta("estilo_pers_aplicado", true)
+	seg.road_mesh.set_surface_override_material(0, mat_p)
+
+func _normalizar_uvs_curva_segmento(seg: RoadSegment, mat_surf0: Material, mat_surf1: Material) -> void:
 	var arr_mesh := seg.road_mesh.mesh as ArrayMesh
 	if arr_mesh.get_surface_count() == 0 or not seg.curve:
 		return
@@ -2127,15 +2437,71 @@ func _aplicar_uvs_y_material_trocha_a_segmento(seg: RoadSegment) -> void:
 
 		arr_mesh.clear_surfaces()
 		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_0)
-		arr_mesh.surface_set_material(0, _mat_trocha_via)
+		arr_mesh.surface_set_material(0, mat_surf0)
 		if tiene_surf_1 and not arrays_1.is_empty():
 			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays_1)
-			arr_mesh.surface_set_material(1, _mat_trocha_talud)
+			if mat_surf1:
+				arr_mesh.surface_set_material(1, mat_surf1)
 		arr_mesh.set_meta("firma_uv_trocha", firma_actual)
 
-	seg.road_mesh.set_surface_override_material(0, _mat_trocha_via)
-	if arr_mesh.get_surface_count() > 1 and _mat_trocha_talud:
-		seg.road_mesh.set_surface_override_material(1, _mat_trocha_talud)
+	seg.road_mesh.set_surface_override_material(0, mat_surf0)
+	if arr_mesh.get_surface_count() > 1 and mat_surf1:
+		seg.road_mesh.set_surface_override_material(1, mat_surf1)
+
+func cambiar_tipo_via_segmentos(segs: Array[RoadSegment], nuevo_tipo: int) -> void:
+	if not road_container or segs.is_empty():
+		return
+	var tipo_enum: TipoVia = clampi(nuevo_tipo, 0, int(TipoVia.CICLOVIA_PEATONAL)) as TipoVia
+	var puntos_editados: Array[RoadPoint] = []
+	for seg in segs:
+		if not is_instance_valid(seg):
+			continue
+		for rp in [seg.start_point, seg.end_point]:
+			if is_instance_valid(rp) and not (rp in puntos_editados):
+				rp.remove_meta("superficie_via")
+				rp.remove_meta("demarcacion_via")
+				_aplicar_tipo_via_a_punto(rp, tipo_enum)
+				puntos_editados.append(rp)
+	if not puntos_editados.is_empty():
+		road_container.update_edges()
+		road_container.rebuild_segments(true)
+		_actualizar_segmentos_trocha()
+		carretera_actualizada.emit()
+
+func aplicar_estilo_segmentos(segs: Array[RoadSegment], superficie: int, demarcacion: int) -> void:
+	if not road_container or segs.is_empty():
+		return
+	for seg in segs:
+		if not is_instance_valid(seg):
+			continue
+		for rp in [seg.start_point, seg.end_point]:
+			if is_instance_valid(rp):
+				if superficie >= 0:
+					rp.set_meta("superficie_via", superficie)
+				if demarcacion >= 0:
+					rp.set_meta("demarcacion_via", demarcacion)
+	_actualizar_segmentos_trocha()
+	carretera_actualizada.emit()
+
+func buscar_segmento_por_posicion(pos_mundo: Vector3, max_dist: float = 12.0) -> RoadSegment:
+	if not road_container or not is_instance_valid(road_container):
+		return null
+	var mejor_seg: RoadSegment = null
+	var mejor_dist := max_dist
+	for obj in road_container.get_segments():
+		var seg := obj as RoadSegment
+		if not is_instance_valid(seg) or not seg.curve:
+			continue
+		var local_p := seg.to_local(pos_mundo) if seg.is_inside_tree() else (pos_mundo - seg.position)
+		var closest_local := seg.curve.get_closest_point(local_p)
+		var closest_world := seg.to_global(closest_local) if seg.is_inside_tree() else (seg.position + closest_local)
+		var d := Vector2(pos_mundo.x - closest_world.x, pos_mundo.z - closest_world.z).length()
+		var ancho := _obtener_ancho_via_punto(seg.start_point) if is_instance_valid(seg.start_point) else 8.8
+		var umbral := maxf(max_dist, ancho * 0.65)
+		if d < umbral and d < mejor_dist:
+			mejor_dist = d
+			mejor_seg = seg
+	return mejor_seg
 
 func _instanciar_detalles_rurales_trocha(seg: RoadSegment) -> void:
 	if _mallas_kit_trocha.is_empty() or not seg.curve:
@@ -2323,9 +2689,9 @@ func _nivelar_segmento(seg: RoadSegment, terrain: Terrain3D, forzar_adaptacion: 
 	var end_width := _obtener_ancho_via_punto(seg.end_point)
 	var vertex_spacing: float = terrain.vertex_spacing if terrain.vertex_spacing > 0.0 else 1.0
 
-	var edge_margin := 0.8
-	var edge_falloff := 3.5
-	var offset_y := -0.30 # Nivelar a 30 cm por debajo de la superficie de rodadura
+	var edge_margin := 1.1
+	var edge_falloff := 4.5
+	var offset_y := -0.08 # Nivelar a 8 cm por debajo del borde superior de la calzada
 
 	# Curva aplanada para proyección precisa en el plano XZ sin sesgo de altura 3D
 	var flattened_curve: Curve3D = curve.duplicate(true)
@@ -2394,8 +2760,11 @@ func _nivelar_segmento(seg: RoadSegment, terrain: Terrain3D, forzar_adaptacion: 
 
 						var curr_h = terrain.data.get_height(world_pos)
 						if not is_nan(curr_h):
-							if forzar_adaptacion:
-								# El usuario pidió explícitamente adaptar el terreno (subir terraplén o excavar trinchera)
+							# Si la montaña supera los 12.0m por encima de la vía, conservar la montaña intacta para generar túnel
+							var es_montana_tunel: bool = (curr_h >= target_road_bed + 12.0)
+							# Si la vía va en viaducto (umbral_altura_puente+ sobre el terreno), no rellenar el valle salvo que se fuerce
+							var es_valle_puente: bool = (not forzar_adaptacion) and (target_road_bed - curr_h >= umbral_altura_puente)
+							if not es_montana_tunel and not es_valle_puente:
 								if lat_dist <= half_w + edge_margin:
 									if absf(curr_h - target_road_bed) > 0.02:
 										terrain.data.set_height(world_pos, target_road_bed)
@@ -2406,19 +2775,6 @@ func _nivelar_segmento(seg: RoadSegment, terrain: Terrain3D, forzar_adaptacion: 
 									if absf(curr_h - desired) > 0.02:
 										terrain.data.set_height(world_pos, desired)
 										modificado = true
-							else:
-								# Si la montaña está más de 2.2m por encima de la carretera, es un TÚNEL: no destruir la montaña
-								if curr_h <= target_road_bed + 2.2:
-									if lat_dist <= half_w + edge_margin:
-										if curr_h > target_road_bed:
-											terrain.data.set_height(world_pos, target_road_bed)
-											modificado = true
-									elif lat_dist <= half_w + edge_margin + edge_falloff:
-										var factor: float = (lat_dist - (half_w + edge_margin)) / edge_falloff
-										var desired := lerpf(target_road_bed, curr_h, factor)
-										if curr_h > desired:
-											terrain.data.set_height(world_pos, desired)
-											modificado = true
 
 			z += vertex_spacing
 		x += vertex_spacing
@@ -2501,24 +2857,523 @@ func deshacer_ultimo_punto() -> void:
 func limpiar_todas_las_carreteras() -> void:
 	for rp in _puntos_creados:
 		if is_instance_valid(rp):
+			if rp.get_parent() == road_container:
+				road_container.remove_child(rp)
 			rp.queue_free()
 	_puntos_creados.clear()
+	if road_container and is_instance_valid(road_container):
+		for child in road_container.get_children().duplicate():
+			if child is RoadPoint or child is RoadIntersection or child is RoadSegment or child.is_in_group("rotonda_islas"):
+				road_container.remove_child(child)
+				child.queue_free()
 	_historial_acciones.clear()
 	_ultimo_road_point = null
+	cruce_seleccionado = null
+	ramal_cruce_seleccionado = null
+	punto_carretera_seleccionado = null
 	if _linea_instance:
 		_linea_instance.visible = false
 	if road_container:
 		road_container.rebuild_segments(true)
+	actualizar_seleccionadores_puntos()
 	carretera_actualizada.emit()
 
+func crear_rotonda(pos_mundo: Vector3, radio: float = 18.0, num_salidas: int = -1) -> Dictionary:
+	if not road_container:
+		return {"exito": false}
+	var centro := _ajustar_altura_a_terreno(pos_mundo)
+	var r: float = clampf(radio, 14.0, 40.0)
+	var n_sal: int = clampi(num_salidas if num_salidas >= 3 else rotonda_salidas, 3, 6)
+	var ancho_via: float = _obtener_ancho_total_via(tipo_via_actual)
+	var r_outer: float = r + ancho_via * 0.5
+	var rps_ext: Array[RoadPoint] = []
+	var todos_rps: Array[RoadPoint] = []
+	var base_idx := _puntos_creados.size() + 1
+
+	for i in range(n_sal):
+		var ang: float = float(i) * (TAU / float(n_sal))
+		# Mapeo exacto Blender (X, Y) -> Godot (X, -Z) tras export_yup=True
+		var rad := Vector3(cos(ang), 0.0, -sin(ang))
+		var rp_in := RoadPoint.new()
+		rp_in.name = "Rotonda_%d_In_%d" % [base_idx, i + 1]
+		rp_in.container = road_container
+		road_container.add_child(rp_in)
+		rp_in.global_position = centro + rad * (r_outer + 3.8)
+		rp_in.global_transform.basis = Basis.looking_at(-rad, Vector3.UP)
+		_configurar_tipo_via(rp_in)
+		rp_in.set_meta("es_rotonda", true)
+		_puntos_creados.append(rp_in)
+		todos_rps.append(rp_in)
+
+		var rp_out := RoadPoint.new()
+		rp_out.name = "Rotonda_%d_Acceso_%d" % [base_idx, i + 1]
+		rp_out.container = road_container
+		road_container.add_child(rp_out)
+		rp_out.global_position = centro + rad * (r_outer + 11.5)
+		rp_out.global_transform.basis = Basis.looking_at(-rad, Vector3.UP)
+		_configurar_tipo_via(rp_out)
+		rp_out.set_meta("es_rotonda", true)
+		_puntos_creados.append(rp_out)
+		todos_rps.append(rp_out)
+		rps_ext.append(rp_out)
+
+		rp_in.connect_roadpoint(RoadPoint.PointInit.NEXT, rp_out, RoadPoint.PointInit.PRIOR)
+
+	_crear_isla_rotonda(centro, r, n_sal)
+	_actualizar_orientaciones_y_curvaturas()
+	road_container.rebuild_segments(true)
+	if auto_nivelar_al_trazar:
+		for rp in todos_rps:
+			adaptar_terreno_en_tramo(obtener_segmentos_de_punto(rp))
+	else:
+		nivelar_terreno_bajo_carreteras()
+	actualizar_seleccionadores_puntos()
+	carretera_actualizada.emit()
+	return {"exito": true, "centro": centro, "puntos": todos_rps, "accesos": rps_ext}
+
+func _crear_isla_rotonda(centro: Vector3, radio_anillo: float, num_salidas: int = 4) -> void:
+	if not road_container:
+		return
+	var ancho_via: float = maxf(8.0, _obtener_ancho_total_via(tipo_via_actual))
+	var r_in: float = maxf(6.0, radio_anillo - ancho_via * 0.5)
+	var r_out: float = radio_anillo + ancho_via * 0.5
+	var n_sal: int = clampi(num_salidas, 3, 6)
+
+	var isla := StaticBody3D.new()
+	isla.name = "IslaRotonda_%d" % (_puntos_creados.size())
+	isla.add_to_group("rotonda_islas")
+	isla.set_meta("radio_anillo", radio_anillo)
+	isla.set_meta("salidas", n_sal)
+	road_container.add_child(isla)
+	isla.global_position = centro
+
+	# Usar modelo procedural de alta calidad creado en Blender (3, 4, 5 o 6 salidas)
+	var ruta_glb := "res://mundo/editor_mapas/modelos/rotonda_%d_salidas.glb" % n_sal
+	if not ResourceLoader.exists(ruta_glb):
+		ruta_glb = "res://mundo/editor_mapas/modelos/rotonda_procedural.glb"
+	if ResourceLoader.exists(ruta_glb):
+		var escena_rotonda := load(ruta_glb) as PackedScene
+		if escena_rotonda:
+			var modelo := escena_rotonda.instantiate()
+			var esc: float = radio_anillo / 18.0
+			if modelo is Node3D:
+				(modelo as Node3D).scale = Vector3(esc, 1.0, esc)
+			isla.add_child(modelo)
+			# Colisión de calzada + isla central para conducción vehicular
+			var col_calzada := CollisionShape3D.new()
+			var shp_calzada := CylinderShape3D.new()
+			shp_calzada.radius = 23.0 * esc
+			shp_calzada.height = 0.08
+			col_calzada.shape = shp_calzada
+			col_calzada.position = Vector3(0.0, 0.0, 0.0)
+			isla.add_child(col_calzada)
+
+			var col_isla := CollisionShape3D.new()
+			var shp_isla := CylinderShape3D.new()
+			shp_isla.radius = 12.6 * esc
+			shp_isla.height = 1.2
+			col_isla.shape = shp_isla
+			col_isla.position = Vector3(0.0, 0.6, 0.0)
+			isla.add_child(col_isla)
+			return
+
+	# 1. Anillo circular perfecto de asfalto (48 segmentos)
+	var st_asf := SurfaceTool.new()
+	st_asf.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var segs: int = 48
+	for i in range(segs):
+		var a0: float = (float(i) / float(segs)) * TAU
+		var a1: float = (float(i + 1) / float(segs)) * TAU
+		var p_in0 := Vector3(cos(a0) * r_in, 0.04, sin(a0) * r_in)
+		var p_in1 := Vector3(cos(a1) * r_in, 0.04, sin(a1) * r_in)
+		var p_out0 := Vector3(cos(a0) * r_out, 0.04, sin(a0) * r_out)
+		var p_out1 := Vector3(cos(a1) * r_out, 0.04, sin(a1) * r_out)
+		st_asf.set_normal(Vector3.UP)
+		st_asf.add_vertex(p_in0); st_asf.add_vertex(p_out0); st_asf.add_vertex(p_out1)
+		st_asf.set_normal(Vector3.UP)
+		st_asf.add_vertex(p_in0); st_asf.add_vertex(p_out1); st_asf.add_vertex(p_in1)
+	var mesh_asf := st_asf.commit()
+	var mi_asf := MeshInstance3D.new()
+	mi_asf.mesh = mesh_asf
+	var mat_asf := StandardMaterial3D.new()
+	mat_asf.albedo_color = Color(0.39, 0.40, 0.42)
+	mat_asf.roughness = 0.88
+	mi_asf.material_override = mat_asf
+	isla.add_child(mi_asf)
+
+	# 1b. Empalmes abocinados curvos en las 4 entradas (N, E, S, O) para transición suave sin cortes rectangulares
+	var st_apr := SurfaceTool.new()
+	st_apr.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var half_w: float = ancho_via * 0.5
+	var angs_ent := [-PI * 0.5, 0.0, PI * 0.5, PI]
+	for ang_c: float in angs_ent:
+		var fwd := Vector3(cos(ang_c), 0.0, sin(ang_c))
+		var lat := Vector3(-fwd.z, 0.0, fwd.x)
+		var pasos_f: int = 8
+		for k in range(pasos_f):
+			var t0: float = float(k) / float(pasos_f)
+			var t1: float = float(k + 1) / float(pasos_f)
+			var dist0: float = lerpf(r_out - 0.5, r_out + 4.1, t0)
+			var dist1: float = lerpf(r_out - 0.5, r_out + 4.1, t1)
+			var w0: float = lerpf(half_w + 5.2, half_w + 0.05, pow(t0, 0.55))
+			var w1: float = lerpf(half_w + 5.2, half_w + 0.05, pow(t1, 0.55))
+			var a0 := fwd * dist0 - lat * w0 + Vector3(0, 0.042, 0)
+			var b0 := fwd * dist0 + lat * w0 + Vector3(0, 0.042, 0)
+			var a1 := fwd * dist1 - lat * w1 + Vector3(0, 0.042, 0)
+			var b1 := fwd * dist1 + lat * w1 + Vector3(0, 0.042, 0)
+			st_apr.set_normal(Vector3.UP)
+			st_apr.add_vertex(a0); st_apr.add_vertex(b0); st_apr.add_vertex(b1)
+			st_apr.set_normal(Vector3.UP)
+			st_apr.add_vertex(a0); st_apr.add_vertex(b1); st_apr.add_vertex(a1)
+	var mi_apr := MeshInstance3D.new()
+	mi_apr.mesh = st_apr.commit()
+	mi_apr.material_override = mat_asf
+	isla.add_child(mi_apr)
+
+	# Colisión del anillo para conducir encima
+	var col_asf := CollisionShape3D.new()
+	var cyl_col := CylinderShape3D.new()
+	cyl_col.radius = r_out
+	cyl_col.height = 0.16
+	col_asf.shape = cyl_col
+	col_asf.position.y = -0.02
+	isla.add_child(col_asf)
+
+	# 2. Línea amarilla interior y trazos blancos discontinuos del carril
+	var mat_amarillo := StandardMaterial3D.new()
+	mat_amarillo.albedo_color = Color(0.95, 0.78, 0.18)
+	mat_amarillo.roughness = 0.6
+	var mat_blanco := StandardMaterial3D.new()
+	mat_blanco.albedo_color = Color(0.94, 0.95, 0.96)
+	mat_blanco.roughness = 0.65
+
+	var st_lin := SurfaceTool.new()
+	st_lin.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var r_l0: float = r_in + 0.35
+	var r_l1: float = r_in + 0.55
+	for i in range(segs):
+		var a0: float = (float(i) / float(segs)) * TAU
+		var a1: float = (float(i + 1) / float(segs)) * TAU
+		st_lin.set_normal(Vector3.UP)
+		st_lin.add_vertex(Vector3(cos(a0) * r_l0, 0.055, sin(a0) * r_l0))
+		st_lin.add_vertex(Vector3(cos(a0) * r_l1, 0.055, sin(a0) * r_l1))
+		st_lin.add_vertex(Vector3(cos(a1) * r_l1, 0.055, sin(a1) * r_l1))
+		st_lin.set_normal(Vector3.UP)
+		st_lin.add_vertex(Vector3(cos(a0) * r_l0, 0.055, sin(a0) * r_l0))
+		st_lin.add_vertex(Vector3(cos(a1) * r_l1, 0.055, sin(a1) * r_l1))
+		st_lin.add_vertex(Vector3(cos(a1) * r_l0, 0.055, sin(a1) * r_l0))
+	var mi_lin := MeshInstance3D.new()
+	mi_lin.mesh = st_lin.commit()
+	mi_lin.material_override = mat_amarillo
+	isla.add_child(mi_lin)
+
+	# Línea discontinua central del anillo
+	var st_dash := SurfaceTool.new()
+	st_dash.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var r_d0: float = radio_anillo - 0.12
+	var r_d1: float = radio_anillo + 0.12
+	for i in range(segs):
+		if i % 2 == 1:
+			continue
+		var a0: float = (float(i) / float(segs)) * TAU
+		var a1: float = (float(i + 0.65) / float(segs)) * TAU
+		st_dash.set_normal(Vector3.UP)
+		st_dash.add_vertex(Vector3(cos(a0) * r_d0, 0.055, sin(a0) * r_d0))
+		st_dash.add_vertex(Vector3(cos(a0) * r_d1, 0.055, sin(a0) * r_d1))
+		st_dash.add_vertex(Vector3(cos(a1) * r_d1, 0.055, sin(a1) * r_d1))
+		st_dash.set_normal(Vector3.UP)
+		st_dash.add_vertex(Vector3(cos(a0) * r_d0, 0.055, sin(a0) * r_d0))
+		st_dash.add_vertex(Vector3(cos(a1) * r_d1, 0.055, sin(a1) * r_d1))
+		st_dash.add_vertex(Vector3(cos(a1) * r_d0, 0.055, sin(a1) * r_d0))
+	var mi_dash := MeshInstance3D.new()
+	mi_dash.mesh = st_dash.commit()
+	mi_dash.material_override = mat_blanco
+	isla.add_child(mi_dash)
+
+	# Líneas blancas de Ceda el Paso en cada una de las 4 entradas
+	var st_ceda := SurfaceTool.new()
+	st_ceda.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for ang_c: float in [-PI * 0.5, 0.0, PI * 0.5, PI]:
+		var fwd := Vector3(cos(ang_c), 0.0, sin(ang_c))
+		var lat := Vector3(-fwd.z, 0.0, fwd.x)
+		var base_c := fwd * (r_out + 0.6) + Vector3(0, 0.058, 0)
+		var num_c := 5
+		for ci in range(num_c):
+			var u := -half_w * 0.85 + (float(ci) / float(num_c - 1)) * (half_w * 1.7)
+			var p_c := base_c + lat * u
+			var c0 := p_c - lat * 0.35 - fwd * 0.18
+			var c1 := p_c + lat * 0.35 - fwd * 0.18
+			var c2 := p_c + lat * 0.35 + fwd * 0.18
+			var c3 := p_c - lat * 0.35 + fwd * 0.18
+			st_ceda.set_normal(Vector3.UP)
+			st_ceda.add_vertex(c0); st_ceda.add_vertex(c1); st_ceda.add_vertex(c2)
+			st_ceda.set_normal(Vector3.UP)
+			st_ceda.add_vertex(c0); st_ceda.add_vertex(c2); st_ceda.add_vertex(c3)
+	var mi_ceda := MeshInstance3D.new()
+	mi_ceda.mesh = st_ceda.commit()
+	mi_ceda.material_override = mat_blanco
+	isla.add_child(mi_ceda)
+
+	# 3. Bordillo elevado e isla central con textura realista de césped
+	var bordillo := MeshInstance3D.new()
+	var cyl_b := CylinderMesh.new()
+	cyl_b.top_radius = r_in - 0.1
+	cyl_b.bottom_radius = r_in + 0.25
+	cyl_b.height = 0.28
+	cyl_b.radial_segments = 48
+	bordillo.mesh = cyl_b
+	var mat_b := StandardMaterial3D.new()
+	mat_b.albedo_color = Color(0.68, 0.70, 0.72)
+	mat_b.roughness = 0.85
+	bordillo.material_override = mat_b
+	bordillo.position.y = 0.14
+	isla.add_child(bordillo)
+
+	var cesped := MeshInstance3D.new()
+	var cyl_c := CylinderMesh.new()
+	cyl_c.top_radius = maxf(3.0, r_in - 0.55)
+	cyl_c.bottom_radius = maxf(3.0, r_in - 0.45)
+	cyl_c.height = 0.22
+	cyl_c.radial_segments = 48
+	cesped.mesh = cyl_c
+	var mat_c := StandardMaterial3D.new()
+	var tex_cesped := "res://recursos/texturas/mapas/01_terrenos/pincel_pbr/cesped_verde.png"
+	if ResourceLoader.exists(tex_cesped):
+		mat_c.albedo_texture = load(tex_cesped)
+		mat_c.albedo_color = Color(0.76, 0.82, 0.72)
+		mat_c.uv1_scale = Vector3(3.0, 3.0, 3.0)
+	else:
+		mat_c.albedo_color = Color(0.22, 0.42, 0.17)
+	mat_c.roughness = 0.95
+	cesped.material_override = mat_c
+	cesped.position.y = 0.20
+	isla.add_child(cesped)
+
+	# Monumento / jardinera central sutil para darle carácter urbano
+	var base_mon := MeshInstance3D.new()
+	var cyl_m := CylinderMesh.new()
+	cyl_m.top_radius = 2.2
+	cyl_m.bottom_radius = 2.6
+	cyl_m.height = 0.55
+	cyl_m.radial_segments = 24
+	base_mon.mesh = cyl_m
+	base_mon.material_override = mat_b
+	base_mon.position.y = 0.48
+	isla.add_child(base_mon)
+
+func buscar_segmento_cercano(pos_mundo: Vector3, radio_max: float = 9.0) -> Dictionary:
+	if not road_container or not is_instance_valid(road_container):
+		return {}
+	var mejor_seg: RoadSegment = null
+	var mejor_dist: float = radio_max
+	var mejor_pos: Vector3 = pos_mundo
+	for seg in road_container.get_segments():
+		if not is_instance_valid(seg) or not seg.curve:
+			continue
+		var local_p: Vector3 = seg.to_local(pos_mundo)
+		var offset: float = seg.curve.get_closest_offset(local_p)
+		var punto_curva: Vector3 = seg.to_global(seg.curve.sample_baked(offset))
+		var d: float = Vector2(punto_curva.x - pos_mundo.x, punto_curva.z - pos_mundo.z).length()
+		if d < mejor_dist:
+			mejor_dist = d
+			mejor_seg = seg
+			mejor_pos = punto_curva
+	if mejor_seg:
+		return {"segmento": mejor_seg, "posicion": mejor_pos, "distancia": mejor_dist}
+	return {}
+
+func insertar_punto_en_segmento(seg: RoadSegment, pos_mundo: Vector3) -> RoadPoint:
+	if not road_container or not is_instance_valid(seg):
+		return null
+	var rp_a: RoadPoint = seg.start_point
+	var rp_b: RoadPoint = seg.end_point
+	if not is_instance_valid(rp_a) or not is_instance_valid(rp_b):
+		return null
+
+	var tipo_seg := _obtener_tipo_via_de_punto(rp_a)
+	var pos_exacta := pos_mundo
+	if seg.curve:
+		var off: float = seg.curve.get_closest_offset(seg.to_local(pos_mundo))
+		pos_exacta = seg.to_global(seg.curve.sample_baked(off))
+
+	var a_era_next := (rp_a.get_node_or_null(rp_a.next_pt_init) == rp_b)
+	_desconectar_puntos(rp_a, rp_b)
+
+	var nuevo_rp := _crear_nodo_road_point(pos_exacta)
+	_aplicar_tipo_via_a_punto(nuevo_rp, tipo_seg)
+
+	if a_era_next:
+		rp_a.connect_roadpoint(RoadPoint.PointInit.NEXT, nuevo_rp, RoadPoint.PointInit.PRIOR)
+		nuevo_rp.connect_roadpoint(RoadPoint.PointInit.NEXT, rp_b, RoadPoint.PointInit.PRIOR)
+	else:
+		rp_a.connect_roadpoint(RoadPoint.PointInit.PRIOR, nuevo_rp, RoadPoint.PointInit.NEXT)
+		nuevo_rp.connect_roadpoint(RoadPoint.PointInit.PRIOR, rp_b, RoadPoint.PointInit.NEXT)
+
+	_actualizar_orientaciones_y_curvaturas()
+	road_container.rebuild_segments(true)
+	actualizar_seleccionadores_puntos()
+	carretera_actualizada.emit()
+	return nuevo_rp
+
 func serializar_carreteras() -> Array:
-	var lista: Array = []
+	var puntos_data: Array = []
 	for rp in _puntos_creados:
-		if is_instance_valid(rp):
-			lista.append({
-				"nombre": rp.name,
-				"posicion": [rp.global_position.x, rp.global_position.y, rp.global_position.z],
-				"rotacion": [rp.rotation.x, rp.rotation.y, rp.rotation.z],
-				"tipo_via": _obtener_tipo_via_de_punto(rp)
-			})
-	return lista
+		if not is_instance_valid(rp):
+			continue
+		var prior_n := ""
+		if not rp.prior_pt_init.is_empty():
+			var np = rp.get_node_or_null(rp.prior_pt_init)
+			if is_instance_valid(np):
+				prior_n = np.name
+		var next_n := ""
+		if not rp.next_pt_init.is_empty():
+			var nn = rp.get_node_or_null(rp.next_pt_init)
+			if is_instance_valid(nn):
+				next_n = nn.name
+		puntos_data.append({
+			"nombre": rp.name,
+			"posicion": [rp.position.x, rp.position.y, rp.position.z],
+			"rotacion": [rp.rotation.x, rp.rotation.y, rp.rotation.z],
+			"prior_mag": rp.prior_mag,
+			"next_mag": rp.next_mag,
+			"tipo_via": int(_obtener_tipo_via_de_punto(rp)),
+			"prior": prior_n,
+			"next": next_n,
+			"offset_y": float(rp.get_meta("offset_y", 0.0)),
+			"peralte_grados": float(rp.get_meta("peralte_grados", 0.0)),
+			"superficie_via": int(rp.get_meta("superficie_via", 0)),
+			"demarcacion_via": int(rp.get_meta("demarcacion_via", 0)),
+			"es_rotonda": bool(rp.get_meta("es_rotonda", false))
+		})
+
+	var inter_data: Array = []
+	var islas_data: Array = []
+	if road_container and is_instance_valid(road_container):
+		for child in road_container.get_children():
+			if child is RoadIntersection:
+				var inter := child as RoadIntersection
+				var ramales_nombres: Array = []
+				for rp_ep in inter.edge_points:
+					if is_instance_valid(rp_ep):
+						ramales_nombres.append(rp_ep.name)
+				inter_data.append({
+					"nombre": inter.name,
+					"posicion": [inter.position.x, inter.position.y, inter.position.z],
+					"rotacion": [inter.rotation.x, inter.rotation.y, inter.rotation.z],
+					"ramales": ramales_nombres
+				})
+			elif child.is_in_group("rotonda_islas"):
+				islas_data.append({
+					"posicion": [child.global_position.x, child.global_position.y, child.global_position.z],
+					"radio": float(child.get_meta("radio_anillo", 18.0)),
+					"salidas": int(child.get_meta("salidas", 4))
+				})
+
+	return [{
+		"formato": 2,
+		"puntos": puntos_data,
+		"intersecciones": inter_data,
+		"islas_rotonda": islas_data
+	}]
+
+func deserializar_carreteras(datos: Array) -> void:
+	if not road_container or not is_instance_valid(road_container):
+		return
+	limpiar_todas_las_carreteras()
+	if datos.is_empty():
+		return
+
+	var puntos_data: Array = datos
+	var inter_data: Array = []
+	var islas_data: Array = []
+	if datos[0] is Dictionary and int(datos[0].get("formato", 1)) == 2:
+		puntos_data = datos[0].get("puntos", [])
+		inter_data = datos[0].get("intersecciones", [])
+		islas_data = datos[0].get("islas_rotonda", [])
+
+	var mapa_rps: Dictionary = {}
+	var faltan_tangentes := false
+	for item in puntos_data:
+		if not (item is Dictionary):
+			continue
+		var rp := RoadPoint.new()
+		var nombre_item := str(item.get("nombre", "RP_%d" % (_puntos_creados.size() + 1)))
+		rp.name = nombre_item
+		rp.container = road_container
+		var pos_arr: Array = item.get("posicion", [0.0, 0.0, 0.0])
+		if pos_arr.size() >= 3:
+			rp.position = Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
+		var rot_arr: Array = item.get("rotacion", [0.0, 0.0, 0.0])
+		if rot_arr.size() >= 3:
+			rp.rotation = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
+		if item.has("prior_mag"):
+			rp.prior_mag = float(item["prior_mag"])
+		else:
+			faltan_tangentes = true
+		if item.has("next_mag"):
+			rp.next_mag = float(item["next_mag"])
+		else:
+			faltan_tangentes = true
+		road_container.add_child(rp)
+		var tipo_v := int(item.get("tipo_via", 0)) as TipoVia
+		_aplicar_tipo_via_a_punto(rp, tipo_v)
+		var off_y := float(item.get("offset_y", 0.0))
+		if absf(off_y) > 0.001:
+			rp.set_meta("offset_y", off_y)
+		var peralte := float(item.get("peralte_grados", 0.0))
+		if absf(peralte) > 0.001:
+			rp.set_meta("peralte_grados", peralte)
+		if item.has("superficie_via"):
+			rp.set_meta("superficie_via", int(item["superficie_via"]))
+		if item.has("demarcacion_via"):
+			rp.set_meta("demarcacion_via", int(item["demarcacion_via"]))
+		if bool(item.get("es_rotonda", false)):
+			rp.set_meta("es_rotonda", true)
+		_puntos_creados.append(rp)
+		mapa_rps[nombre_item] = rp
+
+	for item in puntos_data:
+		if not (item is Dictionary):
+			continue
+		var rp_src: RoadPoint = mapa_rps.get(str(item.get("nombre", "")))
+		if not rp_src:
+			continue
+		var next_n := str(item.get("next", ""))
+		if not next_n.is_empty() and mapa_rps.has(next_n):
+			var rp_n: RoadPoint = mapa_rps[next_n]
+			rp_src.next_pt_init = rp_src.get_path_to(rp_n)
+		var prior_n := str(item.get("prior", ""))
+		if not prior_n.is_empty() and mapa_rps.has(prior_n):
+			var rp_p: RoadPoint = mapa_rps[prior_n]
+			rp_src.prior_pt_init = rp_src.get_path_to(rp_p)
+
+	for i_item in inter_data:
+		if not (i_item is Dictionary):
+			continue
+		var inter := RoadIntersection.new()
+		inter.name = str(i_item.get("nombre", "Cruce_%d" % (_puntos_creados.size() + 1)))
+		inter.container = road_container
+		road_container.add_child(inter)
+		var pos_arr: Array = i_item.get("posicion", [0.0, 0.0, 0.0])
+		if pos_arr.size() >= 3:
+			inter.position = Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
+		var rot_arr: Array = i_item.get("rotacion", [0.0, 0.0, 0.0])
+		if rot_arr.size() >= 3:
+			inter.rotation = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
+		for r_nombre in i_item.get("ramales", []):
+			var rp_ramal: RoadPoint = mapa_rps.get(str(r_nombre))
+			if rp_ramal:
+				inter.add_branch(rp_ramal)
+
+	for isla in islas_data:
+		if isla is Dictionary:
+			var pa: Array = isla.get("posicion", [0.0, 0.0, 0.0])
+			if pa.size() >= 3:
+				_crear_isla_rotonda(Vector3(float(pa[0]), float(pa[1]), float(pa[2])), float(isla.get("radio", 18.0)), int(isla.get("salidas", 4)))
+
+	if faltan_tangentes:
+		_actualizar_orientaciones_y_curvaturas()
+	road_container.update_edges()
+	road_container.rebuild_segments(true)
+	actualizar_seleccionadores_puntos()
+	carretera_actualizada.emit()

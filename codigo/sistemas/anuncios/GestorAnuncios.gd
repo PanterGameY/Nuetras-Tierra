@@ -40,7 +40,8 @@ var _reward_listener = null
 
 
 func _ready() -> void:
-	modo_simulado = not (OS.get_name() == "Android" or OS.get_name() == "iOS")
+	var es_movil := OS.get_name() == "Android" or OS.get_name() == "iOS"
+	modo_simulado = not es_movil or not Engine.has_singleton("PoingGodotAdMob")
 	if modo_simulado:
 		inicializado = true
 		inicializacion_terminada.emit(true)

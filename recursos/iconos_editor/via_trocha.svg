@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Camino rural / trocha sinuosa -->
+  <path d="M18 56 C16 42 28 38 30 28 C32 18 22 14 24 8 H42 C40 16 48 22 46 32 C44 42 36 46 38 56 Z" fill="#ffffff" fill-opacity="0.20"/>
+  <path d="M18 56 C16 42 28 38 30 28 C32 18 22 14 24 8" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M38 56 C36 46 44 42 46 32 C48 22 40 16 42 8" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- Huellas de rodadura -->
+  <path d="M25 53 C24 43 33 38 35 28 C36 20 29 15 30 10" stroke="#ffffff" stroke-opacity="0.6" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+  <path d="M32 53 C31 44 38 39 40 30 C41 22 35 16 36 10" stroke="#ffffff" stroke-opacity="0.6" stroke-width="2" stroke-dasharray="4 4" stroke-linecap="round"/>
+  <!-- Piedras / relieve lateral -->
+  <circle cx="13" cy="28" r="2" fill="#ffffff" fill-opacity="0.65"/>
+  <circle cx="51" cy="46" r="2.2" fill="#ffffff" fill-opacity="0.65"/>
+</svg>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Órbita 3D circular -->
+  <path d="M49 24 A19 19 0 1 0 50 38" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- Punta de flecha de rotación -->
+  <path d="M41 25 L50.5 25.5 L50 15.5" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Elipse ecuatorial 3D -->
+  <ellipse cx="32" cy="32" rx="19" ry="7" stroke="#ffffff" stroke-opacity="0.45" stroke-width="2" stroke-dasharray="4 4"/>
+  <!-- Pivote central -->
+  <circle cx="32" cy="32" r="4.5" fill="#ffffff" fill-opacity="0.3" stroke="#ffffff" stroke-width="2.4"/>
+</svg>

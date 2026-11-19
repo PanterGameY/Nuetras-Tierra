@@ -210,11 +210,11 @@ func _configurar_capa_parpadeo() -> void:
 func activar_corte_cinematografico() -> void:
 	# Tomas estilizadas a nivel de ojos y suelo (altura automotriz de showroom)
 	var tomas_predefinidas = [
-		{"radio": 7.0, "altura": 0.8, "mirada": 1.0, "fov": 46.0}, # Tres cuartos frontal imponente
-		{"radio": 6.2, "altura": 0.5, "mirada": 0.85, "fov": 48.0}, # Toma baja estilo heroica
-		{"radio": 8.0, "altura": 1.1, "mirada": 1.1, "fov": 44.0}, # Perfil completo de carroceria
-		{"radio": 5.8, "altura": 0.7, "mirada": 0.95, "fov": 50.0}, # Detalle de rueda y tren motriz
-		{"radio": 7.5, "altura": 0.9, "mirada": 1.05, "fov": 45.0}  # Perspectiva general nivel de piso
+		{"radio": 11.2, "altura": 1.05, "mirada": 0.75, "fov": 48.0}, # Tres cuartos frontal imponente
+		{"radio": 10.5, "altura": 0.80, "mirada": 0.65, "fov": 50.0}, # Toma baja estilo heroica
+		{"radio": 12.4, "altura": 1.20, "mirada": 0.85, "fov": 46.0}, # Perfil completo de carroceria
+		{"radio": 10.8, "altura": 0.95, "mirada": 0.70, "fov": 48.0}, # Detalle amplio lateral
+		{"radio": 11.8, "altura": 1.15, "mirada": 0.80, "fov": 47.0}  # Perspectiva general de estudio
 	]
 	var toma = tomas_predefinidas[_rng.randi() % tomas_predefinidas.size()]
 	var radio_azar: float = toma["radio"]
@@ -399,7 +399,7 @@ func _process(delta: float) -> void:
 func rotar_desde_entrada(relativo_x: float) -> void:
 	if _velocidad_angular == null:
 		_velocidad_angular = 0.0
-	_velocidad_angular += relativo_x * (sensibilidad_arrastre * 0.15)
+	_velocidad_angular -= relativo_x * (sensibilidad_arrastre * 0.15)
 	if pausar_al_arrastrar:
 		_temporizador_reanudacion = tiempo_reanudacion_auto
 

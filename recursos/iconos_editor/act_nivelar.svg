@@ -1,5 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M12 44 L32 24 L52 44" stroke-width="2.5" stroke-dasharray="3 3"/>
-  <line x1="8" y1="44" x2="56" y2="44" stroke-width="4.5"/>
-  <polygon points="26,14 38,14 38,36 26,36" fill="#ffffff" fill-opacity="0.3"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Terraplén / base vial nivelada -->
+  <path d="M8 52 L19 32 H45 L56 52 Z" fill="#ffffff" fill-opacity="0.22" stroke="#ffffff" stroke-width="2.6" stroke-linejoin="round"/>
+  <!-- Barra superior de nivel -->
+  <rect x="13" y="27" width="38" height="5" rx="2.5" fill="#ffffff"/>
+  <!-- Línea de eje sobre la calzada -->
+  <line x1="32" y1="36" x2="32" y2="48" stroke="#ffffff" stroke-opacity="0.65" stroke-width="2.4" stroke-dasharray="3 3" stroke-linecap="round"/>
+  <!-- Flechas de nivelación -->
+  <path d="M23 10 V21 M23 21 L19 17 M23 21 L27 17" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M41 10 V21 M41 21 L37 17 M41 21 L45 17" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

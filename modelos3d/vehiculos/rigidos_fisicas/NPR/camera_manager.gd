@@ -20,10 +20,10 @@ extends Node3D
 @export var transicion_suave: float = 0.45 # segundos para blend entre cámaras
 @export var occlusion_enabled: bool = true
 @export var occlusion_mask: int = 1 # Capa 1 por defecto (Mundo/Estáticos)
-@export var auto_fov_enabled: bool = true
+@export var auto_fov_enabled: bool = false
 @export var fov_min: float = 60.0
-@export var fov_max: float = 85.0
-@export var fov_speed_factor: float = 0.45 # Factor de aumento de FOV con velocidad
+@export var fov_max: float = 64.0
+@export var fov_speed_factor: float = 0.08 # Factor de aumento de FOV con velocidad
 @export var orbit_damping: float = 8.0
 @export var shake_enabled: bool = true
 @export var shake_decay: float = 4.0

@@ -107,6 +107,35 @@ func _conectar_senales() -> void:
 			DatosUsuario.dinero_cambiado.connect(func(_m): _actualizar_ui_completa())
 
 func _aplicar_estilos_dinamicos() -> void:
+	# Avatar circular con borde metálico/ámbar y recorte anti-aliased
+	var avatar_marco := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HBoxPerfil/AvatarMarco") as PanelContainer
+	if avatar_marco:
+		avatar_marco.custom_minimum_size = Vector2(124, 124)
+		var sb_av := StyleBoxFlat.new()
+		sb_av.bg_color = Color(0.07, 0.08, 0.10, 0.95)
+		sb_av.set_border_width_all(2)
+		sb_av.border_color = Color(0.88, 0.68, 0.28, 0.55)
+		sb_av.set_corner_radius_all(62)
+		sb_av.content_margin_left = 4
+		sb_av.content_margin_right = 4
+		sb_av.content_margin_top = 4
+		sb_av.content_margin_bottom = 4
+		avatar_marco.add_theme_stylebox_override("panel", sb_av)
+
+	if avatar_rect:
+		var sh := Shader.new()
+		sh.code = """shader_type canvas_item;
+void fragment() {
+	vec2 d = UV - vec2(0.5);
+	float alpha = 1.0 - smoothstep(0.48, 0.5, length(d));
+	vec4 col = texture(TEXTURE, UV) * COLOR;
+	col.a *= alpha;
+	COLOR = col;
+}"""
+		var mat := ShaderMaterial.new()
+		mat.shader = sh
+		avatar_rect.material = mat
+
 	# Hover feedback suave para botones táctiles
 	var buttons = [btn_home, btn_cerrar_sesion, btn_nick, btn_avatar]
 	for btn in buttons:
@@ -119,28 +148,28 @@ func _tween_button_scale(btn: Control, target_scale: float) -> void:
 	tw.tween_property(btn, "scale", Vector2.ONE * target_scale, 0.15)
 
 func _animacion_entrada() -> void:
-	var left_card = $MainMargin/MainVBox/ColumnsHBox/LeftCard
-	var right_card = $MainMargin/MainVBox/ColumnsHBox/RightCard
-	var top_bar = $MainMargin/MainVBox/TopBar
-	
+	var left_card := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard") as Control
+	var right_card := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard") as Control
+	var top_bar := get_node_or_null("MainMargin/MainVBox/TopBar") as Control
+
+	if right_card:
+		right_card.clip_contents = true
+		right_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		right_card.size_flags_stretch_ratio = 1.08
+
 	if top_bar:
 		top_bar.modulate.a = 0.0
 		var tw_top = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		tw_top.tween_property(top_bar, "modulate:a", 1.0, 0.3)
-	
-	if left_card:
-		left_card.modulate.a = 0.0
-		left_card.position.x -= 30.0
-		var tw_left = create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw_left.tween_property(left_card, "modulate:a", 1.0, 0.35)
-		tw_left.parallel().tween_property(left_card, "position:x", left_card.position.x + 30.0, 0.35)
-		
-	if right_card:
-		right_card.modulate.a = 0.0
-		right_card.position.x += 30.0
-		var tw_right = create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw_right.tween_property(right_card, "modulate:a", 1.0, 0.4)
-		tw_right.parallel().tween_property(right_card, "position:x", right_card.position.x - 30.0, 0.4)
+		tw_top.tween_property(top_bar, "modulate:a", 1.0, 0.28)
+
+	for c in [left_card, right_card]:
+		if c:
+			c.pivot_offset = c.size * 0.5
+			c.modulate.a = 0.0
+			c.scale = Vector2(0.96, 0.96)
+			var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+			tw.tween_property(c, "modulate:a", 1.0, 0.30)
+			tw.tween_property(c, "scale", Vector2.ONE, 0.32)
 
 # ==============================================================================
 # ACTUALIZACIÓN DE DATOS DINÁMICOS
@@ -164,36 +193,51 @@ func _cargar_datos_usuario() -> void:
 		
 	# 2. ID Conductor
 	if label_id_conductor:
-		var id_str = ""
-		if "id_usuario" in DatosUsuario and DatosUsuario.id_usuario != "":
-			id_str = str(DatosUsuario.id_usuario).left(8).to_upper()
-		elif "id_jugador" in DatosUsuario and DatosUsuario.id_jugador != "":
-			id_str = str(DatosUsuario.id_jugador).left(8).to_upper()
+		var id_str := ""
+		if "id_usuario" in DatosUsuario and not str(DatosUsuario.id_usuario).strip_edges().is_empty():
+			id_str = str(DatosUsuario.id_usuario).strip_edges().to_upper()
 		else:
-			id_str = "COL-8492"
-		label_id_conductor.text = "ID: " + id_str
+			id_str = "001"
+		label_id_conductor.text = "ID #" + id_str
 
-	# 3. Nivel y Experiencia
-	var nivel = 1
-	var xp = 0
-	if "nivel" in DatosUsuario:
-		nivel = DatosUsuario.nivel
-	if "experiencia" in DatosUsuario:
-		xp = DatosUsuario.experiencia
-		
-	var xp_requerida = (nivel + 1) * 350
-	
+	# 3. Nivel, Escudo, Rango y Experiencia
+	var nivel: int = int(DatosUsuario.nivel) if "nivel" in DatosUsuario else 0
+	var xp: int = int(DatosUsuario.experiencia) if "experiencia" in DatosUsuario else 0
+	var xp_requerida := maxi((nivel + 1) * 300, 1)
+	var xp_clamped := clampi(xp, 0, xp_requerida)
+	var pct := roundi((float(xp_clamped) / float(xp_requerida)) * 100.0)
+
+	var rango := RangoConductor.obtener_rango(nivel)
+	var color_rango: Color = rango["color"]
+
 	if label_nivel:
 		label_nivel.text = "NIVEL " + str(nivel)
+		label_nivel.add_theme_color_override("font_color", color_rango.lightened(0.2))
 	if label_xp:
-		label_xp.text = "%d / %d XP" % [xp, xp_requerida]
+		label_xp.text = "%s / %s XP (%d%%)" % [_formatear_numero(xp), _formatear_numero(xp_requerida), pct]
+		label_xp.add_theme_color_override("font_color", color_rango.lightened(0.25))
 	if progress_bar:
-		progress_bar.max_value = max(1, xp_requerida)
-		progress_bar.value = clamp(xp, 0, xp_requerida)
-		
-	# 4. Rango de Conductor
+		progress_bar.custom_minimum_size.y = 14
+		progress_bar.max_value = xp_requerida
+		progress_bar.value = xp_clamped
+		var sb_bg := StyleBoxFlat.new()
+		sb_bg.bg_color = Color(0.05, 0.06, 0.08, 0.95)
+		sb_bg.set_border_width_all(1)
+		sb_bg.border_color = Color(0.78, 0.81, 0.85, 0.22)
+		sb_bg.set_corner_radius_all(7)
+		progress_bar.add_theme_stylebox_override("background", sb_bg)
+		var sb_fill := StyleBoxFlat.new()
+		sb_fill.bg_color = color_rango
+		sb_fill.set_corner_radius_all(7)
+		sb_fill.shadow_color = Color(color_rango.r, color_rango.g, color_rango.b, 0.45)
+		sb_fill.shadow_size = 8
+		progress_bar.add_theme_stylebox_override("fill", sb_fill)
+
+	# 4. Rango y Escudo de Conductor
 	if label_rango:
-		label_rango.text = _calcular_rango_conductor(nivel)
+		label_rango.text = str(rango["nombre"])
+		label_rango.add_theme_color_override("font_color", color_rango)
+	_actualizar_escudo_e_identidad(nivel, rango)
 
 	# 5. Economía (Dinero y Esmeraldas)
 	var dinero = 0
@@ -218,19 +262,89 @@ func _cargar_datos_usuario() -> void:
 	if valor_esmeraldas:
 		valor_esmeraldas.text = esmeraldas_fmt
 		
-	# 6. Flota y Misiones completadas
-	var vehiculos_count = 1
-	if "vehiculos_personalizados" in DatosUsuario and DatosUsuario.vehiculos_personalizados is Dictionary:
-		vehiculos_count = max(1, DatosUsuario.vehiculos_personalizados.size())
-	elif "camiones_desbloqueados" in DatosUsuario and DatosUsuario.camiones_desbloqueados is Array:
-		vehiculos_count = max(1, DatosUsuario.camiones_desbloqueados.size())
-		
+	# 6. Flota real y Estado de Pase Élite
+	var vehiculos_count := 0
+	if "vehiculos_comprados" in DatosUsuario and DatosUsuario.vehiculos_comprados is Dictionary:
+		vehiculos_count = DatosUsuario.vehiculos_comprados.size()
+	elif "vehiculos_personalizados" in DatosUsuario and DatosUsuario.vehiculos_personalizados is Dictionary:
+		vehiculos_count = DatosUsuario.vehiculos_personalizados.size()
+
 	if valor_vehiculos:
 		valor_vehiculos.text = str(vehiculos_count) + " UND"
-		
-	var misiones_count = int(nivel * 3 + (xp / 120))
+
+	var card_misiones_tit := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/GridMetricas/CardMisiones/VBox/LabelTit") as Label
+	if card_misiones_tit:
+		card_misiones_tit.text = "PASE ELITE"
 	if valor_misiones:
-		valor_misiones.text = str(misiones_count)
+		var pase_ok: bool = DatosUsuario.tiene_pase_elite() if DatosUsuario.has_method("tiene_pase_elite") else bool(DatosUsuario.get("pase_elite_activo"))
+		valor_misiones.text = "ACTIVO" if pase_ok else "INACTIVO"
+		valor_misiones.add_theme_color_override("font_color", Color(0.28, 0.90, 0.54, 1.0) if pase_ok else Color(0.68, 0.72, 0.78, 0.85))
+
+
+func _actualizar_escudo_e_identidad(nivel: int, rango: Dictionary) -> void:
+	var vbox_datos := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HBoxPerfil/VBoxDatosPpal")
+	if vbox_datos and label_rango:
+		var fila_rango := vbox_datos.get_node_or_null("FilaRangoEscudo") as HBoxContainer
+		if not fila_rango:
+			fila_rango = HBoxContainer.new()
+			fila_rango.name = "FilaRangoEscudo"
+			fila_rango.add_theme_constant_override("separation", 8)
+			var idx := label_rango.get_index()
+			vbox_datos.add_child(fila_rango)
+			vbox_datos.move_child(fila_rango, idx)
+			var escudo := TextureRect.new()
+			escudo.name = "EscudoRango"
+			escudo.custom_minimum_size = Vector2(40, 40)
+			escudo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			escudo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			fila_rango.add_child(escudo)
+			label_rango.reparent(fila_rango)
+			label_rango.add_theme_font_size_override("font_size", 15)
+		var esc_node := fila_rango.get_node_or_null("EscudoRango") as TextureRect
+		if esc_node:
+			esc_node.texture = RangoConductor.obtener_textura_escudo(nivel)
+			esc_node.tooltip_text = str(rango["nombre"])
+
+	var vbox_left := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft")
+	if not vbox_left:
+		return
+	var panel_id := vbox_left.get_node_or_null("PanelIdentidadVinculada") as PanelContainer
+	if not panel_id:
+		panel_id = PanelContainer.new()
+		panel_id.name = "PanelIdentidadVinculada"
+		var sb_id := StyleBoxFlat.new()
+		sb_id.bg_color = Color(0.05, 0.06, 0.08, 0.78)
+		sb_id.set_border_width_all(1)
+		sb_id.border_color = Color(0.78, 0.81, 0.85, 0.16)
+		sb_id.set_corner_radius_all(10)
+		sb_id.content_margin_left = 14
+		sb_id.content_margin_right = 14
+		sb_id.content_margin_top = 10
+		sb_id.content_margin_bottom = 10
+		panel_id.add_theme_stylebox_override("panel", sb_id)
+		var lbl := Label.new()
+		lbl.name = "LabelIdentidad"
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf"):
+			lbl.add_theme_font_override("font", load("res://recursos/fonts/Moderniz.otf"))
+		lbl.add_theme_font_size_override("font_size", 11)
+		lbl.add_theme_color_override("font_color", Color(0.76, 0.80, 0.86, 0.88))
+		panel_id.add_child(lbl)
+		vbox_left.add_child(panel_id)
+
+	var lbl_id := panel_id.get_node_or_null("LabelIdentidad") as Label
+	if lbl_id:
+		var correo := str(DatosUsuario.email_usuario).strip_edges() if "email_usuario" in DatosUsuario else ""
+		var discord_u := str(DatosUsuario.discord_username).strip_edges() if "discord_username" in DatosUsuario else ""
+		var prov := str(DatosUsuario.proveedor_auth).replace("supabase_", "").to_upper() if "proveedor_auth" in DatosUsuario else ""
+		var partes: Array[String] = []
+		if not prov.is_empty():
+			partes.append("CUENTA: " + prov)
+		if not correo.is_empty():
+			partes.append("CORREO: " + correo)
+		if not discord_u.is_empty():
+			partes.append("DISCORD: " + discord_u)
+		lbl_id.text = "  |  ".join(partes) if not partes.is_empty() else "MODO INVITADO (SIN VINCULAR)"
 
 func _calcular_rango_conductor(lvl: int) -> String:
 	if lvl < 5:
@@ -472,13 +586,13 @@ func _crear_modal_nick() -> void:
 func _confirmar_modal_nick(nuevo_nombre: String, modal_layer: CanvasLayer) -> void:
 	if nuevo_nombre.length() < 3:
 		return
-		
-	if DatosUsuario.has_method("guardar_nombre_usuario"):
-		DatosUsuario.guardar_nombre_usuario(nuevo_nombre)
+
+	if DatosUsuario.has_method("set_nombre_usuario"):
+		DatosUsuario.set_nombre_usuario(nuevo_nombre, true)
 	elif "nombre_usuario" in DatosUsuario:
 		DatosUsuario.nombre_usuario = nuevo_nombre
-		if DatosUsuario.has_method("guardar_datos"):
-			DatosUsuario.guardar_datos()
+		if DatosUsuario.has_method("save_local"):
+			DatosUsuario.save_local()
 			
 	nombre_usuario_cambiado.emit(nuevo_nombre)
 	_play_sfx()
@@ -595,6 +709,11 @@ func _reclamar_logro(id_logro: String, recompensa_dinero: int, recompensa_xp: in
 func _on_btn_home_pressed() -> void:
 	_play_sfx()
 	var ruta_moderna = "res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn"
+	if DatosUsuario and "escenas_precargadas" in DatosUsuario and DatosUsuario.escenas_precargadas.has(ruta_moderna):
+		var ps: PackedScene = DatosUsuario.escenas_precargadas[ruta_moderna] as PackedScene
+		if ps:
+			get_tree().change_scene_to_packed(ps)
+			return
 	if DatosUsuario:
 		DatosUsuario.cambiar_escena(ruta_moderna)
 	elif ResourceLoader.exists(ruta_moderna):
@@ -604,7 +723,11 @@ func _on_btn_home_pressed() -> void:
 
 func _on_btn_cerrar_sesion_pressed() -> void:
 	_play_sfx()
-	
+
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_method("cerrar_sesion"):
+		sb.cerrar_sesion()
+
 	# Desconectar / cerrar sesión en Firebase o Auth si existe
 	if Engine.has_singleton("Firebase"):
 		var fb = Engine.get_singleton("Firebase")

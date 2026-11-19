@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="NuestraTierra2.0"
-run/main_scene="uid://b8wm3nku8u1p"
+run/main_scene="res://interfaz/pantallas/login/Login.tscn"
 config/features=PackedStringArray("4.7", "Mobile")
 config/icon="res://icon.svg"
 
@@ -19,11 +19,11 @@ config/icon="res://icon.svg"
 
 InputVehiculo="*res://codigo/entidades/vehiculo/InputVehiculo.gd"
 DatosUsuario="*res://Datos/usuario/DatosUsuario.gd"
+SupabaseManager="*res://codigo/nucleo/sistema/SupabaseManager.gd"
 MenuSystem="*res://interfaz/sistema/MenuSystem.gd"
 Firebase="*uid://1tu2hgwphuxb"
 SettingsManager="*res://codigo/nucleo/sistema/SettingsManager.gd"
 FpScontador="*res://codigo/nucleo/sistema/FPScontador.gd"
-BetaPopupManager="*res://codigo/nucleo/sistema/BetaPopupManager.gd"
 Network="*res://codigo/nucleo/red/Network.gd"
 PlayersManager="*res://codigo/nucleo/red/PlayersManager.gd"
 GestorVehiculos="*res://codigo/entidades/vehiculo/GestorVehiculos.gd"
@@ -273,6 +273,7 @@ locale/translations=PackedStringArray("res://addons/admob/gdscript/sample/transl
 [rendering]
 
 renderer/rendering_method="mobile"
+rendering_device/driver/fallback_to_opengl3=true
 textures/vram_compression/import_etc2_astc=true
 lights_and_shadows/directional_shadow/size=1024
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=1

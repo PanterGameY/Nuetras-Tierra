@@ -1,7 +1,13 @@
 [gd_resource type="StandardMaterial3D" format=3]
 
 [ext_resource type="Texture2D" path="res://addons/road-generator/resources/road_texture@2x.png" id="1_tnjux"]
+[ext_resource type="Texture2D" path="res://mundo/editor_mapas/modelos/texturas/asfalto_pbr_normal.png" id="2_nrm"]
+[ext_resource type="Texture2D" path="res://mundo/editor_mapas/modelos/texturas/asfalto_pbr_roughness.png" id="3_rgh"]
 
 [resource]
 albedo_texture = ExtResource("1_tnjux")
+roughness_texture = ExtResource("3_rgh")
+normal_enabled = true
+normal_scale = 0.65
+normal_texture = ExtResource("2_nrm")
 texture_filter = 4

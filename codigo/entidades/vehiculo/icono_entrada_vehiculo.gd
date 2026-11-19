@@ -187,8 +187,19 @@ func configurar(p_vehiculo: Node3D, p_zona: Area3D) -> void:
 		_cargar_offsets_guardados()
 		_actualizar_posicion_con_offset()
 
+func _obtener_escala_padre_segura() -> Vector3:
+	if is_instance_valid(zona_entrada):
+		var s := zona_entrada.scale.abs()
+		return Vector3(maxf(s.x, 0.01), maxf(s.y, 0.01), maxf(s.z, 0.01))
+	return Vector3.ONE
+
 func _actualizar_posicion_con_offset() -> void:
-	position = _posicion_anclaje_original + offset_posicion
+	var esc_padre := _obtener_escala_padre_segura()
+	position = _posicion_anclaje_original + Vector3(
+		offset_posicion.x / esc_padre.x,
+		offset_posicion.y / esc_padre.y,
+		offset_posicion.z / esc_padre.z
+	)
 	_base_pos_y = position.y
 
 func _actualizar_escala_base() -> void:
@@ -214,7 +225,8 @@ func mostrar(p_jugador: Node3D) -> void:
 	_tween_transicion = create_tween().set_parallel(true)
 	_tween_transicion.set_ease(Tween.EASE_OUT)
 	_tween_transicion.set_trans(Tween.TRANS_BACK)
-	var esc_target = Vector3(escala_icono, escala_icono, escala_icono)
+	var esc_padre := _obtener_escala_padre_segura()
+	var esc_target = Vector3(escala_icono / esc_padre.x, escala_icono / esc_padre.y, escala_icono / esc_padre.z)
 	_tween_transicion.tween_property(self, "scale", esc_target, 0.32)
 	if fondo_borde_sprite:
 		_tween_transicion.tween_property(fondo_borde_sprite, "modulate:a", 1.0, 0.25)
@@ -268,11 +280,14 @@ func _process(delta: float) -> void:
 					break
 
 		if not jugador_detectado:
-			# Fallback por distancia euclidiana únicamente a esta puerta (hasta 3.2m)
+			# Fallback por distancia horizontal/vertical a la puerta (hasta 3.5m)
 			var jugador_node = get_tree().get_first_node_in_group("jugador") if get_tree() else null
 			if is_instance_valid(jugador_node) and jugador_node.is_inside_tree():
-				if jugador_node.get("_conduciendo") != true and jugador_node.get("esta_conduciendo") != true:
-					if global_position.distance_to(jugador_node.global_position) <= 3.2:
+				if jugador_node is Node3D and jugador_node.get("_conduciendo") != true and jugador_node.get("esta_conduciendo") != true:
+					var pz: Vector3 = zona_entrada.global_position
+					var pj: Vector3 = (jugador_node as Node3D).global_position
+					var d_xz := Vector2(pz.x - pj.x, pz.z - pj.z).length()
+					if d_xz <= 3.5 and absf(pz.y - pj.y) <= 3.5:
 						jugador_detectado = jugador_node
 
 		if jugador_detectado:
@@ -288,13 +303,14 @@ func _process(delta: float) -> void:
 	_tiempo_anim += delta
 	
 	# Flotación suave oscilatoria vertical (3.5cm de amplitud)
-	position.y = _base_pos_y + sin(_tiempo_anim * 3.0) * 0.035
+	var esc_padre := _obtener_escala_padre_segura()
+	position.y = _base_pos_y + (sin(_tiempo_anim * 3.0) * 0.035) / esc_padre.y
 	
 	# Sutil pulsación de escala (breathing)
 	var factor_pulso: float = 1.0 + sin(_tiempo_anim * 2.4) * 0.035
 	if not (_tween_transicion and _tween_transicion.is_running()):
 		var esc_actual = factor_pulso * escala_icono
-		scale = Vector3(esc_actual, esc_actual, esc_actual)
+		scale = Vector3(esc_actual / esc_padre.x, esc_actual / esc_padre.y, esc_actual / esc_padre.z)
 
 func _input(event: InputEvent) -> void:
 	if not visible or not _activo or _cooldown_subida > 0.0:

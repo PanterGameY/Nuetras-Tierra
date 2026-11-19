@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Puntero de selección -->
+  <path d="M16 11 L16 45 L25.5 36.5 L33 52 L39.5 49 L32 33.5 L45 33.5 Z" fill="#ffffff" fill-opacity="0.22" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Esquinas de recuadro de selección -->
+  <path d="M40 12 L52 12 L52 24" stroke="#ffffff" stroke-opacity="0.75" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M52 40 L52 52 L40 52" stroke="#ffffff" stroke-opacity="0.75" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

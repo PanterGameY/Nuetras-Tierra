@@ -66,6 +66,15 @@ static func obtener_catalogo() -> Array[Dictionary]:
 			"tamano": Vector3(14.0, 5.5, 12.0),
 			"desc": "Estación de servicio con marquesina de surtidores."
 		},
+		{
+			"id": "garaje_camiones",
+			"nombre": "Garaje de Camiones",
+			"categoria": Categoria.COMERCIAL,
+			"icono": "🚛",
+			"icono_textura": "res://recursos/iconos_editor/garaje_camiones.png",
+			"tamano": Vector3(10.6, 5.8, 15.6),
+			"desc": "Garaje amplio para camiones y vehículos. Permite sacar vehículos en modo prueba."
+		},
 
 		# INDUSTRIAL Y CORPORATIVO
 		{
@@ -211,6 +220,9 @@ static func obtener_catalogo() -> Array[Dictionary]:
 	]
 
 static func crear_instancia_objeto(id_modelo: String) -> Node3D:
+	if id_modelo == "casa_modular":
+		return GeneradorCasaModular.crear_casa(DatosCasaModular.crear_config_defecto())
+
 	var nodo_raiz := StaticBody3D.new()
 	nodo_raiz.name = "Objeto_%s" % id_modelo
 	nodo_raiz.set_meta("id_modelo", id_modelo)
@@ -228,6 +240,8 @@ static func crear_instancia_objeto(id_modelo: String) -> Node3D:
 			_construir_centro_comercial(nodo_raiz)
 		"gasolinera":
 			_construir_gasolinera(nodo_raiz)
+		"garaje_camiones", "garaje_doble", "garaje_terminal", "garaje_moderno":
+			_construir_garaje_variacion(nodo_raiz, id_modelo)
 		"rascacielos":
 			_construir_rascacielos(nodo_raiz)
 		"bodega_industrial":
@@ -598,3 +612,158 @@ static func _construir_banca_parque(raiz: StaticBody3D) -> void:
 	# Asiento y respaldo
 	_agregar_caja_con_colision(raiz, Vector3(2.0, 0.12, 0.5), Vector3(0.0, 0.5, 0.0), mat_madera)
 	_agregar_caja_con_colision(raiz, Vector3(2.0, 0.45, 0.1), Vector3(0.0, 0.85, -0.25), mat_madera)
+
+static func _agregar_colision_caja(raiz: CollisionObject3D, tamano: Vector3, pos: Vector3) -> void:
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = tamano
+	col.shape = shape
+	col.position = pos
+	raiz.add_child(col)
+
+static func _aplicar_texturas_garaje(nodo: Node) -> void:
+	const TEX_PISO := "res://mundo/editor_mapas/texturas/garaje/garaje_piso_concreto.png"
+	const TEX_PARED := "res://mundo/editor_mapas/texturas/garaje/garaje_pared_ladrillo.png"
+	const TEX_TECHO := "res://mundo/editor_mapas/texturas/garaje/garaje_techo_metal.png"
+	var mats := {}
+	if ResourceLoader.exists(TEX_PISO):
+		var m_piso := StandardMaterial3D.new()
+		m_piso.albedo_texture = ResourceLoader.load(TEX_PISO) as Texture2D
+		m_piso.albedo_color = Color.WHITE
+		m_piso.roughness = 0.85
+		mats["MatPisoGaraje"] = m_piso
+	if ResourceLoader.exists(TEX_PARED):
+		var m_pared := StandardMaterial3D.new()
+		m_pared.albedo_texture = ResourceLoader.load(TEX_PARED) as Texture2D
+		m_pared.albedo_color = Color.WHITE
+		m_pared.roughness = 0.88
+		mats["MatParedGaraje"] = m_pared
+	if ResourceLoader.exists(TEX_TECHO):
+		var m_techo := StandardMaterial3D.new()
+		m_techo.albedo_texture = ResourceLoader.load(TEX_TECHO) as Texture2D
+		m_techo.albedo_color = Color.WHITE
+		m_techo.metallic = 0.45
+		m_techo.roughness = 0.42
+		mats["MatTechoMetal"] = m_techo
+
+	var cola: Array[Node] = [nodo]
+	while not cola.is_empty():
+		var cur: Node = cola.pop_back()
+		for ch in cur.get_children():
+			cola.append(ch)
+		if cur is MeshInstance3D:
+			var mi := cur as MeshInstance3D
+			if mi.mesh:
+				for s in range(mi.mesh.get_surface_count()):
+					var m_orig := mi.mesh.surface_get_material(s)
+					if m_orig and mats.has(m_orig.resource_name):
+						mi.set_surface_override_material(s, mats[m_orig.resource_name])
+
+static func _construir_garaje_variacion(raiz: StaticBody3D, id_modelo: String) -> void:
+	var ruta_glb := "res://mundo/editor_mapas/modelos/%s.glb" % id_modelo
+	if ResourceLoader.exists(ruta_glb):
+		var escena := ResourceLoader.load(ruta_glb) as PackedScene
+		if escena:
+			var inst := escena.instantiate() as Node3D
+			if inst:
+				inst.name = "ModeloGarajeGLB"
+				_aplicar_texturas_garaje(inst)
+				raiz.add_child(inst)
+
+	# Base/cimiento de concreto bajo la losa para terrenos con pendiente
+	var tam_cim := Vector3(11.2, 0.80, 16.2)
+	var pos_cim := Vector3(0.0, -0.40, 1.3)
+	var tam_piso := Vector3(10.6, 0.30, 15.6)
+	var pos_piso := Vector3(0.0, -0.01, 1.3)
+	var pos_spawn := Vector3(0.0, 0.15, 0.8)
+	var tam_zona := Vector3(6.2, 4.2, 9.6)
+	var pos_zona := Vector3(0.0, 2.1, -0.4)
+
+	match id_modelo:
+		"garaje_doble":
+			tam_cim = Vector3(18.6, 0.80, 18.6)
+			pos_cim = Vector3(0.0, -0.40, 1.5)
+			tam_piso = Vector3(18.2, 0.30, 18.2)
+			pos_piso = Vector3(0.0, -0.01, 1.5)
+			pos_spawn = Vector3(-4.05, 0.15, 0.5)
+			tam_zona = Vector3(15.2, 4.6, 12.2)
+			pos_zona = Vector3(0.0, 2.3, 0.0)
+			# Paredes trasera, laterales y pilares (2 bahías de 5.7m)
+			_agregar_colision_caja(raiz, Vector3(18.0, 6.2, 0.44), Vector3(0.0, 3.1, -7.28))
+			_agregar_colision_caja(raiz, Vector3(0.44, 6.2, 15.0), Vector3(-8.78, 3.1, 0.0))
+			_agregar_colision_caja(raiz, Vector3(0.44, 6.2, 15.0), Vector3(8.78, 3.1, 0.0))
+			_agregar_colision_caja(raiz, Vector3(2.1, 6.2, 0.44), Vector3(-7.95, 3.1, 7.28))
+			_agregar_colision_caja(raiz, Vector3(2.4, 6.2, 0.44), Vector3(0.0, 3.1, 7.28))
+			_agregar_colision_caja(raiz, Vector3(2.1, 6.2, 0.44), Vector3(7.95, 3.1, 7.28))
+			_agregar_colision_caja(raiz, Vector3(18.0, 1.4, 0.44), Vector3(0.0, 5.5, 7.28))
+			_agregar_colision_caja(raiz, Vector3(19.0, 0.24, 16.0), Vector3(0.0, 6.45, 0.0))
+		"garaje_terminal":
+			tam_cim = Vector3(14.8, 0.80, 27.4)
+			pos_cim = Vector3(0.0, -0.40, 0.0)
+			tam_piso = Vector3(14.4, 0.30, 27.0)
+			pos_piso = Vector3(0.0, -0.01, 0.0)
+			pos_spawn = Vector3(0.0, 0.15, 0.0)
+			tam_zona = Vector3(9.6, 5.0, 18.0)
+			pos_zona = Vector3(0.0, 2.5, 0.0)
+			# Paredes laterales + portales pasantes adelante (+Z) y atrás (-Z)
+			_agregar_colision_caja(raiz, Vector3(0.48, 6.8, 22.0), Vector3(-6.76, 3.4, 0.0))
+			_agregar_colision_caja(raiz, Vector3(0.48, 6.8, 22.0), Vector3(6.76, 3.4, 0.0))
+			for pz in [-10.76, 10.76]:
+				_agregar_colision_caja(raiz, Vector3(3.8, 6.8, 0.48), Vector3(-5.1, 3.4, pz))
+				_agregar_colision_caja(raiz, Vector3(3.8, 6.8, 0.48), Vector3(5.1, 3.4, pz))
+				_agregar_colision_caja(raiz, Vector3(6.4, 1.6, 0.48), Vector3(0.0, 6.0, pz))
+			_agregar_colision_caja(raiz, Vector3(15.2, 0.25, 23.0), Vector3(0.0, 7.05, 0.0))
+		"garaje_moderno":
+			tam_cim = Vector3(16.8, 0.80, 20.4)
+			pos_cim = Vector3(0.0, -0.40, 2.0)
+			tam_piso = Vector3(16.4, 0.30, 20.0)
+			pos_piso = Vector3(0.0, -0.01, 2.0)
+			pos_spawn = Vector3(-2.3, 0.15, 0.5)
+			tam_zona = Vector3(11.0, 4.6, 12.6)
+			pos_zona = Vector3(-1.5, 2.3, 0.0)
+			# Paredes + amplia bahía 7.0m izquierda + recepción derecha + voladizo
+			_agregar_colision_caja(raiz, Vector3(16.0, 6.0, 0.44), Vector3(0.0, 3.0, -7.78))
+			_agregar_colision_caja(raiz, Vector3(0.44, 6.0, 16.0), Vector3(-7.78, 3.0, 0.0))
+			_agregar_colision_caja(raiz, Vector3(0.44, 6.0, 16.0), Vector3(7.78, 3.0, 0.0))
+			_agregar_colision_caja(raiz, Vector3(2.2, 6.0, 0.44), Vector3(-6.9, 3.0, 7.78))
+			_agregar_colision_caja(raiz, Vector3(6.8, 6.0, 0.44), Vector3(4.6, 3.0, 7.78))
+			_agregar_colision_caja(raiz, Vector3(7.0, 1.2, 0.44), Vector3(-2.3, 5.4, 7.78))
+			_agregar_colision_caja(raiz, Vector3(0.40, 6.0, 0.40), Vector3(-7.6, 3.0, 11.4))
+			_agregar_colision_caja(raiz, Vector3(0.40, 6.0, 0.40), Vector3(7.6, 3.0, 11.4))
+			_agregar_colision_caja(raiz, Vector3(17.2, 0.40, 20.2), Vector3(0.0, 6.2, 1.9))
+		_:
+			# garaje_camiones (Clásico 1 Bahía)
+			_agregar_colision_caja(raiz, Vector3(10.6, 5.6, 0.44), Vector3(0.0, 2.8, -6.28))
+			_agregar_colision_caja(raiz, Vector3(0.44, 5.6, 13.0), Vector3(-5.08, 2.8, 0.0))
+			_agregar_colision_caja(raiz, Vector3(0.44, 5.6, 13.0), Vector3(5.08, 2.8, 0.0))
+			_agregar_colision_caja(raiz, Vector3(2.5, 5.6, 0.44), Vector3(-4.05, 2.8, 6.28))
+			_agregar_colision_caja(raiz, Vector3(2.5, 5.6, 0.44), Vector3(4.05, 2.8, 6.28))
+			_agregar_colision_caja(raiz, Vector3(5.6, 1.0, 0.44), Vector3(0.0, 5.1, 6.28))
+			_agregar_colision_caja(raiz, Vector3(10.8, 0.25, 13.4), Vector3(0.0, 5.7, 0.0))
+
+	var mat_cimiento := _material_color(Color(0.44, 0.45, 0.47), 0.88)
+	var mi_cim := MeshInstance3D.new()
+	mi_cim.name = "CimientoGaraje"
+	var box_cim := BoxMesh.new()
+	box_cim.size = tam_cim
+	mi_cim.mesh = box_cim
+	mi_cim.material_override = mat_cimiento
+	mi_cim.position = pos_cim
+	raiz.add_child(mi_cim)
+
+	_agregar_colision_caja(raiz, tam_piso, pos_piso)
+
+	# Punto de spawn para vehículos dentro de la bahía (mirando hacia +Z, salida)
+	var punto_spawn := Marker3D.new()
+	punto_spawn.name = "PuntoSpawnGaraje"
+	punto_spawn.position = pos_spawn
+	raiz.add_child(punto_spawn)
+
+	# Zona interactiva de garaje (estrictamente interior para que aparezca al entrar)
+	var zona := Area3D.new()
+	zona.name = "ZonaGaraje"
+	zona.monitoring = true
+	zona.monitorable = true
+	zona.add_to_group("zona_garaje_prueba")
+	_agregar_colision_caja(zona, tam_zona, pos_zona)
+	raiz.add_child(zona)

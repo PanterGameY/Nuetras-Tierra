@@ -1,21 +1,21 @@
 extends CanvasLayer
 
 # --- REFERENCIAS A NODOS (% UNIQUE NAMES) ---
-@onready var panel_login: PanelContainer = %PanelLogin
-@onready var panel_registro: PanelContainer = %PanelRegistro
-@onready var panel_nombre_usuario: PanelContainer = %PanelNombreUsuario
-@onready var loading_overlay: ColorRect = %LoadingOverlay
+@onready var panel_login: PanelContainer = get_node_or_null("%PanelLogin")
+@onready var panel_registro: PanelContainer = get_node_or_null("%PanelRegistro")
+@onready var panel_nombre_usuario: PanelContainer = get_node_or_null("%PanelNombreUsuario")
+@onready var loading_overlay: ColorRect = get_node_or_null("%LoadingOverlay")
 
 # Labels de Error
-@onready var label_error_login: Label = %LabelError
-@onready var label_error_reg: Label = %LabelErrorReg
-@onready var label_error_nombre: Label = %LabelErrorNombre
+@onready var label_error_login: Label = get_node_or_null("%LabelError")
+@onready var label_error_reg: Label = get_node_or_null("%LabelErrorReg")
+@onready var label_error_nombre: Label = get_node_or_null("%LabelErrorNombre")
 
 # Inputs de Texto
-@onready var input_email_login: LineEdit = %InputEmail
-@onready var input_pass_login: LineEdit = %InputPassword
-@onready var input_nombre_final: LineEdit = %InputNombre
-@onready var btn_invitado: Button = %BtnInvitado
+@onready var input_email_login: LineEdit = get_node_or_null("%InputEmail")
+@onready var input_pass_login: LineEdit = get_node_or_null("%InputPassword")
+@onready var input_nombre_final: LineEdit = get_node_or_null("%InputNombre")
+@onready var btn_invitado: Button = get_node_or_null("%BtnInvitado")
 
 # Variables temporales para la sesión
 var id_temp = ""
@@ -74,45 +74,67 @@ func _ready() -> void:
 	else:
 		if DEBUG: print("LoginScreen ADVERTENCIA: Plugin nativo no detectado (Comportamiento normal en PC).")
 
-	# Conectar botones de la interfaz
+	# Conectar Supabase Auth (Google y Discord OAuth + auto-login)
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb:
+		if sb.has_signal("auth_exito") and not sb.auth_exito.is_connected(_on_supabase_auth_exito):
+			sb.auth_exito.connect(_on_supabase_auth_exito)
+		if sb.has_signal("auth_error") and not sb.auth_error.is_connected(_on_supabase_auth_error):
+			sb.auth_error.connect(_on_supabase_auth_error)
+		if sb.has_signal("sesion_refrescada") and not sb.sesion_refrescada.is_connected(_on_supabase_sesion_refrescada):
+			sb.sesion_refrescada.connect(_on_supabase_sesion_refrescada)
+
+	var btn_cancelar := get_node_or_null("%BtnCancelarOAuth")
+	if btn_cancelar and not btn_cancelar.pressed.is_connected(_on_cancelar_oauth_pressed):
+		btn_cancelar.pressed.connect(_on_cancelar_oauth_pressed)
+
 	# Conectar botones de la interfaz (comprobando existencia para evitar null)
 	var _btn = null
 
 	_btn = get_node_or_null("%BtnGoogle")
 	if _btn:
 		_btn.pressed.connect(_on_google_pressed)
+		_crear_boton_discord_login(_btn)
 	elif DEBUG:
 		print("LoginScreen: BtnGoogle no encontrado en la escena.")
 
 	_btn = get_node_or_null("%BtnIngresar")
 	if _btn:
 		_btn.pressed.connect(_on_ingresar_pressed)
-	elif DEBUG:
-		print("LoginScreen: BtnIngresar no encontrado en la escena.")
 
 	_btn = get_node_or_null("%BtnInvitado")
 	if _btn:
 		_btn.pressed.connect(_on_invitado_pressed)
-	elif DEBUG:
-		print("LoginScreen: BtnInvitado no encontrado en la escena.")
 
 	_btn = get_node_or_null("%BtnRegistrar")
 	if _btn:
 		_btn.pressed.connect(_on_registrar_pressed)
-	elif DEBUG:
-		print("LoginScreen: BtnRegistrar no encontrado en la escena.")
 
 	_btn = get_node_or_null("%BtnTestGuardar")
 	if _btn:
 		_btn.pressed.connect(_on_test_guardar_pressed)
-	elif DEBUG:
-		print("LoginScreen: BtnTestGuardar no encontrado en la escena.")
 
 	_btn = get_node_or_null("%BtnConfirmar")
 	if _btn:
 		_btn.pressed.connect(_on_confirmar_nombre_pressed)
-	elif DEBUG:
-		print("LoginScreen: BtnConfirmar no encontrado en la escena.")
+
+	# Precargar escena de carga y menú principal en segundo plano desde que abre Login
+	for ruta_inicio in [
+		"res://interfaz/sistema/escena_carga.tscn",
+		"res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn"
+	]:
+		if ResourceLoader.exists(ruta_inicio):
+			var st_ini := ResourceLoader.load_threaded_get_status(ruta_inicio)
+			if st_ini == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE or st_ini == ResourceLoader.THREAD_LOAD_FAILED:
+				ResourceLoader.load_threaded_request(ruta_inicio)
+
+	if sb and sb.esta_autenticado() and not sb.sesion_cerrada_manualmente:
+		var nombre_guardado := "Conductor"
+		var du := get_node_or_null("/root/DatosUsuario")
+		if du and not str(du.nombre_usuario).strip_edges().is_empty():
+			nombre_guardado = str(du.nombre_usuario).strip_edges()
+		_show_loading(true, "Reconectando sesion de " + nombre_guardado + "...")
+		sb.call_deferred("refrescar_sesion")
 
 	_btn = get_node_or_null("%BtnVolverLogin")
 	if _btn:
@@ -266,7 +288,371 @@ func _normalize_auth_user(user_data) -> Dictionary:
 
 # --- ACCIONES DE BOTONES ---
 
+func _crear_boton_discord_login(btn_google: Button) -> void:
+	var padre := btn_google.get_parent()
+	if not padre or padre.get_node_or_null("BtnDiscordLogin"):
+		return
+	var btn_disc := Button.new()
+	btn_disc.name = "BtnDiscordLogin"
+	btn_disc.text = "Continuar con Discord"
+	btn_disc.custom_minimum_size = Vector2(btn_google.custom_minimum_size.x, maxf(84.0, btn_google.custom_minimum_size.y - 8.0))
+	btn_disc.size_flags_horizontal = btn_google.size_flags_horizontal
+	btn_disc.focus_mode = Control.FOCUS_NONE
+	btn_disc.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var fnt := btn_google.get_theme_font("font")
+	if fnt:
+		btn_disc.add_theme_font_override("font", fnt)
+	btn_disc.add_theme_font_size_override("font_size", 28)
+	btn_disc.add_theme_color_override("font_color", Color(0.96, 0.97, 0.99, 1.0))
+
+	var sb_norm := StyleBoxFlat.new()
+	sb_norm.bg_color = Color(0.11, 0.13, 0.24, 0.90) # Glass con acento Discord
+	sb_norm.border_color = Color(0.38, 0.44, 0.96, 0.65)
+	sb_norm.set_border_width_all(1)
+	sb_norm.set_corner_radius_all(12)
+	sb_norm.shadow_size = 5
+	sb_norm.shadow_color = Color(0, 0, 0, 0.45)
+	btn_disc.add_theme_stylebox_override("normal", sb_norm)
+
+	var sb_hov := sb_norm.duplicate() as StyleBoxFlat
+	sb_hov.bg_color = Color(0.16, 0.19, 0.34, 0.96)
+	sb_hov.border_color = Color(0.88, 0.68, 0.28, 0.92) # Ámbar al hover
+	btn_disc.add_theme_stylebox_override("hover", sb_hov)
+
+	var sb_prs := sb_norm.duplicate() as StyleBoxFlat
+	sb_prs.bg_color = Color(0.22, 0.26, 0.48, 0.98)
+	sb_prs.border_color = Color(0.88, 0.68, 0.28, 1.0)
+	btn_disc.add_theme_stylebox_override("pressed", sb_prs)
+
+	btn_disc.pressed.connect(_on_discord_pressed)
+	padre.add_child(btn_disc)
+	padre.move_child(btn_disc, btn_google.get_index() + 1)
+
+func _on_discord_pressed() -> void:
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_method("iniciar_sesion_oauth"):
+		_show_loading(true, "Abriendo Discord en el navegador...")
+		_start_auth_timeout("inicio de sesión con Discord")
+		sb.iniciar_sesion_oauth("discord")
+	else:
+		_mostrar_error(label_error_login, "SupabaseManager no está disponible.")
+
+func _on_supabase_auth_exito(usuario: Dictionary) -> void:
+	_clear_auth_timeout()
+	_show_loading(false)
+	var final_name := str(usuario.get("nombre", "Conductor")).strip_edges()
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du and not str(du.nombre_usuario).strip_edges().is_empty():
+		final_name = str(du.nombre_usuario).strip_edges()
+	if final_name.is_empty():
+		final_name = "Conductor"
+	id_temp = str(usuario.get("id", ""))
+	_pending_profile_fetch_uid = ""
+	_pending_profile_name = ""
+	_pending_firestore_get_kind = ""
+	print("[LoginScreen] Supabase auth_exito -> iniciando verificación visual:", final_name, " provider:", usuario.get("provider", ""))
+	_mostrar_secuencia_verificacion(final_name, str(usuario.get("provider", "")))
+
+func _mostrar_secuencia_verificacion(nombre_pj: String, provider: String) -> void:
+	# Precargar en segundo plano la pantalla de carga y el convoy mientras se analiza la cuenta
+	for ruta_pre in [
+		"res://interfaz/sistema/escena_carga.tscn",
+		"res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn",
+		"res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+		"res://modelos3d/Trailers y remolques/Carpado/carpado.tscn"
+	]:
+		if ResourceLoader.exists(ruta_pre):
+			var st := ResourceLoader.load_threaded_get_status(ruta_pre)
+			if st == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE or st == ResourceLoader.THREAD_LOAD_FAILED:
+				ResourceLoader.load_threaded_request(ruta_pre)
+
+	var existente := get_node_or_null("PanelVerificacion")
+	if existente:
+		existente.queue_free()
+
+	if panel_login:
+		panel_login.visible = false
+
+	var card := PanelContainer.new()
+	card.name = "PanelVerificacion"
+	card.custom_minimum_size = Vector2(1060, 600)
+	card.set_anchors_preset(Control.PRESET_CENTER)
+	card.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	card.grow_vertical = Control.GROW_DIRECTION_BOTH
+
+	var sb_card := StyleBoxFlat.new()
+	sb_card.bg_color = Color(0.06, 0.07, 0.08, 0.94)
+	sb_card.set_border_width_all(1)
+	sb_card.border_color = Color(0.78, 0.81, 0.85, 0.25)
+	sb_card.set_corner_radius_all(20)
+	sb_card.shadow_color = Color(0, 0, 0, 0.6)
+	sb_card.shadow_size = 24
+	sb_card.shadow_offset = Vector2(0, 8)
+	sb_card.content_margin_left = 56
+	sb_card.content_margin_right = 56
+	sb_card.content_margin_top = 46
+	sb_card.content_margin_bottom = 46
+	card.add_theme_stylebox_override("panel", sb_card)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 22)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(vbox)
+
+	# Barra superior: proveedor a la izquierda e insignia de ID a la derecha
+	var hbox_top := HBoxContainer.new()
+	hbox_top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_child(hbox_top)
+
+	var lbl_prov := Label.new()
+	lbl_prov.text = "SISTEMA DE IDENTIDAD"
+	lbl_prov.add_theme_font_override("font", FONT)
+	lbl_prov.add_theme_font_size_override("font_size", 16)
+	lbl_prov.add_theme_color_override("font_color", Color(0.78, 0.81, 0.85, 0.65))
+	hbox_top.add_child(lbl_prov)
+
+	var spacer_top := Control.new()
+	spacer_top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox_top.add_child(spacer_top)
+
+	var badge_id := PanelContainer.new()
+	badge_id.visible = false
+	var sb_id := StyleBoxFlat.new()
+	sb_id.bg_color = Color(0.88, 0.68, 0.28, 0.14)
+	sb_id.set_border_width_all(1)
+	sb_id.border_color = Color(0.88, 0.68, 0.28, 0.65)
+	sb_id.set_corner_radius_all(8)
+	sb_id.content_margin_left = 14
+	sb_id.content_margin_right = 14
+	sb_id.content_margin_top = 6
+	sb_id.content_margin_bottom = 6
+	badge_id.add_theme_stylebox_override("panel", sb_id)
+	hbox_top.add_child(badge_id)
+
+	var lbl_id_badge := Label.new()
+	lbl_id_badge.text = "ID #001"
+	lbl_id_badge.add_theme_font_override("font", FONT)
+	lbl_id_badge.add_theme_font_size_override("font_size", 18)
+	lbl_id_badge.add_theme_color_override("font_color", Color(0.95, 0.78, 0.38, 1.0))
+	badge_id.add_child(lbl_id_badge)
+
+	# Insignia circular (ámbar en análisis -> verde con chulo al confirmar)
+	var badge := PanelContainer.new()
+	badge.custom_minimum_size = Vector2(132, 132)
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var sb_badge := StyleBoxFlat.new()
+	sb_badge.bg_color = Color(0.14, 0.11, 0.06, 0.92)
+	sb_badge.set_border_width_all(2)
+	sb_badge.border_color = Color(0.88, 0.68, 0.28, 0.95)
+	sb_badge.set_corner_radius_all(66)
+	badge.add_theme_stylebox_override("panel", sb_badge)
+	vbox.add_child(badge)
+
+	var lbl_icon := Label.new()
+	lbl_icon.text = "..."
+	lbl_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl_icon.add_theme_font_override("font", FONT)
+	lbl_icon.add_theme_font_size_override("font_size", 52)
+	lbl_icon.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 1.0))
+	badge.add_child(lbl_icon)
+
+	var lbl_estado := Label.new()
+	lbl_estado.text = "ANALIZANDO CUENTA..."
+	lbl_estado.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_estado.add_theme_font_override("font", FONT)
+	lbl_estado.add_theme_font_size_override("font_size", 44)
+	lbl_estado.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.98))
+	vbox.add_child(lbl_estado)
+
+	var lbl_telemetria := Label.new()
+	lbl_telemetria.text = "> VERIFICANDO CREDENCIALES DE ACCESO..."
+	lbl_telemetria.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_telemetria.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_telemetria.add_theme_font_override("font", FONT)
+	lbl_telemetria.add_theme_font_size_override("font_size", 22)
+	lbl_telemetria.add_theme_color_override("font_color", Color(0.78, 0.81, 0.85, 0.82))
+	vbox.add_child(lbl_telemetria)
+
+	var barra := ProgressBar.new()
+	barra.custom_minimum_size = Vector2(760, 18)
+	barra.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	barra.show_percentage = false
+	barra.max_value = 100.0
+	barra.value = 0.0
+	var sb_bg := StyleBoxFlat.new()
+	sb_bg.bg_color = Color(0.11, 0.12, 0.15, 0.95)
+	sb_bg.set_corner_radius_all(9)
+	barra.add_theme_stylebox_override("background", sb_bg)
+	var sb_fill := StyleBoxFlat.new()
+	sb_fill.bg_color = Color(0.88, 0.68, 0.28, 0.95)
+	sb_fill.set_corner_radius_all(9)
+	barra.add_theme_stylebox_override("fill", sb_fill)
+	vbox.add_child(barra)
+
+	var hbox_btns := HBoxContainer.new()
+	hbox_btns.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox_btns.add_theme_constant_override("separation", 22)
+	hbox_btns.visible = false
+	hbox_btns.modulate.a = 0.0
+	vbox.add_child(hbox_btns)
+
+	var btn_continuar := Button.new()
+	btn_continuar.text = "CONTINUAR"
+	btn_continuar.custom_minimum_size = Vector2(360, 76)
+	btn_continuar.focus_mode = Control.FOCUS_NONE
+	btn_continuar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_continuar.add_theme_font_override("font", FONT)
+	btn_continuar.add_theme_font_size_override("font_size", 30)
+	btn_continuar.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0))
+	var sb_cont := StyleBoxFlat.new()
+	sb_cont.bg_color = Color(0.88, 0.68, 0.28, 0.96)
+	sb_cont.set_corner_radius_all(12)
+	sb_cont.shadow_size = 6
+	sb_cont.shadow_color = Color(0, 0, 0, 0.45)
+	btn_continuar.add_theme_stylebox_override("normal", sb_cont)
+	var sb_cont_hov := sb_cont.duplicate() as StyleBoxFlat
+	sb_cont_hov.bg_color = Color(0.95, 0.76, 0.36, 1.0)
+	btn_continuar.add_theme_stylebox_override("hover", sb_cont_hov)
+	btn_continuar.add_theme_stylebox_override("pressed", sb_cont_hov)
+	hbox_btns.add_child(btn_continuar)
+
+	var btn_cambiar := Button.new()
+	btn_cambiar.text = "CAMBIAR CUENTA"
+	btn_cambiar.custom_minimum_size = Vector2(300, 76)
+	btn_cambiar.focus_mode = Control.FOCUS_NONE
+	btn_cambiar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_cambiar.add_theme_font_override("font", FONT)
+	btn_cambiar.add_theme_font_size_override("font_size", 22)
+	btn_cambiar.add_theme_color_override("font_color", Color(0.82, 0.85, 0.89, 0.92))
+	var sb_camb := StyleBoxFlat.new()
+	sb_camb.bg_color = Color(0.09, 0.10, 0.12, 0.88)
+	sb_camb.set_border_width_all(1)
+	sb_camb.border_color = Color(0.78, 0.81, 0.85, 0.25)
+	sb_camb.set_corner_radius_all(12)
+	btn_cambiar.add_theme_stylebox_override("normal", sb_camb)
+	var sb_camb_hov := sb_camb.duplicate() as StyleBoxFlat
+	sb_camb_hov.border_color = Color(0.78, 0.28, 0.26, 0.92)
+	btn_cambiar.add_theme_stylebox_override("hover", sb_camb_hov)
+	hbox_btns.add_child(btn_cambiar)
+
+	add_child(card)
+
+	# Entrada animada de la tarjeta
+	card.pivot_offset = card.size * 0.5
+	card.modulate.a = 0.0
+	card.scale = Vector2(0.92, 0.92)
+	var tw_in := create_tween()
+	tw_in.set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw_in.tween_property(card, "modulate:a", 1.0, 0.26)
+	tw_in.tween_property(card, "scale", Vector2.ONE, 0.30)
+
+	# Fase 1 -> 2 -> 3 de análisis épico
+	var tw_prog := create_tween()
+	tw_prog.tween_property(barra, "value", 35.0, 1.05).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	await tw_prog.finished
+	if not is_instance_valid(card):
+		return
+
+	var prov_txt := provider.to_upper() if not provider.is_empty() else "OAUTH"
+	lbl_telemetria.text = "> PERFIL ENCONTRADO (%s)  -  CARGANDO DATOS..." % prov_txt
+	var tw_prog2 := create_tween()
+	tw_prog2.tween_property(barra, "value", 74.0, 1.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	await tw_prog2.finished
+	if not is_instance_valid(card):
+		return
+
+	lbl_telemetria.text = "> SINCRONIZANDO IDENTIFICADOR Y PROGRESO EN LA NUBE..."
+	var tw_prog3 := create_tween()
+	tw_prog3.tween_property(barra, "value", 100.0, 1.10).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	await tw_prog3.finished
+	if not is_instance_valid(card):
+		return
+
+	# Obtener nombre e ID ya sincronizados (por si perfil_cargado ya respondió)
+	var nombre_final := nombre_pj
+	var id_mostrar := "001"
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du:
+		if not str(du.nombre_usuario).strip_edges().is_empty():
+			nombre_final = str(du.nombre_usuario).strip_edges()
+		if not str(du.id_usuario).strip_edges().is_empty():
+			id_mostrar = str(du.id_usuario).strip_edges()
+
+	# Cambio a estado ENCONTRADO (chulo verde + sonido + bienvenida)
+	sb_badge.bg_color = Color(0.08, 0.24, 0.14, 0.95)
+	sb_badge.border_color = Color(0.24, 0.86, 0.48, 1.0)
+	sb_fill.bg_color = Color(0.24, 0.86, 0.48, 1.0)
+	lbl_icon.text = "✓"
+	lbl_icon.add_theme_font_size_override("font_size", 68)
+	lbl_icon.add_theme_color_override("font_color", Color(0.28, 0.95, 0.54, 1.0))
+
+	var sfx_path := "res://recursos/efectos/checkpoint.mp3"
+	if ResourceLoader.exists(sfx_path):
+		var sfx := AudioStreamPlayer.new()
+		sfx.stream = load(sfx_path)
+		sfx.volume_db = -4.0
+		add_child(sfx)
+		sfx.finished.connect(sfx.queue_free)
+		sfx.play()
+
+	badge.pivot_offset = badge.size * 0.5
+	badge.scale = Vector2(0.5, 0.5)
+	var tw_check := create_tween()
+	tw_check.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw_check.tween_property(badge, "scale", Vector2.ONE, 0.36)
+
+	lbl_prov.text = "CONEXION %s ACTIVA" % prov_txt
+	lbl_prov.add_theme_color_override("font_color", Color(0.32, 0.90, 0.56, 0.9))
+	lbl_id_badge.text = "ID #%s" % id_mostrar
+	badge_id.visible = true
+
+	lbl_estado.text = "BIENVENIDO, " + nombre_final
+	lbl_estado.add_theme_color_override("font_color", Color(0.95, 0.97, 0.99, 1.0))
+	lbl_telemetria.text = "CUENTA VERIFICADA Y LISTA PARA CONDUCIR"
+	lbl_telemetria.add_theme_color_override("font_color", Color(0.32, 0.90, 0.56, 0.95))
+
+	hbox_btns.visible = true
+	var tw_btns := create_tween()
+	tw_btns.tween_property(hbox_btns, "modulate:a", 1.0, 0.25)
+
+	btn_continuar.pressed.connect(func():
+		btn_continuar.disabled = true
+		_entrar_al_juego(nombre_final)
+	)
+	btn_cambiar.pressed.connect(func():
+		var sb := get_node_or_null("/root/SupabaseManager")
+		if sb and sb.has_method("cerrar_sesion"):
+			sb.cerrar_sesion()
+		card.queue_free()
+		if panel_login:
+			panel_login.visible = true
+	)
+
+func _on_supabase_auth_error(mensaje: String) -> void:
+	_clear_auth_timeout()
+	_show_loading(false)
+	_mostrar_error(label_error_login, mensaje)
+
+func _on_supabase_sesion_refrescada(exito: bool) -> void:
+	if not exito:
+		_clear_auth_timeout()
+		_show_loading(false)
+
+func _on_cancelar_oauth_pressed() -> void:
+	_clear_auth_timeout()
+	_show_loading(false)
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_method("cancelar_oauth_pendiente"):
+		sb.cancelar_oauth_pendiente()
+
 func _on_google_pressed() -> void:
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_method("iniciar_sesion_oauth"):
+		_show_loading(true, "Abriendo Google en el navegador...")
+		_start_auth_timeout("inicio de sesión con Google")
+		sb.iniciar_sesion_oauth("google")
+		return
 	if not _ensure_backend_available("login con Google"): return
 	
 	_show_loading(true, "Conectando con Google...")
@@ -784,7 +1170,7 @@ func _on_confirmar_nombre_pressed() -> void:
 func _entrar_al_juego(nombre_pj: String) -> void:
 	# Detener la música de login antes de cambiar de escena
 	_stop_login_music()
-	_show_loading(true, "Entrando a Nuestra Tierra...")
+	_show_loading(true, "Bienvenido, " + nombre_pj + "! Entrando a Nuestra Tierra...")
 	print("[LoginScreen] _entrar_al_juego called with:", nombre_pj, " id_temp:", id_temp)
 	var discord = get_node_or_null("/root/DiscordBot")
 	if discord: discord.enviar_anuncio_pro(nombre_pj)
@@ -798,6 +1184,15 @@ func _entrar_al_juego(nombre_pj: String) -> void:
 
 	print("[LoginScreen] world_path:", world_path, " exists:", ResourceLoader.exists(world_path))
 	if ResourceLoader.exists(world_path):
+		# Si ya se precargó en segundo plano durante el análisis de cuenta, cambiar al instante sin congelamiento
+		var st_carga := ResourceLoader.load_threaded_get_status(world_path)
+		if st_carga == ResourceLoader.THREAD_LOAD_LOADED:
+			var escena_precargada := ResourceLoader.load_threaded_get(world_path) as PackedScene
+			if escena_precargada:
+				var err_packed := get_tree().change_scene_to_packed(escena_precargada)
+				print("[LoginScreen] change_scene_to_packed (precargada) returned:", err_packed)
+				if err_packed == OK:
+					return
 		# Intentamos cambiar de escena inmediatamente y registramos el código de error
 		var err = get_tree().change_scene_to_file(world_path)
 		print("[LoginScreen] change_scene_to_file returned:", err)
@@ -861,23 +1256,39 @@ func _mostrar_error(label: Label, msg: String) -> void:
 		if label.text == msg: label.text = ""
 
 func _aplicar_diseno_visual() -> void:
-	var style_panel = StyleBoxFlat.new()
-	style_panel.bg_color = Color("#0f111aaa") 
-	style_panel.border_width_left = 2
-	style_panel.border_width_top = 2
-	style_panel.border_width_right = 2
-	style_panel.border_width_bottom = 2
-	style_panel.border_color = Color("#00ffff") 
-	style_panel.set_corner_radius_all(15)
-	
+	# Estilo Automotive Glassmorphism
+	var style_panel := StyleBoxFlat.new()
+	style_panel.bg_color = Color(0.06, 0.07, 0.08, 0.90)
+	style_panel.set_border_width_all(1)
+	style_panel.border_color = Color(0.78, 0.81, 0.85, 0.24)
+	style_panel.set_corner_radius_all(16)
+	style_panel.shadow_color = Color(0, 0, 0, 0.55)
+	style_panel.shadow_size = 16
+	style_panel.shadow_offset = Vector2(0, 6)
+	style_panel.content_margin_left = 32
+	style_panel.content_margin_right = 32
+	style_panel.content_margin_top = 28
+	style_panel.content_margin_bottom = 28
+
 	for p in [panel_login, panel_registro, panel_nombre_usuario]:
-		if p: p.add_theme_stylebox_override("panel", style_panel)
-	
-	var style_input = StyleBoxFlat.new()
-	style_input.bg_color = Color("#00000044")
-	style_input.border_width_bottom = 2
-	style_input.border_color = Color("#00ffff44")
-	style_input.set_corner_radius_all(8)
+		if p:
+			p.add_theme_stylebox_override("panel", style_panel)
+
+	# Transición suave de entrada en la tarjeta principal
+	if panel_login:
+		panel_login.pivot_offset = panel_login.size * 0.5
+		panel_login.modulate.a = 0.0
+		panel_login.scale = Vector2(0.94, 0.94)
+		var tw := create_tween()
+		tw.set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(panel_login, "modulate:a", 1.0, 0.28)
+		tw.tween_property(panel_login, "scale", Vector2.ONE, 0.32)
+
+	var style_input := StyleBoxFlat.new()
+	style_input.bg_color = Color(0.04, 0.05, 0.06, 0.85)
+	style_input.set_border_width_all(1)
+	style_input.border_color = Color(0.78, 0.81, 0.85, 0.22)
+	style_input.set_corner_radius_all(10)
 	
 	for input in [input_email_login, input_pass_login, input_nombre_final]:
 		if input:

@@ -259,7 +259,7 @@ func _ready():
 	await get_tree().process_frame
 
 	var datos = get_node_or_null("/root/DatosUsuario")
-	if datos and datos.guardado_player_scene != "":
+	if not get_meta("en_modo_prueba", false) and datos and datos.guardado_player_scene != "":
 		var current_scene_path = get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
 		if current_scene_path == datos.guardado_player_scene:
 			if datos.guardado_player_pos != Vector3.ZERO:
@@ -651,7 +651,7 @@ func _physics_process(delta: float) -> void:
 					_skeleton.set_bone_pose_rotation(right_shoulder_idx, q)
 
 	# Auto-save player position & current scene path
-	if not multiplayer.has_multiplayer_peer() or is_multiplayer_authority():
+	if not get_meta("en_modo_prueba", false) and (not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()):
 		_autosave_timer += delta
 		if _autosave_timer >= AUTOSAVE_INTERVAL:
 			_autosave_timer = 0.0

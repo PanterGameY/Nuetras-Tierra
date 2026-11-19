@@ -1,8 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-  <!-- Asfalto y Sardinel -->
-  <path d="M8 48 L28 48 L28 36 L56 36 L56 52 L8 52 Z" fill="#ffffff" fill-opacity="0.18"/>
-  <path d="M8 48 L28 48 L28 36 L56 36" stroke-width="3.5"/>
-  <!-- Figura peatón -->
-  <circle cx="42" cy="16" r="4.5" fill="#ffffff"/>
-  <path d="M42 22 L42 29 L47 34 M42 29 L37 34 M42 29 L42 36" stroke-width="2.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Poste de luminaria vial -->
+  <path d="M18 54 V18 C18 13 21 10 26 10 H36" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/>
+  <rect x="33" y="8" width="12" height="5" rx="2.5" fill="#ffffff"/>
+  <!-- Cono de luz -->
+  <path d="M35 15 L29 27 H49 L43 15 Z" fill="#ffffff" fill-opacity="0.20"/>
+  <!-- Base y barrera vial -->
+  <line x1="10" y1="54" x2="54" y2="54" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+  <rect x="30" y="42" width="22" height="6" rx="2" fill="#ffffff" fill-opacity="0.25" stroke="#ffffff" stroke-width="2.2"/>
+  <line x1="35" y1="48" x2="35" y2="54" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
+  <line x1="47" y1="48" x2="47" y2="54" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
 </svg>

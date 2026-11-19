@@ -90,18 +90,21 @@ float calcular_onda_vehiculos(vec2 pos_world, float t) {
 }
 
 varying float v_wave_height;
+varying vec3 v_world_pos;
 
 void vertex() {
-	vec2 pos_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vec4 wp = MODEL_MATRIX * vec4(VERTEX, 1.0);
+	vec2 pos_world = wp.xz;
 	float h_olas = calcular_olas(pos_world, TIME);
 	float h_inter = calcular_onda_vehiculos(pos_world, TIME);
 	
 	VERTEX.y += h_olas + h_inter;
 	v_wave_height = h_olas + h_inter;
+	v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
-	vec2 pos_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xz;
+	vec2 pos_world = v_world_pos.xz;
 	vec2 uv_anim1 = pos_world * (escala_olas * 0.1) + vec2(TIME * velocidad_olas * 0.03, TIME * velocidad_olas * 0.02);
 	vec2 uv_anim2 = pos_world * (escala_olas * 0.15) - vec2(TIME * velocidad_olas * 0.02, -TIME * velocidad_olas * 0.03);
 

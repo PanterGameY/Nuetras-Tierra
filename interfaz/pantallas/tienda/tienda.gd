@@ -22,217 +22,13 @@ const CATEGORIAS := [
 	{"id": "esmeraldas", "nombre": "ESMERALDAS"}
 ]
 
-# Catalogo completo de la Tienda
+# Catalogo completo de la Tienda (vacio por ahora)
 const CATALOGO := {
-	"vehiculos": [
-		{
-			"id": "camion_titan",
-			"nombre": "TITAN HEAVY 8X8",
-			"tipo": "Camion de carga pesada",
-			"codigo": "8X8",
-			"desc": "Capacidad extrema para transportar minerales en rutas de alta montana.",
-			"precio_monedas": 150000,
-			"precio_esmeraldas": 0,
-			"specs": [["POTENCIA", "950 HP"], ["TRACCION", "8X8"], ["CARGA UTIL", "45 T"]],
-			"rating": 0.95
-		},
-		{
-			"id": "pickup_raptor",
-			"nombre": "RAPTOR 4X4 OFFROAD",
-			"tipo": "Camioneta todo terreno",
-			"codigo": "4X4",
-			"desc": "Agil para supervisar obras, trochas y terreno fangoso.",
-			"precio_monedas": 45000,
-			"precio_esmeraldas": 0,
-			"specs": [["POTENCIA", "450 HP"], ["TRACCION", "4X4"], ["CARGA UTIL", "3.5 T"]],
-			"rating": 0.62
-		},
-		{
-			"id": "tractor_agri",
-			"nombre": "AGRO MASTER V8",
-			"tipo": "Maquinaria agricola",
-			"codigo": "V8",
-			"desc": "Disenada para transporte de cosecha y arado en pendiente.",
-			"precio_monedas": 80000,
-			"precio_esmeraldas": 50,
-			"specs": [["POTENCIA", "600 HP"], ["TRACCION", "4X4"], ["ARADO", "8 SURCOS"]],
-			"rating": 0.74
-		},
-		{
-			"id": "bus_inter",
-			"nombre": "COACH 2026 CYBER",
-			"tipo": "Autobus intermunicipal",
-			"codigo": "BUS",
-			"desc": "Transporte masivo de pasajeros en rutas regionales.",
-			"precio_monedas": 120000,
-			"precio_esmeraldas": 100,
-			"specs": [["POTENCIA", "520 HP"], ["PASAJEROS", "48"], ["CLASE", "INTERMUNICIPAL"]],
-			"rating": 0.80
-		}
-	],
-	"mejoras": [
-		{
-			"id": "motor_stage3",
-			"nombre": "TURBO STAGE 3",
-			"tipo": "Mejora de motor",
-			"codigo": "S3",
-			"desc": "Eleva la potencia maxima del motor en un 35 por ciento.",
-			"precio_monedas": 25000,
-			"precio_esmeraldas": 0,
-			"specs": [["GANANCIA", "+35% HP"], ["INSTALACION", "6 HORAS"], ["COMPATIBLE", "DIESEL"]],
-			"rating": 0.88
-		},
-		{
-			"id": "llantas_oruga",
-			"nombre": "NEUMATICOS MUD-EXTREME",
-			"tipo": "Traccion y agarre",
-			"codigo": "MUD",
-			"desc": "Agarre maximo en lodo denso y caminos de trocha.",
-			"precio_monedas": 18000,
-			"precio_esmeraldas": 0,
-			"specs": [["AGARRE", "+40%"], ["VIDA UTIL", "12.000 KM"], ["TERRENO", "TROCHA"]],
-			"rating": 0.70
-		},
-		{
-			"id": "tanque_ext",
-			"nombre": "TANQUE DUAL 500L",
-			"tipo": "Autonomia",
-			"codigo": "500L",
-			"desc": "Duplica el alcance del viaje sin detenerte a repostar.",
-			"precio_monedas": 12000,
-			"precio_esmeraldas": 20,
-			"specs": [["CAPACIDAD", "500 L"], ["AUTONOMIA", "+100%"], ["MATERIAL", "ACERO"]],
-			"rating": 0.76
-		},
-		{
-			"id": "suspension_hd",
-			"nombre": "SUSPENSION HEAVY DUTY",
-			"tipo": "Chasis y carga",
-			"codigo": "HD",
-			"desc": "Refuerza el chasis para carga pesada y terreno irregular.",
-			"precio_monedas": 16000,
-			"precio_esmeraldas": 0,
-			"specs": [["ALTURA", "+15 CM"], ["CARGA EXTRA", "8 T"], ["USO", "MIXTO"]],
-			"rating": 0.68
-		}
-	],
-	"estilos": [
-		{
-			"id": "paint_neon_orange",
-			"nombre": "PINTURA ORANGE NEON",
-			"tipo": "Personalizacion exterior",
-			"codigo": "NEON",
-			"desc": "Acabado perlado con destellos de alta resistencia.",
-			"precio_monedas": 10000,
-			"precio_esmeraldas": 15,
-			"specs": [["ACABADO", "PERLADO"], ["CAPAS", "3"], ["DURACION", "ALTA"]],
-			"rating": 0.90
-		},
-		{
-			"id": "luces_underglow",
-			"nombre": "LUCES CHASIS CYBER",
-			"tipo": "Iluminacion",
-			"codigo": "LED",
-			"desc": "Tira LED inferior RGB para rutas nocturnas.",
-			"precio_monedas": 15000,
-			"precio_esmeraldas": 30,
-			"specs": [["COLOR", "RGB"], ["MODOS", "12"], ["CONSUMO", "BAJO"]],
-			"rating": 0.85
-		},
-		{
-			"id": "kit_aero",
-			"nombre": "KIT AERODINAMICO",
-			"tipo": "Carroceria",
-			"codigo": "AERO",
-			"desc": "Siete piezas ligeras que mejoran la estabilidad en ruta.",
-			"precio_monedas": 22000,
-			"precio_esmeraldas": 18,
-			"specs": [["PIEZAS", "7"], ["MATERIAL", "ABS"], ["PESO", "-18 KG"]],
-			"rating": 0.92
-		}
-	],
-	"packs": [
-		{
-			"id": "pack_fundador",
-			"nombre": "PACK FUNDADOR VIP",
-			"tipo": "Bundle exclusivo",
-			"codigo": "VIP",
-			"desc": "Incluye el TITAN HEAVY 8X8, 500.000 monedas y 200 esmeraldas.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 250,
-			"recompensa_monedas": 500000,
-			"recompensa_esmeraldas": 200,
-			"incluye": "TITAN HEAVY 8X8",
-			"specs": [["VEHICULO", "TITAN 8X8"], ["MONEDAS", "500.000"], ["ESMERALDAS", "200"]],
-			"rating": 1.0
-		},
-		{
-			"id": "pack_recursos",
-			"nombre": "MEGAPACK MONEDAS",
-			"tipo": "Economia",
-			"codigo": "1M",
-			"desc": "Acredita 1.000.000 de monedas al instante en tu cuenta.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 150,
-			"recompensa_monedas": 1000000,
-			"specs": [["MONEDAS", "1.000.000"], ["ENTREGA", "INMEDIATA"], ["USO", "LIBRE"]],
-			"rating": 0.95
-		}
-	],
-	"esmeraldas": [
-		{
-			"id": "esm_100",
-			"nombre": "BOLSA 100 ESMERALDAS",
-			"tipo": "Paquete de esmeraldas",
-			"codigo": "100",
-			"desc": "Acredita 100 esmeraldas al instante.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 0,
-			"precio_usd": 0.99,
-			"recompensa_esmeraldas": 100,
-			"specs": [["ESMERALDAS", "100"], ["ENTREGA", "INMEDIATA"], ["AHORRO", "BASE"]],
-			"rating": 0.45
-		},
-		{
-			"id": "esm_400",
-			"nombre": "BOLSA 400 ESMERALDAS",
-			"tipo": "Paquete de esmeraldas",
-			"codigo": "400",
-			"desc": "Cuatro veces la bolsa inicial con mejor precio.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 0,
-			"precio_usd": 3.49,
-			"recompensa_esmeraldas": 400,
-			"specs": [["ESMERALDAS", "400"], ["ENTREGA", "INMEDIATA"], ["AHORRO", "12%"]],
-			"rating": 0.58
-		},
-		{
-			"id": "esm_900",
-			"nombre": "BOLSA 900 ESMERALDAS",
-			"tipo": "Paquete de esmeraldas",
-			"codigo": "900",
-			"desc": "Paquete intermedio para personalizaciones.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 0,
-			"precio_usd": 6.99,
-			"recompensa_esmeraldas": 900,
-			"specs": [["ESMERALDAS", "900"], ["ENTREGA", "INMEDIATA"], ["AHORRO", "21%"]],
-			"rating": 0.72
-		},
-		{
-			"id": "esm_2000",
-			"nombre": "BOLSA 2.000 ESMERALDAS",
-			"tipo": "Paquete de esmeraldas",
-			"codigo": "2K",
-			"desc": "El mejor precio por esmeralda para completar tu coleccion.",
-			"precio_monedas": 0,
-			"precio_esmeraldas": 0,
-			"precio_usd": 13.99,
-			"recompensa_esmeraldas": 2000,
-			"specs": [["ESMERALDAS", "2.000"], ["ENTREGA", "INMEDIATA"], ["AHORRO", "29%"]],
-			"rating": 0.86
-		}
-	]
+	"vehiculos": [],
+	"mejoras": [],
+	"estilos": [],
+	"packs": [],
+	"esmeraldas": []
 }
 
 @onready var main_container: MarginContainer = $MainContainer
@@ -397,6 +193,15 @@ func _cargar_categoria(cat: String) -> void:
 		_crear_tarjeta(item, cat, i, cat == "esmeraldas")
 
 	if items.is_empty():
+		var lbl_vacio := Label.new()
+		lbl_vacio.text = "No hay artículos disponibles por ahora."
+		lbl_vacio.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_vacio.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl_vacio.custom_minimum_size = Vector2(0, 200)
+		lbl_vacio.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl_vacio.add_theme_font_size_override("font_size", 22)
+		lbl_vacio.add_theme_color_override("font_color", C_TEXT_MUTED)
+		grid_items.add_child(lbl_vacio)
 		_item_seleccionado = {}
 		_mostrar_inspector_vacio()
 		return
@@ -759,11 +564,11 @@ func _actualizar_estado_compra() -> void:
 
 func _mostrar_inspector_vacio() -> void:
 	ins_codigo.text = "--"
-	ins_tipo.text = "SIN SELECCION"
+	ins_tipo.text = "TIENDA VACÍA"
 	ins_categoria.text = ""
-	ins_nombre.text = "Selecciona un articulo"
+	ins_nombre.text = "Sin artículos"
 	ins_precio.text = ""
-	ins_desc.text = "Toca una tarjeta del catalogo para ver su ficha tecnica."
+	ins_desc.text = "No hay artículos disponibles en la tienda en este momento."
 	for hijo in ins_specs.get_children():
 		hijo.free()
 	ins_specs.visible = true
