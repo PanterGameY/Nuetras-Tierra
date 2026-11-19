@@ -68,6 +68,7 @@ var licencia_carga_sobredimensionada : bool = false
 var licencia_c1 : bool = false # Examen C1 = Tutorial inicial disfrazado de examen de conduccion (gratuito, sin cobro ni perdida del 50%)
 var licencia_c2 : bool = false # Camión rígido (se aprueba en Academia: 3 intentos, 50% devolución si reprueba)
 var licencia_c3 : bool = false # Tractomula articulada (se aprueba en Academia: 3 intentos, 50% devolución si reprueba)
+var licencia_prueba_pendiente : String = ""
 var guardado_player_pos : Vector3 = Vector3.ZERO
 var guardado_player_rot_y : float = 0.0
 var guardado_player_scene : String = ""

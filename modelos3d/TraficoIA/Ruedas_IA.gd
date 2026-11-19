@@ -92,7 +92,7 @@ var _steer_fallback_node: Node3D = null
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-func _apply_basis_preserve_scale(node: Node3D, delta_basis: Basis, offset_local: Vector3 = Vector3(0,0,0)) -> void:
+func _apply_basis_preserve_scale(node: Node3D, delta_basis: Basis, offset_local: Vector3 = Vector3(0,0,0), steer_basis_parent: Basis = Basis.IDENTITY) -> void:
 	if not is_instance_valid(node):
 		return
 	var prev_scale: Vector3 = node.scale
@@ -113,12 +113,25 @@ func _apply_basis_preserve_scale(node: Node3D, delta_basis: Basis, offset_local:
 	if coche != null and coche.freeze:
 		offset_local = Vector3.ZERO
 
-	# Aplicar rotación relativa sobre la base original y preservar scale y posición local (origin)
-	var final_basis: Basis = orig_rot * delta_basis
+	# Aplicar steering en el espacio del padre (eje vertical real del vehículo) y rodadura en espacio local de la rueda
+	var final_basis: Basis = steer_basis_parent * orig_rot * delta_basis
 	var final_origin: Vector3 = orig_tr.origin + offset_local
 	node.transform = Transform3D(final_basis, final_origin)
 	node.scale = prev_scale
 	node.visible = true
+
+
+func _get_steer_basis_parent(rueda: Node3D, angle_rad: float) -> Basis:
+	if absf(angle_rad) < 0.0001 or not is_instance_valid(coche):
+		return Basis.IDENTITY
+	var dir_sign: float = -1.0 if direccion_giro.y < 0.0 else 1.0
+	var parent := rueda.get_parent() as Node3D
+	var steer_axis: Vector3 = Vector3.UP
+	if is_instance_valid(parent):
+		steer_axis = (parent.global_transform.basis.inverse() * coche.global_transform.basis.y).normalized()
+		if steer_axis.length_squared() < 0.01:
+			steer_axis = Vector3.UP
+	return Basis(steer_axis, angle_rad * dir_sign)
 
 func _record_orig_basis(node: Node3D) -> void:
 	if not is_instance_valid(node):
@@ -291,9 +304,10 @@ func _process(delta: float) -> void:
 			else:
 				target_pitch = clampf(-accel / max(cabeceo_accel_ref, 0.5) * deg_to_rad(cabeceo_aceleracion_deg), -deg_to_rad(cabeceo_frenada_deg), deg_to_rad(cabeceo_aceleracion_deg))
 
-			# Curva: carrocería se inclina centrífugamente hacia el exterior del viraje
+			# Curva: inclinación sutil y realista para camión (máx 1.5°) sin volcar visualmente la cabina
+			var max_roll_rad := deg_to_rad(minf(balanceo_max_deg, 1.5))
 			var lat_centrifuga: float = (vel_actual * vel_actual * sin(_angulo_steering_actual)) / max(distancia_ejes, 1.5)
-			var target_roll: float = clampf(-lat_centrifuga / max(balanceo_accel_ref, 1.0) * deg_to_rad(balanceo_max_deg), -deg_to_rad(balanceo_max_deg), deg_to_rad(balanceo_max_deg))
+			var target_roll: float = clampf(-lat_centrifuga / max(balanceo_accel_ref, 8.0) * max_roll_rad, -max_roll_rad, max_roll_rad)
 
 			_susp_pitch_target = target_pitch
 			_susp_roll_target = target_roll
@@ -305,11 +319,11 @@ func _process(delta: float) -> void:
 		_balanceo_actual = lerpf(_balanceo_actual, _susp_roll_target,
 				clampf(balanceo_suavizado * delta, 0.0, 1.0))
 
-		# ─ Componer pitch + roll sin Euler: Basis(pitch_X) * Basis(roll_Z) ──────
+		# ─ Componer pitch + roll en espacio del chasis para respetar la orientación base del modelo ──────
 		var basis_pitch := Basis(Vector3(1, 0, 0), _cabeceo_actual)
 		var basis_roll_viz := Basis(Vector3(0, 0, 1), _balanceo_actual)
 		var offset_local: Vector3 = Vector3(0.0, -_susp_avg_comp, 0.0) if not coche.freeze else Vector3.ZERO
-		_apply_basis_preserve_scale(_nodo_visual, basis_roll_viz * basis_pitch, offset_local)
+		_apply_basis_preserve_scale(_nodo_visual, Basis.IDENTITY, offset_local, basis_roll_viz * basis_pitch)
 
 	# ── Rodadura: rotar todas las ruedas según velocidad del vehículo ────────
 	var vel_adelante: float = coche.velocidad_actual if ("velocidad_actual" in coche and float(coche.velocidad_actual) > 0.0) else coche.linear_velocity.dot(forward_local)
@@ -323,20 +337,11 @@ func _process(delta: float) -> void:
 
 	for rueda in ruedas_traccion:
 		if is_instance_valid(rueda):
-			# Determinar si, en ausencia de ruedas_direccion, aplicamos steering
-			var delta_basis: Basis = basis_roll
+			var steer_basis: Basis = Basis.IDENTITY
 			if not _has_valid_ruedas_direccion():
-				# comprobar si esta rueda es delantera (z local < 0)
 				var local_pos_rueda: Vector3 = coche.to_local(rueda.global_transform.origin)
-				var es_delantera: bool = local_pos_rueda.z < 0.0
-				if es_delantera:
-					var steer_axis: Vector3 = direccion_giro
-					if steer_axis == Vector3.ZERO:
-						steer_axis = Vector3.UP
-					else:
-						steer_axis = steer_axis.normalized()
-					var basis_steer := Basis(steer_axis, _angulo_steering_actual)
-					delta_basis = basis_steer * basis_roll
+				if local_pos_rueda.z < 0.0:
+					steer_basis = _get_steer_basis_parent(rueda, _angulo_steering_actual)
 			var offset_local: Vector3 = Vector3(0.0, 0.0, 0.0)
 			# Si la rueda NO está bajo el nodo visual, aplicamos el offset vertical de suspensión
 			var p = rueda.get_parent()
@@ -355,29 +360,17 @@ func _process(delta: float) -> void:
 					offset_local = offset_parent_local - orig_parent_local
 				else:
 					offset_local = Vector3(0.0, -_susp_avg_comp, 0.0)
-			_apply_basis_preserve_scale(rueda, delta_basis, offset_local)
+			_apply_basis_preserve_scale(rueda, basis_roll, offset_local, steer_basis)
 
 	# Fallback: si no hay ruedas_direccion válidas y se proporcionó un nodo de fallback,
 	# aplicar solo el giro de dirección a ese nodo para simular el steering visual.
 	if not _has_valid_ruedas_direccion() and is_instance_valid(_steer_fallback_node):
-		var steer_axis: Vector3 = direccion_giro
-		if steer_axis == Vector3.ZERO:
-			steer_axis = Vector3.UP
-		else:
-			steer_axis = steer_axis.normalized()
-		var basis_steer := Basis(steer_axis, _angulo_steering_actual * steer_fallback_multiplier)
-		_apply_basis_preserve_scale(_steer_fallback_node, basis_steer)
+		var steer_fb: Basis = _get_steer_basis_parent(_steer_fallback_node, _angulo_steering_actual * steer_fallback_multiplier)
+		_apply_basis_preserve_scale(_steer_fallback_node, Basis.IDENTITY, Vector3.ZERO, steer_fb)
 
 	for rueda in ruedas_direccion:
 		if is_instance_valid(rueda):
-			# Primero steering (giro en el eje configurado), luego roll encima.
-			var steer_axis: Vector3 = direccion_giro
-			if steer_axis == Vector3.ZERO:
-				steer_axis = Vector3.UP
-			else:
-				steer_axis = steer_axis.normalized()
-			var basis_steer := Basis(steer_axis, _angulo_steering_actual)
-			var delta_basis: Basis = basis_steer * basis_roll
+			var steer_basis: Basis = _get_steer_basis_parent(rueda, _angulo_steering_actual)
 			var offset_local: Vector3 = Vector3(0.0, 0.0, 0.0)
 			var p = rueda.get_parent()
 			var is_child_of_visual: bool = false
@@ -395,7 +388,7 @@ func _process(delta: float) -> void:
 					offset_local = offset_parent_local - orig_parent_local
 				else:
 					offset_local = Vector3(0.0, -_susp_avg_comp, 0.0)
-			_apply_basis_preserve_scale(rueda, delta_basis, offset_local)
+			_apply_basis_preserve_scale(rueda, basis_roll, offset_local, steer_basis)
 
 func _physics_process(delta: float) -> void:
 	if not is_instance_valid(coche) or _rayos.is_empty() or coche.freeze:

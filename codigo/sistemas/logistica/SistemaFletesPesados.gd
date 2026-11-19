@@ -251,7 +251,7 @@ func notificar_entrada_zona(id_punto: String, es_origen: bool) -> void:
 	elif not es_origen and id_punto == flete_activo.get("destino_id"):
 		en_zona_descarga = true
 		if estado_actual == EstadoFlete.EN_RUTA:
-			_notificar("Llegaste al muelle de destino. Detén el vehículo para descargar y recibir tu pago en Nequi.", "info")
+			_notificar("Llegaste al muelle de destino. Detén el vehículo para descargar y recibir tu pago en tu Banco.", "info")
 
 func notificar_salida_zona(id_punto: String) -> void:
 	if flete_activo.is_empty():
@@ -310,7 +310,7 @@ func _finalizar_fase_descarga() -> void:
 
 	estado_actual = EstadoFlete.COMPLETADO
 	flete_entregado.emit(flete_activo, pago, exp)
-	_notificar("¡Flete entregado! Se abonaron %s a tu cuenta Nequi (+%d EXP)." % [formatear_moneda(pago), exp], "exito")
+	_notificar("¡Flete entregado! Se abonaron %s a tu cuenta del Banco (+%d EXP)." % [formatear_moneda(pago), exp], "exito")
 
 	flete_activo.clear()
 	estado_actual = EstadoFlete.DISPONIBLE

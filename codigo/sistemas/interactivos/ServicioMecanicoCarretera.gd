@@ -197,7 +197,7 @@ func iniciar_servicio(vehiculo: Node3D, tipo: int, rueda_nombre: String = "") ->
 	if datos and "dinero" in datos:
 		if datos.dinero < costo:
 			if CelularUI.instance:
-				CelularUI.instance.notificar("Saldo insuficiente ($ %d). Solicita un préstamo en Nequi." % costo, "alerta")
+				CelularUI.instance.notificar("Saldo insuficiente ($ %d). Solicita un préstamo en el Banco." % costo, "alerta")
 			return false
 		datos.dinero -= costo
 		if datos.has_method("save_local"):

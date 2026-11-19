@@ -31,6 +31,7 @@ var gps_line = null  # GPSRutaLinea — sin tipo para evitar error si el script 
 
 # ─── Estado celular ──────────────────────────────────────────────────────────
 var is_open: bool          = false
+var _ready_msec: int       = 0
 var current_app: String    = "home"
 var target_y_offset: float = 1200.0
 var current_y_offset: float= 1200.0
@@ -369,10 +370,18 @@ func _ready() -> void:
 		_actualizar_posicion_tableta()
 		_switch_app(vista_previa_app)
 	else:
+		is_open = false
+		_ready_msec = Time.get_ticks_msec()
 		phone_frame.visible = false
 		phone_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		phone_frame.scale = Vector2(0.8, 0.8)
 		phone_frame.modulate.a = 0.0
+		if is_instance_valid(app_container_support):
+			app_container_support.visible = false
+			app_container_support.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if is_instance_valid(app_container_missions):
+			app_container_missions.visible = false
+			app_container_missions.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_actualizar_posicion_tableta()
 
 	if not Engine.is_editor_hint():
@@ -1294,9 +1303,8 @@ func _setup_app_home(_parent: Control) -> void:
 
 	var apps = [
 		["res://recursos/iconos app/app_mapa.png",    "GPS Waze",  C_ACCENT,                func(): _switch_app("waze")],
-		["res://recursos/iconos app/app_banco.png",   "Nequi",     Color(0.08, 0.38, 0.92), func(): _switch_app("bank")],
+		["res://recursos/iconos app/app_banco.png",   "Banco",     Color(0.08, 0.38, 0.92), func(): _switch_app("bank")],
 		["🚛",                                        "Fletes NT", Color(0.12, 0.48, 0.96), func(): _switch_app("fletes")],
-		["🪪",                                        "Licencias", Color(0.12, 0.64, 0.88), func(): _switch_app("jobs")],
 		["🎯",                                        "Misiones",  Color(1.0, 0.78, 0.10),  func(): _switch_app("missions")],
 		["🔧",                                        "Garage",    C_ORANGE,                func(): _switch_app("garage")],
 		["res://recursos/iconos app/app_musica.png",  "Musica",    C_ACCENT2,               func(): _switch_app("music")],
@@ -2021,6 +2029,8 @@ func _populate_dropdown(filter: String) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_TAB)):
+		if not is_open and Time.get_ticks_msec() - _ready_msec < 500:
+			return
 		toggle_phone()
 		get_viewport().set_input_as_handled()
 		return
@@ -2040,7 +2050,7 @@ func _input(event: InputEvent) -> void:
 				search_dropdown_container.visible = false
 
 var bank_transactions: Array = [
-	{"type": "in", "desc": "Bono de Bienvenida Nequi", "amount": 150000, "date": "Hoy"},
+	{"type": "in", "desc": "Bono de Bienvenida Banco", "amount": 150000, "date": "Hoy"},
 ]
 var bank_investment_balance: float = 0.0
 var bank_loan_balance: float = 0.0
@@ -2158,9 +2168,9 @@ func _verificar_mora_y_recordatorio_nequi(mostrar_notificacion_inicio: bool = fa
 		if tree:
 			tree.create_timer(3.5, true).timeout.connect(func():
 				if mora_actual > 0:
-					notificar("🔔 Nequi: Tienes %d día(s) de mora. Paga tu cuota de %s para no afectar tu cupo." % [mora_actual, _formatear_pesos_colombianos(valor_cuota)], "alerta")
+					notificar("🔔 Banco: Tienes %d día(s) de mora. Paga tu cuota de %s para no afectar tu cupo." % [mora_actual, _formatear_pesos_colombianos(valor_cuota)], "alerta")
 				else:
-					notificar("🔔 Recordatorio Nequi: Recuerda pagar hoy tu cuota diaria de %s." % _formatear_pesos_colombianos(valor_cuota), "info")
+					notificar("🔔 Recordatorio Banco: Recuerda pagar hoy tu cuota diaria de %s." % _formatear_pesos_colombianos(valor_cuota), "info")
 			, CONNECT_ONE_SHOT)
 
 func _procesar_recordatorios_nequi(delta: float) -> void:
@@ -2174,7 +2184,7 @@ func _procesar_recordatorios_nequi(delta: float) -> void:
 		var mora_actual: int = int(nequi_loan_state.get("dias_mora_actuales", 0))
 		var valor_cuota: float = float(nequi_loan_state.get("cuota_diaria", 10000.0))
 		if ultimo_pago < dia_actual or mora_actual > 0:
-			notificar("🔔 Nequi: Cuota diaria pendiente (%s). Evita acumular días de mora." % _formatear_pesos_colombianos(valor_cuota), "info")
+			notificar("🔔 Banco: Cuota diaria pendiente (%s). Evita acumular días de mora." % _formatear_pesos_colombianos(valor_cuota), "info")
 
 func _load_bank_config() -> void:
 	var cfg = ConfigFile.new()
@@ -2264,7 +2274,7 @@ func _setup_app_bank(_parent: Control) -> void:
 		title_lbl.name = "TitleLabel"
 		header_hbox.add_child(title_lbl)
 
-	title_lbl.text = "NEQUI FINANZAS 💳"
+	title_lbl.text = "BANCO 💳"
 	title_lbl.add_theme_font_size_override("font_size", 30)
 	title_lbl.add_theme_color_override("font_color", NEQUI_BLUE_DEEP)
 
@@ -2339,7 +2349,7 @@ func _setup_app_bank(_parent: Control) -> void:
 
 	var c_hdr = HBoxContainer.new()
 	var c_title = Label.new()
-	c_title.text = "CUENTA NEQUI CONDUCTOR"
+	c_title.text = "CUENTA BANCO CONDUCTOR"
 	c_title.add_theme_font_size_override("font_size", 16)
 	c_title.add_theme_color_override("font_color", Color(0.88, 0.94, 1.0))
 	c_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2945,9 +2955,9 @@ Limpia tu historial de mora o ahorra en tu Colchón Financiero para desbloquear 
 	)
 	vbox.add_child(btn_sanear)
 
-	# Colchón de Ahorro Nequi
+	# Colchón de Ahorro Banco
 	var lbl_colchon = Label.new()
-	lbl_colchon.text = "💰 Colchón de Ahorro Nequi: %s" % _formatear_pesos_colombianos(bank_investment_balance)
+	lbl_colchon.text = "💰 Colchón de Ahorro Banco: %s" % _formatear_pesos_colombianos(bank_investment_balance)
 	lbl_colchon.add_theme_font_size_override("font_size", 17)
 	lbl_colchon.add_theme_color_override("font_color", NEQUI_BLUE_DEEP)
 	vbox.add_child(lbl_colchon)
@@ -2972,7 +2982,7 @@ Limpia tu historial de mora o ahorra en tu Colchón Financiero para desbloquear 
 			nequi_loan_state["score_financiero"] = clampi(int(nequi_loan_state.get("score_financiero", 550)) + 20, 300, 850)
 			if DatosUsuario.has_method("save_local"):
 				DatosUsuario.save_local()
-			registrar_movimiento_nequi("out", "Depósito a Colchón Nequi", 50000.0)
+			registrar_movimiento_nequi("out", "Depósito a Colchón Banco", 50000.0)
 			_setup_app_bank(null)
 			_switch_bank_tab("inversion")
 			notificar("Guardaste $ 50.000 en tu Colchón (+20 pts de Score).", "exito")
@@ -2995,7 +3005,7 @@ Limpia tu historial de mora o ahorra en tu Colchón Financiero para desbloquear 
 				DatosUsuario.dinero += monto_ret
 				if DatosUsuario.has_method("save_local"):
 					DatosUsuario.save_local()
-			registrar_movimiento_nequi("in", "Retiro desde Colchón Nequi", monto_ret)
+			registrar_movimiento_nequi("in", "Retiro desde Colchón Banco", monto_ret)
 			_setup_app_bank(null)
 			_switch_bank_tab("inversion")
 			notificar("Retiraste %s a tu saldo disponible." % _formatear_pesos_colombianos(monto_ret), "exito")
@@ -3008,7 +3018,7 @@ func _build_bank_tab_cambio(parent: Control) -> void:
 	parent.add_child(vbox)
 
 	var title = Label.new()
-	title.text = "💎 CANJE DE ESMERALDAS A SALDO NEQUI"
+	title.text = "💎 CANJE DE ESMERALDAS A SALDO BANCO"
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", NEQUI_BLUE_DEEP)
 	vbox.add_child(title)
@@ -4639,7 +4649,7 @@ func _show_app_splash(app_name: String) -> void:
 			app_label = "WAZE GPS"
 		"bank":
 			app_icon = "res://recursos/iconos app/app_banco.png"
-			app_label = "NEQUI FINANZAS"
+			app_label = "BANCO"
 		"fletes":
 			app_icon = "🚛"
 			app_label = "FLETES NT"
@@ -4699,15 +4709,16 @@ func _update_app_visibility() -> void:
 	if app_container_music:    app_container_music.visible    = (current_app == "music")
 	if app_container_garage:   app_container_garage.visible   = (current_app == "garage")
 	if app_container_jobs:     app_container_jobs.visible     = (current_app == "jobs")
+	var tablet_activa := is_open or (Engine.is_editor_hint() and mostrar_en_editor)
 	if app_container_missions:
-		app_container_missions.visible = (current_app == "missions")
+		app_container_missions.visible = tablet_activa and (current_app == "missions")
 		if app_container_missions.visible and app_container_missions.has_method("actualizar_lista"):
 			app_container_missions.call("actualizar_lista")
 	if app_container_support:
-		app_container_support.visible = (current_app == "soporte")
+		app_container_support.visible = tablet_activa and (current_app == "soporte")
 
 	if is_instance_valid(phone_frame):
-		phone_frame.visible = (current_app != "soporte" and current_app != "missions")
+		phone_frame.visible = tablet_activa and (current_app != "soporte" and current_app != "missions")
 
 	_actualizar_material_carreteras(current_app == "waze")
 	_actualizar_minimap_viewport_state()

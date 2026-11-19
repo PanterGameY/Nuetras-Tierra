@@ -101,6 +101,12 @@ var _desfase_lateral_objetivo: float = 0.0
 var _tiempo_en_estado_carril: float = 0.0
 var _cooldown_cambio_carril: float = 8.0
 
+# ── Estado de cruce continuo entre Path3D separados ───────────────────────────
+var _cruzando_interseccion: bool = false
+var _cruce_destino_pos: Vector3 = Vector3.ZERO
+var _cruce_camino_destino: Path3D = null
+var _cruce_offset_destino: float = 0.0
+
 # ── Luces y parpadeo universal ────────────────────────────────────────────────
 var _luces_universales: Node3D = null
 var _luces_stop_mesh: Array[MeshInstance3D] = []
@@ -249,10 +255,10 @@ func _setup_sensores() -> void:
 	# 3. Sensores frontales a la altura exacta del parachoques para detectar jugadores, vehículos y obstáculos
 	var z_morro: float = -longitud_vehiculo * 0.50
 	var config_sensores: Array[Dictionary] = [
-		{"name": "RayFrontalCentro", "pos": Vector3(0.0, 0.35, z_morro), "tgt": Vector3(0.0, 0.0, -distancia_raycast_largo)},
-		{"name": "RayFrontalBajo", "pos": Vector3(0.0, 0.05, z_morro), "tgt": Vector3(0.0, -0.05, -distancia_raycast_largo)},
-		{"name": "RayFrontalIzq", "pos": Vector3(-1.05, 0.35, z_morro), "tgt": Vector3(-0.20, 0.0, -distancia_raycast_largo)},
-		{"name": "RayFrontalDer", "pos": Vector3(1.05, 0.35, z_morro), "tgt": Vector3(0.20, 0.0, -distancia_raycast_largo)},
+		{"name": "RayFrontalCentro", "pos": Vector3(0.0, 0.55, z_morro), "tgt": Vector3(0.0, 0.0, -distancia_raycast_largo)},
+		{"name": "RayFrontalBajo", "pos": Vector3(0.0, 0.40, z_morro), "tgt": Vector3(0.0, 0.0, -distancia_raycast_largo)},
+		{"name": "RayFrontalIzq", "pos": Vector3(-0.95, 0.55, z_morro), "tgt": Vector3(-0.10, 0.0, -distancia_raycast_largo)},
+		{"name": "RayFrontalDer", "pos": Vector3(0.95, 0.55, z_morro), "tgt": Vector3(0.10, 0.0, -distancia_raycast_largo)},
 	]
 
 	for cfg in config_sensores:
@@ -506,6 +512,8 @@ func activar(nuevo_path_follow: PathFollow3D, progreso_inicial: float, nuevo_sen
 	luces_direccional_izq = false
 	luces_direccional_der = false
 	_estado_carril = EstadoCarril.CARRIL_BASE
+	_cruzando_interseccion = false
+	_cruce_camino_destino = null
 	_cooldown_cambio_carril = randf_range(10.0, 25.0)
 	visible = true
 	aplicar_apariencia_aleatoria()
@@ -516,6 +524,8 @@ func activar(nuevo_path_follow: PathFollow3D, progreso_inicial: float, nuevo_sen
 ## Devolución limpia al pool
 func desactivar() -> void:
 	set_physics_process(false)
+	_cruzando_interseccion = false
+	_cruce_camino_destino = null
 	visible = false
 	velocidad_actual = 0.0
 	distancia_lider = INF
@@ -693,8 +703,12 @@ func _physics_process(delta: float) -> void:
 			if network_manager != null and network_manager.has_method("_reciclar_vehiculo_atascado"):
 				network_manager._reciclar_vehiculo_atascado(self)
 
+	# MODO 0: Cruce continuo de intersección entre dos Path3D separados
+	if _cruzando_interseccion:
+		_procesar_cruce_interseccion(avance, delta)
+
 	# MODO 1: Navegación directa en TrafficLane3D (mapa.tscn)
-	if current_lane != null and is_instance_valid(current_lane) and current_lane.curve != null:
+	elif current_lane != null and is_instance_valid(current_lane) and current_lane.curve != null:
 		current_distance += avance
 		var longitud_carril := current_lane.get_total_length()
 
@@ -878,6 +892,58 @@ func _actualizar_contacto_suelo(delta: float) -> void:
 
 
 ## Posicionamiento con elevación y desplazamiento lateral sobre la curva del carril
+func iniciar_cruce_interseccion(camino_dest: Path3D, offset_dest: float, punto_dest: Vector3) -> void:
+	_cruzando_interseccion = true
+	_cruce_camino_destino = camino_dest
+	_cruce_offset_destino = offset_dest
+	_cruce_destino_pos = punto_dest
+
+
+func _procesar_cruce_interseccion(avance: float, delta: float) -> void:
+	if not is_instance_valid(_cruce_camino_destino):
+		_cruzando_interseccion = false
+		return
+
+	var pos_actual := global_position
+	var dir := _cruce_destino_pos - pos_actual
+	dir.y = 0.0
+	var dist_restante := dir.length()
+
+	if dist_restante <= maxf(avance, 1.5):
+		_cruzando_interseccion = false
+		var dest := _cruce_camino_destino
+		var off := _cruce_offset_destino
+		_cruce_camino_destino = null
+		if network_manager != null and network_manager.has_method("finalizar_cruce_camino"):
+			network_manager.finalizar_cruce_camino(self, dest, off)
+		return
+
+	var dir_n := dir / dist_restante
+	var target_basis := Basis.looking_at(dir_n, Vector3.UP)
+	global_transform.basis = global_transform.basis.slerp(target_basis, clampf(delta * 5.5, 0.0, 1.0))
+
+	var fwd_chasis := -global_transform.basis.z
+	fwd_chasis.y = 0.0
+	if fwd_chasis.length_squared() > 0.001:
+		var angle_diff := fwd_chasis.normalized().signed_angle_to(dir_n, Vector3.UP)
+		angulo_ruedas = lerpf(angulo_ruedas, clampf(angle_diff * 1.4, -deg_to_rad(32.0), deg_to_rad(32.0)), clampf(delta * 8.0, 0.0, 1.0))
+
+	global_position = pos_actual + dir_n * avance
+	linear_velocity = -global_transform.basis.z * velocidad_actual
+
+
+func _sample_lane_point_continuous(d: float, total_len: float, right_offset: float) -> Vector3:
+	if d <= total_len:
+		var t := current_lane.sample_transform_at_distance(maxf(d, 0.0))
+		return t.origin + (t.basis.x.normalized() * right_offset)
+	var prox := _obtener_siguiente_carril_preview()
+	if prox != null:
+		var t_next := prox.sample_transform_at_distance(d - total_len)
+		return t_next.origin + (t_next.basis.x.normalized() * right_offset)
+	var t_end := current_lane.sample_transform_at_distance(total_len)
+	return t_end.origin + (t_end.basis.x.normalized() * right_offset)
+
+
 func _posicionar_en_carril(dist: float, delta: float) -> void:
 	if current_lane == null or current_lane.curve == null:
 		return
@@ -895,19 +961,15 @@ func _posicionar_en_carril(dist: float, delta: float) -> void:
 	# Posicionar con elevación offset_y y desplazamiento lateral de carril
 	global_position = trans.origin + (up_vec * offset_y) + (right_vec * _desfase_lateral_actual)
 
-	# Orientación suave mirando hacia adelante en la curva
-	var look_dist := minf(dist + 2.5, total_len)
-	var look_point := current_lane.sample_point_at_distance(look_dist) + (up_vec * offset_y) + (right_vec * _desfase_lateral_actual)
-	if dist >= total_len - 0.5:
-		var prox = _obtener_siguiente_carril_preview()
-		if prox != null:
-			look_point = prox.sample_point_at_distance(2.0) + (up_vec * offset_y)
-
-	var dir_adelante := (look_point - global_position)
+	# Modelo bicicleta (eje trasero y delantero) con transición continua entre carriles
+	var L := clampf(distancia_ejes, 2.4, 5.5)
+	var pt_rear := _sample_lane_point_continuous(maxf(dist - L * 0.45, 0.0), total_len, _desfase_lateral_actual)
+	var pt_front := _sample_lane_point_continuous(dist + L * 0.55, total_len, _desfase_lateral_actual)
+	var dir_adelante := (pt_front - pt_rear)
 	dir_adelante.y = 0.0
 	if dir_adelante.length_squared() > 0.01:
 		var target_basis := Basis.looking_at(dir_adelante.normalized(), Vector3.UP)
-		var factor_suavizado := 1.0 if delta >= 1.0 else clampf(14.0 * delta, 0.0, 1.0)
+		var factor_suavizado := 1.0 if delta >= 1.0 else clampf(7.5 * delta, 0.0, 1.0)
 		global_transform.basis = global_transform.basis.slerp(target_basis, factor_suavizado)
 
 
@@ -957,18 +1019,23 @@ func _obtener_siguiente_carril() -> TrafficLane3D:
 	return null
 
 
-func _actualizar_direccion_y_fisica_lane(_delta: float) -> void:
+func _actualizar_direccion_y_fisica_lane(delta: float) -> void:
 	if not is_inside_tree():
 		return
-	linear_velocity = Vector3.ZERO
+	linear_velocity = -global_transform.basis.z * velocidad_actual
 
 	if current_lane != null and current_lane.curve != null:
 		var forward := -global_transform.basis.z
-		var look_ahead := current_lane.sample_point_at_distance(current_distance + 3.0)
-		var dir_deseada := (look_ahead - global_position).normalized()
+		forward.y = 0.0
+		var total_len := current_lane.get_total_length()
+		var L := clampf(distancia_ejes, 2.4, 5.5)
+		var look_ahead := _sample_lane_point_continuous(current_distance + L * 0.55 + 3.0, total_len, _desfase_lateral_actual)
+		var dir_deseada := (look_ahead - global_position)
 		dir_deseada.y = 0.0
-		var angle_diff := forward.signed_angle_to(dir_deseada, Vector3.UP)
-		angulo_ruedas = clampf(angle_diff, -deg_to_rad(32.0), deg_to_rad(32.0))
+		if forward.length_squared() > 0.01 and dir_deseada.length_squared() > 0.01:
+			var angle_diff := forward.normalized().signed_angle_to(dir_deseada.normalized(), Vector3.UP)
+			var objetivo_ang := clampf(angle_diff * 1.35, -deg_to_rad(32.0), deg_to_rad(32.0))
+			angulo_ruedas = lerpf(angulo_ruedas, objetivo_ang, clampf(delta * 8.0, 0.0, 1.0))
 
 
 func _actualizar_direccion_y_fisica_path(delta: float) -> void:
@@ -1046,9 +1113,14 @@ func _obtener_menor_distancia_sensores() -> float:
 	_ultimo_frame_ray = frame_actual
 	var menor := INF
 
-	# En curvas y rotondas cerradas, ignorar lecturas lejanas que cruzan diagonalmente hacia otros carriles/separadores
-	var en_curva := absf(angulo_ruedas) > deg_to_rad(5.0)
-	var cant_rayos: int = 1 if _lod_level == 1 else _sensores_frontales.size()
+	# En curvas y rotondas cerradas, usar solo rayos centrales y filtrar vehículos en carriles adyacentes/opuestos
+	var en_curva := absf(angulo_ruedas) > deg_to_rad(4.0)
+	var cant_rayos: int = 1 if _lod_level == 1 else (2 if en_curva else _sensores_frontales.size())
+	var fwd_propio := -global_transform.basis.z
+	fwd_propio.y = 0.0
+	if fwd_propio.length_squared() > 0.001:
+		fwd_propio = fwd_propio.normalized()
+
 	for i in range(cant_rayos):
 		if i >= _sensores_frontales.size():
 			break
@@ -1061,6 +1133,15 @@ func _obtener_menor_distancia_sensores() -> float:
 					var d := ray.global_position.distance_to(ray.get_collision_point())
 					if en_curva and d > 12.0:
 						continue
+					# Ignorar otro tráfico que circule en sentido contrario o en otro carril paralelo durante curvas
+					if col is VehiculoTraficoIA and col is Node3D:
+						var col_node := col as Node3D
+						var fwd_otro := -col_node.global_transform.basis.z
+						fwd_otro.y = 0.0
+						if fwd_otro.length_squared() > 0.001:
+							var alinea := fwd_propio.dot(fwd_otro.normalized())
+							if en_curva and alinea < 0.35 and d > 5.0:
+								continue
 					if d < menor:
 						menor = d
 
@@ -1099,11 +1180,11 @@ func _calcular_velocidad_objetivo() -> float:
 		if limite_ms > 0.0:
 			objetivo = minf(objetivo, limite_ms)
 
-	# 0. Reducción natural de velocidad en rotondas y curvas cerradas (estilo ATS/ETS2)
+	# 0. Reducción natural de velocidad en rotondas y curvas cerradas (solo en giros marcados)
 	var angulo_curva := absf(angulo_ruedas)
-	if angulo_curva > deg_to_rad(5.0):
-		var factor_curva := clampf(1.0 - (angulo_curva - deg_to_rad(5.0)) / deg_to_rad(20.0), 0.35, 1.0)
-		var vel_curva := maxf(velocidad_crucero * factor_curva, 5.0)
+	if angulo_curva > deg_to_rad(12.0):
+		var factor_curva := clampf(1.0 - (angulo_curva - deg_to_rad(12.0)) / deg_to_rad(24.0), 0.55, 1.0)
+		var vel_curva := maxf(velocidad_crucero * factor_curva, 7.0)
 		objetivo = minf(objetivo, vel_curva)
 
 	# 1. Distancia de líder sobre la curva calculada por TrafficNetworkManager3D / GestorTrafico

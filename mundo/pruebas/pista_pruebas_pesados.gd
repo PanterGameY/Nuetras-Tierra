@@ -50,15 +50,29 @@ var _resultado_tiempo_freno: float = 0.0
 var _tween_menu: Tween = null
 var _menu_abierto: bool = false
 
+# Prueba de manejo para licencias (desde Tienda)
+var _prueba_activa: bool = false
+var _prueba_categoria: String = ""
+var _prueba_puntos: Array[Vector3] = []
+var _prueba_idx: int = 0
+var _prueba_marker_3d: MeshInstance3D = null
+var _prueba_banner: PanelContainer = null
+var _prueba_lbl_estado: Label = null
+var _prueba_lbl_dist: Label = null
+
 
 func _ready() -> void:
 	_configurar_interfaz()
 	_conectar_bascula()
 	_actualizar_display_bascula(0.0)
+	if DatosUsuario and "licencia_prueba_pendiente" in DatosUsuario and DatosUsuario.licencia_prueba_pendiente != "":
+		_iniciar_prueba_licencia(DatosUsuario.licencia_prueba_pendiente)
 
 
 func _process(delta: float) -> void:
 	_actualizar_telemetria(delta)
+	if _prueba_activa:
+		_actualizar_prueba_licencia()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -336,3 +350,221 @@ func _obtener_vehiculo_activo() -> RigidBody3D:
 	if is_instance_valid(camion_actual):
 		return camion_actual
 	return null
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🪪 PRUEBA DE MANEJO PARA LICENCIAS (DESDE TIENDA)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func _iniciar_prueba_licencia(categoria: String) -> void:
+	_prueba_categoria = categoria.to_upper()
+	_prueba_activa = true
+	_prueba_idx = 0
+	_prueba_puntos.clear()
+
+	for m in [spawn_frenado, spawn_rampas, spawn_suspension, spawn_inclinacion, spawn_patio]:
+		if is_instance_valid(m):
+			_prueba_puntos.append(m.global_position)
+
+	if _prueba_puntos.is_empty():
+		_completar_prueba_licencia()
+		return
+
+	# Crear baliza 3D luminosa ámbar para el checkpoint actual
+	_prueba_marker_3d = MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 2.6
+	cyl.bottom_radius = 2.6
+	cyl.height = 7.0
+	_prueba_marker_3d.mesh = cyl
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.88, 0.68, 0.28, 0.40)
+	mat.emission_enabled = true
+	mat.emission = Color(0.88, 0.68, 0.28, 1.0)
+	mat.emission_energy_multiplier = 2.0
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_prueba_marker_3d.material_override = mat
+	add_child(_prueba_marker_3d)
+	_prueba_marker_3d.global_position = _prueba_puntos[0] + Vector3(0, 3.5, 0)
+
+	# Banner superior Glassmorphism Automotriz
+	if canvas_hud:
+		_prueba_banner = PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.06, 0.07, 0.08, 0.90)
+		sb.set_border_width_all(1)
+		sb.border_color = Color(0.88, 0.68, 0.28, 0.85)
+		sb.set_corner_radius_all(12)
+		sb.shadow_color = Color(0, 0, 0, 0.45)
+		sb.shadow_size = 6
+		_prueba_banner.add_theme_stylebox_override("panel", sb)
+		_prueba_banner.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		_prueba_banner.offset_left = 360.0
+		_prueba_banner.offset_right = -360.0
+		_prueba_banner.offset_top = 18.0
+		_prueba_banner.offset_bottom = 94.0
+
+		var mg := MarginContainer.new()
+		mg.add_theme_constant_override("margin_left", 20)
+		mg.add_theme_constant_override("margin_right", 20)
+		mg.add_theme_constant_override("margin_top", 10)
+		mg.add_theme_constant_override("margin_bottom", 10)
+		_prueba_banner.add_child(mg)
+
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 18)
+		mg.add_child(hbox)
+
+		var font_mod := load("res://recursos/fonts/Moderniz.otf") as Font
+		_prueba_lbl_estado = Label.new()
+		_prueba_lbl_estado.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_prueba_lbl_estado.add_theme_font_size_override("font_size", 22)
+		_prueba_lbl_estado.add_theme_color_override("font_color", Color(0.88, 0.90, 0.93, 0.95))
+		if font_mod:
+			_prueba_lbl_estado.add_theme_font_override("font", font_mod)
+		hbox.add_child(_prueba_lbl_estado)
+
+		_prueba_lbl_dist = Label.new()
+		_prueba_lbl_dist.add_theme_font_size_override("font_size", 22)
+		_prueba_lbl_dist.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.95))
+		if font_mod:
+			_prueba_lbl_dist.add_theme_font_override("font", font_mod)
+		hbox.add_child(_prueba_lbl_dist)
+
+		var btn_cancel := Button.new()
+		btn_cancel.text = "CANCELAR"
+		btn_cancel.custom_minimum_size = Vector2(150, 48)
+		btn_cancel.focus_mode = Control.FOCUS_NONE
+		btn_cancel.add_theme_font_size_override("font_size", 18)
+		btn_cancel.add_theme_color_override("font_color", Color(0.95, 0.95, 0.97, 1.0))
+		if font_mod:
+			btn_cancel.add_theme_font_override("font", font_mod)
+		var sb_c := StyleBoxFlat.new()
+		sb_c.bg_color = Color(0.24, 0.11, 0.11, 0.94)
+		sb_c.set_border_width_all(1)
+		sb_c.border_color = Color(0.78, 0.28, 0.26, 0.95)
+		sb_c.set_corner_radius_all(8)
+		btn_cancel.add_theme_stylebox_override("normal", sb_c)
+		btn_cancel.pressed.connect(func():
+			if DatosUsuario:
+				DatosUsuario.licencia_prueba_pendiente = ""
+			_salir_a_tienda()
+		)
+		hbox.add_child(btn_cancel)
+		canvas_hud.add_child(_prueba_banner)
+
+
+func _actualizar_prueba_licencia() -> void:
+	if _prueba_idx >= _prueba_puntos.size():
+		return
+	var ref_node: Node3D = _obtener_vehiculo_activo()
+	if not is_instance_valid(ref_node):
+		ref_node = jugador
+	if not is_instance_valid(ref_node):
+		return
+
+	var target := _prueba_puntos[_prueba_idx]
+	var dist := ref_node.global_position.distance_to(target)
+	if _prueba_lbl_estado:
+		_prueba_lbl_estado.text = "PRUEBA LICENCIA %s  •  PUNTO %d / %d" % [_prueba_categoria, _prueba_idx + 1, _prueba_puntos.size()]
+	if _prueba_lbl_dist:
+		_prueba_lbl_dist.text = "%d m" % int(round(dist))
+
+	if dist <= 7.5:
+		_prueba_idx += 1
+		if _prueba_idx >= _prueba_puntos.size():
+			_completar_prueba_licencia()
+		elif is_instance_valid(_prueba_marker_3d):
+			_prueba_marker_3d.global_position = _prueba_puntos[_prueba_idx] + Vector3(0, 3.5, 0)
+
+
+func _completar_prueba_licencia() -> void:
+	_prueba_activa = false
+	if is_instance_valid(_prueba_marker_3d):
+		_prueba_marker_3d.queue_free()
+	if is_instance_valid(_prueba_banner):
+		_prueba_banner.queue_free()
+
+	if DatosUsuario:
+		if DatosUsuario.has_method("otorgar_licencia"):
+			DatosUsuario.otorgar_licencia(_prueba_categoria)
+		DatosUsuario.licencia_prueba_pendiente = ""
+		DatosUsuario.save_local()
+
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not canvas_hud:
+		_salir_a_tienda()
+		return
+
+	var modal := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.95)
+	sb.set_border_width_all(1)
+	sb.border_color = Color(0.88, 0.68, 0.28, 0.92)
+	sb.set_corner_radius_all(12)
+	sb.shadow_color = Color(0, 0, 0, 0.5)
+	sb.shadow_size = 10
+	modal.add_theme_stylebox_override("panel", sb)
+	modal.set_anchors_preset(Control.PRESET_CENTER)
+	modal.custom_minimum_size = Vector2(680, 300)
+	modal.offset_left = -340.0
+	modal.offset_right = 340.0
+	modal.offset_top = -150.0
+	modal.offset_bottom = 150.0
+
+	var mg := MarginContainer.new()
+	mg.add_theme_constant_override("margin_left", 32)
+	mg.add_theme_constant_override("margin_right", 32)
+	mg.add_theme_constant_override("margin_top", 28)
+	mg.add_theme_constant_override("margin_bottom", 28)
+	modal.add_child(mg)
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 18)
+	mg.add_child(vbox)
+
+	var font_mod := load("res://recursos/fonts/Moderniz.otf") as Font
+	var tit := Label.new()
+	tit.text = "¡PRUEBA APROBADA!"
+	tit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tit.add_theme_font_size_override("font_size", 36)
+	tit.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.95))
+	if font_mod:
+		tit.add_theme_font_override("font", font_mod)
+	vbox.add_child(tit)
+
+	var sub := Label.new()
+	sub.text = "Adquiriste la Licencia %s correctamente." % _prueba_categoria
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 22)
+	sub.add_theme_color_override("font_color", Color(0.88, 0.90, 0.93, 0.95))
+	vbox.add_child(sub)
+
+	var btn := Button.new()
+	btn.text = "VOLVER A LA TIENDA"
+	btn.custom_minimum_size = Vector2(320, 68)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.add_theme_font_size_override("font_size", 22)
+	btn.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0))
+	if font_mod:
+		btn.add_theme_font_override("font", font_mod)
+	var sb_b := StyleBoxFlat.new()
+	sb_b.bg_color = Color(0.88, 0.68, 0.28, 0.95)
+	sb_b.set_corner_radius_all(10)
+	btn.add_theme_stylebox_override("normal", sb_b)
+	btn.pressed.connect(_salir_a_tienda)
+	vbox.add_child(btn)
+
+	canvas_hud.add_child(modal)
+	modal.scale = Vector2(0.92, 0.92)
+	modal.modulate.a = 0.0
+	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(modal, "scale", Vector2.ONE, 0.30)
+	tw.tween_property(modal, "modulate:a", 1.0, 0.25)
+
+
+func _salir_a_tienda() -> void:
+	get_tree().change_scene_to_file("res://interfaz/pantallas/tienda/Tienda.tscn")

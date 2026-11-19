@@ -191,10 +191,10 @@ func _iniciar_pool_trafico() -> void:
 		var base_prog: float = 0.0
 
 		if player and camino in caminos_cercanos:
-			# Desfasar alrededor del jugador
+			# Desfasar lejos del jugador (>= 130m) para no spawnear encima de su vista
 			var local_p := camino.to_local(player_pos)
 			var off_player := camino.curve.get_closest_offset(local_p)
-			var offset_rel := float(i) * separacion_minima
+			var offset_rel := 130.0 + float(i) * separacion_minima
 			base_prog = fposmod(off_player + offset_rel, camino_len)
 		else:
 			base_prog = fmod(float(i) * separacion_minima * 2.0, camino_len)
@@ -203,9 +203,12 @@ func _iniciar_pool_trafico() -> void:
 		pf.add_child(vehiculo)
 
 		vehiculo.position = Vector3(0.0, vehiculo.offset_y, 0.0)
-		vehiculo.rotation = Vector3.ZERO
 		vehiculo.velocidad_actual = vehiculo.velocidad_crucero * randf_range(0.9, 1.15)
 		vehiculo.path_follow = pf
+		vehiculo.network_manager = self
+		vehiculo._cruzando_interseccion = false
+		vehiculo._cruce_camino_destino = null
+		_alinear_vehiculo_a_camino(vehiculo, camino, base_prog)
 		vehiculo.visible = true
 		vehiculo.set_physics_process(true)
 		vehiculo.aplicar_apariencia_aleatoria()
@@ -267,6 +270,9 @@ func _physics_process(_delta: float) -> void:
 			lista[0]["veh"].distancia_lider = INF
 			continue
 
+		var curva := (camino as Path3D).curve
+		var es_cerrado: bool = curva.sample_baked(0.0).distance_to(curva.sample_baked(c_len)) < 3.0
+
 		# Ordenar vehículos por progreso longitudinal
 		lista.sort_custom(func(a, b): return a["prog"] < b["prog"])
 
@@ -277,10 +283,16 @@ func _physics_process(_delta: float) -> void:
 			var prog: float = item["prog"]
 			var menor_gap: float = INF
 
-			for step in range(1, n_veh):
-				var next_idx: int = (idx + step) % n_veh
-				var otro: Dictionary = lista[next_idx]
+			for other_idx in range(n_veh):
+				if other_idx == idx:
+					continue
+				var otro: Dictionary = lista[other_idx]
+				var otro_veh: VehiculoTraficoIA = otro["veh"]
 				var otro_pf: PathFollow3D = otro["pf"]
+
+				# Ignorar vehículos en sentido contrario
+				if otro_veh.sentido != veh.sentido:
+					continue
 
 				# Si los dos vehículos están en carriles distintos (|h_offset| diff > 1.8m), no se bloquean
 				if is_instance_valid(pf) and is_instance_valid(otro_pf):
@@ -288,16 +300,21 @@ func _physics_process(_delta: float) -> void:
 						continue
 
 				var otro_prog: float = otro["prog"]
-				var dist_adelante: float = fposmod(otro_prog - prog, c_len)
+				var dist_adelante: float
+				if es_cerrado:
+					dist_adelante = fposmod((otro_prog - prog) * float(veh.sentido), c_len)
+				else:
+					dist_adelante = (otro_prog - prog) * float(veh.sentido)
+					if dist_adelante <= 0.0:
+						continue
 
 				# Solo considerar líder hacia adelante en la dirección del flujo de la vía
-				# En rotondas o bucles, el rango se limita a menos de media vuelta para evitar bloqueos circulares
-				var max_rango_lider := minf(c_len * 0.45, 60.0)
+				var max_rango_lider := minf(c_len * 0.45, 60.0) if es_cerrado else 60.0
 				if dist_adelante < max_rango_lider:
-					var mitad_muras: float = (veh.longitud_vehiculo * 0.5 + otro["veh"].longitud_vehiculo * 0.5)
-					var gap: float = dist_adelante - mitad_muras
-					menor_gap = maxf(gap, 0.0)
-					break
+					var mitad_muras: float = (veh.longitud_vehiculo * 0.5 + otro_veh.longitud_vehiculo * 0.5)
+					var gap: float = maxf(dist_adelante - mitad_muras, 0.0)
+					if gap < menor_gap:
+						menor_gap = gap
 
 			veh.distancia_lider = menor_gap
 
@@ -400,57 +417,123 @@ func _actualizar_proximidad_pool() -> void:
 
 		var dist := player_pos.distance_to(veh.global_position)
 
-		# Si el vehículo se alejó demasiado del jugador (> despawn_radius), reciclarlo por delante
+		# Si el vehículo se alejó demasiado del jugador (> despawn_radius), reciclarlo fuera de su vista directa
 		if dist > despawn_radius:
-			var nuevo_camino: Path3D = caminos_cercanos.pick_random()
-			var c_len := nuevo_camino.curve.get_baked_length()
-			var loc_p := nuevo_camino.to_local(player_pos)
-			var p_off := nuevo_camino.curve.get_closest_offset(loc_p)
-
-			# 75% de probabilidad de aparecer adelante, 25% atrás
-			var offset_adelante := randf_range(70.0, 220.0)
-			if randf() < 0.25:
-				offset_adelante = -randf_range(60.0, 150.0)
-
-			var nuevo_prog := fposmod(p_off + offset_adelante, c_len)
-
-			if pf.get_parent() != nuevo_camino:
-				pf.reparent(nuevo_camino, false)
-				_pool_caminos_asignados[i] = nuevo_camino
-
-			pf.progress = nuevo_prog
-			veh.position = Vector3(0.0, veh.offset_y, 0.0)
-			veh.rotation = Vector3.ZERO
-			veh.velocidad_actual = veh.velocidad_crucero * randf_range(0.9, 1.15)
-			veh.distancia_lider = INF
-			veh.frenar_por_semaforo = false
-			veh.luces_stop = false
-			veh.visible = true
-			veh.set_physics_process(true)
-			veh._actualizar_contacto_suelo(1.0)
+			var spawn_info := _buscar_punto_spawn_oculto(caminos_cercanos, player_pos, true, 165.0)
+			var nuevo_camino: Path3D = spawn_info["camino"]
+			var nuevo_prog: float = spawn_info["prog"]
+			_reubicar_vehiculo_en_camino(veh, pf, i, nuevo_camino, nuevo_prog)
 
 
-## Reciclaje inteligente tipo ATS/ETS2 cuando un vehículo queda bloqueado en congestión
+## Reciclaje inteligente tipo ATS/ETS2 cuando un vehículo queda bloqueado o termina una vía sin salida
 func _reciclar_vehiculo_atascado(veh: VehiculoTraficoIA) -> void:
 	var idx := _pool_vehiculos.find(veh)
 	if idx == -1 or idx >= _pool_path_follows.size():
 		return
 	var pf: PathFollow3D = _pool_path_follows[idx]
-	var camino: Path3D = _pool_caminos_asignados[idx]
-	if not is_instance_valid(pf) or not is_instance_valid(camino) or camino.curve == null:
+	var camino_actual: Path3D = _pool_caminos_asignados[idx]
+	if not is_instance_valid(pf) or all_paths.is_empty():
 		return
-	var c_len := camino.curve.get_baked_length()
-	if c_len <= 10.0:
+
+	var player := _find_player()
+	var has_player := player != null and is_instance_valid(player)
+	var player_pos := player.global_position if has_player else Vector3.ZERO
+
+	var candidatos: Array[Path3D] = []
+	for p in all_paths:
+		if is_instance_valid(p) and p.curve != null and p.curve.get_baked_length() > 20.0:
+			candidatos.append(p)
+	if candidatos.is_empty():
+		if is_instance_valid(camino_actual):
+			candidatos.append(camino_actual)
+		else:
+			return
+
+	var spawn_info := _buscar_punto_spawn_oculto(candidatos, player_pos, has_player, 165.0)
+	_reubicar_vehiculo_en_camino(veh, pf, idx, spawn_info["camino"], spawn_info["prog"])
+
+
+func _reubicar_vehiculo_en_camino(veh: VehiculoTraficoIA, pf: PathFollow3D, idx: int, nuevo_camino: Path3D, nuevo_prog: float) -> void:
+	if not is_instance_valid(nuevo_camino) or nuevo_camino.curve == null:
 		return
-	# Reubicar limpiamente en un tramo libre más adelante sin teletransportes visibles
-	pf.progress = fposmod(pf.progress + randf_range(80.0, 160.0), c_len)
+	if pf.get_parent() != nuevo_camino:
+		pf.reparent(nuevo_camino, false)
+	_pool_caminos_asignados[idx] = nuevo_camino
+	pf.progress = nuevo_prog
+	pf.h_offset = 0.0
+	veh.sentido = 1
+	veh._cruzando_interseccion = false
+	veh._cruce_camino_destino = null
+	veh._desfase_lateral_actual = 0.0
+	veh._desfase_lateral_objetivo = 0.0
 	veh.position = Vector3(0.0, veh.offset_y, 0.0)
-	veh.rotation = Vector3.ZERO
-	veh.velocidad_actual = veh.velocidad_crucero * 0.8
+	_alinear_vehiculo_a_camino(veh, nuevo_camino, nuevo_prog)
+	veh.velocidad_actual = veh.velocidad_crucero * randf_range(0.85, 1.1)
 	veh.distancia_lider = INF
 	veh._distancia_ray_cache = INF
+	veh.frenar_por_semaforo = false
 	veh.luces_stop = false
+	veh.visible = true
+	veh.set_physics_process(true)
 	veh._actualizar_contacto_suelo(1.0)
+
+
+func _alinear_vehiculo_a_camino(veh: VehiculoTraficoIA, camino: Path3D, prog: float) -> void:
+	if not is_instance_valid(veh) or not is_instance_valid(camino) or camino.curve == null:
+		return
+	var c_len := camino.curve.get_baked_length()
+	if c_len <= 0.5:
+		return
+	var p0 := camino.to_global(camino.curve.sample_baked(clampf(prog, 0.0, c_len)))
+	var prog1 := clampf(prog + 3.0 * float(veh.sentido), 0.0, c_len)
+	if absf(prog1 - prog) < 0.2:
+		prog1 = clampf(prog - 3.0 * float(veh.sentido), 0.0, c_len)
+	var p1 := camino.to_global(camino.curve.sample_baked(prog1))
+	var dir := (p1 - p0) if prog1 >= prog else (p0 - p1)
+	if veh.sentido < 0:
+		dir = -dir
+	dir.y = 0.0
+	if dir.length_squared() > 0.001:
+		veh.global_transform.basis = Basis.looking_at(dir.normalized(), Vector3.UP)
+
+
+func _buscar_punto_spawn_oculto(caminos: Array[Path3D], player_pos: Vector3, has_player: bool, min_dist_player: float) -> Dictionary:
+	var mejor_camino: Path3D = caminos[0]
+	var mejor_prog: float = 0.0
+	var mejor_score: float = -1.0
+
+	for _intento in range(18):
+		var cam: Path3D = caminos.pick_random()
+		if not is_instance_valid(cam) or cam.curve == null:
+			continue
+		var c_len := cam.curve.get_baked_length()
+		if c_len <= 15.0:
+			continue
+		var prog := randf_range(0.0, maxf(c_len - 10.0, 0.0))
+		var pt := cam.to_global(cam.curve.sample_baked(prog))
+
+		var dist_p := pt.distance_to(player_pos) if has_player else min_dist_player
+		if has_player and dist_p > despawn_radius * 0.92:
+			continue
+
+		var cerca_otro := false
+		for v in _pool_vehiculos:
+			if is_instance_valid(v) and v.visible and v.global_position.distance_squared_to(pt) < 625.0:
+				cerca_otro = true
+				break
+
+		if not has_player and not cerca_otro:
+			return {"camino": cam, "prog": prog}
+		if has_player and dist_p >= min_dist_player and not cerca_otro:
+			return {"camino": cam, "prog": prog}
+
+		var score := dist_p - (500.0 if cerca_otro else 0.0)
+		if score > mejor_score:
+			mejor_score = score
+			mejor_camino = cam
+			mejor_prog = prog
+
+	return {"camino": mejor_camino, "prog": mejor_prog}
 
 
 ## Empalme y traspaso automático de vehículos entre nodos Path3D de la red vial
@@ -462,9 +545,22 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 	if not is_instance_valid(pf):
 		return false
 
-	var pt_fin := camino_actual.to_global(camino_actual.curve.sample_baked(c_len))
+	var saliendo_por_fin: bool = (veh.sentido >= 0)
+	var dist_salida: float = c_len if saliendo_por_fin else 0.0
+	var pt_fin := camino_actual.to_global(camino_actual.curve.sample_baked(dist_salida))
+	var pt_antes := camino_actual.to_global(camino_actual.curve.sample_baked(clampf(dist_salida - 3.0 * float(veh.sentido), 0.0, c_len)))
+	var dir_salida := (pt_fin - pt_antes)
+	dir_salida.y = 0.0
+	if dir_salida.length_squared() > 0.001:
+		dir_salida = dir_salida.normalized()
+	else:
+		dir_salida = -veh.global_transform.basis.z
+		dir_salida.y = 0.0
+		dir_salida = dir_salida.normalized()
+
 	var mejor_camino: Path3D = null
-	var menor_dist := 26.0
+	var target_offset: float = 0.0
+	var menor_score: float = INF
 
 	# 1. Si es TrafficLane3D con conexiones explícitas
 	var tl := camino_actual as TrafficLane3D
@@ -475,34 +571,79 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 				candidatos.append(nxt)
 		if not candidatos.is_empty():
 			mejor_camino = candidatos.pick_random()
+			target_offset = maxf(prog_nuevo - c_len, 0.0) if saliendo_por_fin else mejor_camino.curve.get_baked_length()
 
-	# 2. Empalme automático buscando el inicio más cercano de otro carril
+	# 2. Empalme automático: solo inicios (0.0) de Path3D que estén ADELANTE en la misma dirección (nunca carriles de al lado)
 	if mejor_camino == null:
+		var right_salida := Vector3(-dir_salida.z, 0.0, dir_salida.x)
 		for p in all_paths:
 			if not is_instance_valid(p) or p == camino_actual or p.curve == null or not p.is_inside_tree():
 				continue
+			var p_len := p.curve.get_baked_length()
+			if p_len < 10.0:
+				continue
+
 			var pt_ini := p.to_global(p.curve.sample_baked(0.0))
-			var d := pt_fin.distance_to(pt_ini)
-			if d < menor_dist:
-				menor_dist = d
+			var to_ini := pt_ini - pt_fin
+			to_ini.y = 0.0
+			var d_ini := to_ini.length()
+			if d_ini > 45.0:
+				continue
+
+			# Debe estar en un cono frontal delante del vehículo (no a un lado ni atrás)
+			if d_ini > 0.5:
+				var dir_al_ini := to_ini / d_ini
+				if dir_salida.dot(dir_al_ini) < 0.75:
+					continue
+
+			# La vía de adelante debe ir en la misma dirección de flujo
+			var pt_fwd := p.to_global(p.curve.sample_baked(minf(3.0, p_len)))
+			var dir_p := pt_fwd - pt_ini
+			dir_p.y = 0.0
+			if dir_p.length_squared() > 0.001:
+				if dir_salida.dot(dir_p.normalized()) < 0.60:
+					continue
+
+			# Penalizar desvío lateral para que cada carril empalme con su carril correspondiente adelante
+			var desvio_lat := absf(right_salida.dot(to_ini))
+			var score := d_ini + desvio_lat * 4.0
+			if score < menor_score:
+				menor_score = score
 				mejor_camino = p
+				target_offset = 0.0
 
 	if mejor_camino != null and mejor_camino.curve != null:
-		var remanente: float = maxf(prog_nuevo - c_len, 0.0)
-		pf.reparent(mejor_camino, false)
-		_pool_caminos_asignados[idx] = mejor_camino
-		pf.progress = remanente
-		pf.h_offset = 0.0
-		veh.position = Vector3(0.0, veh.offset_y, 0.0)
-		veh.rotation = Vector3.ZERO
-		veh._desfase_lateral_actual = 0.0
-		veh._desfase_lateral_objetivo = 0.0
-		veh._actualizar_contacto_suelo(1.0)
+		var clamped_off := clampf(target_offset, 0.0, mejor_camino.curve.get_baked_length())
+		var pt_destino := mejor_camino.to_global(mejor_camino.curve.sample_baked(clamped_off))
+		if pt_fin.distance_to(pt_destino) > 3.5 and veh.has_method("iniciar_cruce_interseccion"):
+			veh.iniciar_cruce_interseccion(mejor_camino, clamped_off, pt_destino)
+			return true
+		finalizar_cruce_camino(veh, mejor_camino, clamped_off)
 		return true
 
 	# 3. Fin de vía sin continuación: reciclar limpiamente sin trompos ni levitaciones
 	_reciclar_vehiculo_atascado(veh)
 	return true
+
+
+func finalizar_cruce_camino(veh: VehiculoTraficoIA, mejor_camino: Path3D, target_offset: float) -> void:
+	var idx := _pool_vehiculos.find(veh)
+	if idx == -1 or idx >= _pool_path_follows.size():
+		return
+	var pf: PathFollow3D = _pool_path_follows[idx]
+	if not is_instance_valid(pf) or not is_instance_valid(mejor_camino) or mejor_camino.curve == null:
+		return
+	var basis_prev := veh.global_transform.basis
+	pf.reparent(mejor_camino, false)
+	_pool_caminos_asignados[idx] = mejor_camino
+	pf.progress = clampf(target_offset, 0.0, mejor_camino.curve.get_baked_length())
+	pf.h_offset = 0.0
+	veh.sentido = 1
+	veh.position = Vector3(0.0, veh.offset_y, 0.0)
+	veh.global_transform.basis = basis_prev
+	veh._desfase_lateral_actual = 0.0
+	veh._desfase_lateral_objetivo = 0.0
+	veh._actualizar_contacto_suelo(1.0)
 
 
 func _find_player() -> Node3D:

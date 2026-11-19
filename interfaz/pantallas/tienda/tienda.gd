@@ -13,18 +13,61 @@ const C_SURFACE_CARD := Color(0.09, 0.10, 0.12, 0.90)
 const C_STEEL := Color(0.62, 0.72, 0.82, 1.0)
 
 const ARCHIVO_COMPRAS := "user://tienda_compras.cfg"
+const RUTA_FUENTE_CUERPO := "res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf"
 
 const CATEGORIAS := [
 	{"id": "vehiculos", "nombre": "VEHICULOS"},
+	{"id": "licencias", "nombre": "LICENCIAS"},
 	{"id": "mejoras", "nombre": "MEJORAS"},
 	{"id": "estilos", "nombre": "PERSONALIZACION"},
 	{"id": "packs", "nombre": "PACKS"},
 	{"id": "esmeraldas", "nombre": "ESMERALDAS"}
 ]
 
-# Catalogo completo de la Tienda (vacio por ahora)
+# Catalogo completo de la Tienda
 const CATALOGO := {
 	"vehiculos": [],
+	"licencias": [
+		{
+			"id": "licencia_c1",
+			"licencia_cat": "C1",
+			"codigo": "LIC-C1",
+			"nombre": "Licencia C1",
+			"tipo": "Livianos y Camionetas",
+			"desc": "Habilita automóviles, camionetas y carga liviana.",
+			"imagen": "res://recursos/iconos_tienda/licencia_c1.jpg",
+			"precio_monedas": 150000,
+			"precio_esmeraldas": 0,
+			"rating": 0.45,
+			"specs": [["Categoría", "C1"], ["Vehículos", "Autos y Camionetas"], ["Fletes", "Carga Liviana"]]
+		},
+		{
+			"id": "licencia_c2",
+			"licencia_cat": "C2",
+			"codigo": "LIC-C2",
+			"nombre": "Licencia C2",
+			"tipo": "Camión Rígido",
+			"desc": "Autoriza camiones rígidos y carga comercial media.",
+			"imagen": "res://recursos/iconos_tienda/licencia_c2.jpg",
+			"precio_monedas": 450000,
+			"precio_esmeraldas": 0,
+			"rating": 0.75,
+			"specs": [["Categoría", "C2"], ["Vehículos", "Camiones Rígidos"], ["Incluye", "Categoría C1"]]
+		},
+		{
+			"id": "licencia_c3",
+			"licencia_cat": "C3",
+			"codigo": "LIC-C3",
+			"nombre": "Licencia C3",
+			"tipo": "Tractomula Pesada",
+			"desc": "Máxima categoría para tractocamiones y tráileres.",
+			"imagen": "res://recursos/iconos_tienda/licencia_c3.jpg",
+			"precio_monedas": 900000,
+			"precio_esmeraldas": 0,
+			"rating": 1.0,
+			"specs": [["Categoría", "C3"], ["Vehículos", "Tractomulas y Tráileres"], ["Incluye", "C1 y C2"]]
+		}
+	],
 	"mejoras": [],
 	"estilos": [],
 	"packs": [],
@@ -84,9 +127,13 @@ var _modal_tween: Tween = null
 var _toast_tween: Tween = null
 var _audio_compra: AudioStreamPlayer = null
 var _pago_en_curso: bool = false
+var _fuente_cuerpo: Font = null
 
 
 func _ready() -> void:
+	if ResourceLoader.exists(RUTA_FUENTE_CUERPO):
+		_fuente_cuerpo = load(RUTA_FUENTE_CUERPO) as Font
+	_aplicar_estilo_cuerpo_inspector()
 	_cargar_compras()
 	modal_compra.visible = false
 	toast.visible = false
@@ -128,8 +175,8 @@ func _construir_pills() -> void:
 		btn.text = "%s   %02d" % [str(categoria["nombre"]), lista.size()]
 		btn.focus_mode = Control.FOCUS_NONE
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		btn.custom_minimum_size = Vector2(0, 42)
-		btn.add_theme_font_size_override("font_size", 13)
+		btn.custom_minimum_size = Vector2(0, 56)
+		btn.add_theme_font_size_override("font_size", 18)
 		btn.pressed.connect(_cambiar_categoria.bind(id))
 		pills_box.add_child(btn)
 		_pills[id] = btn
@@ -155,12 +202,12 @@ func _actualizar_pills() -> void:
 
 func _estilo_pill(activo: bool, hover: bool) -> StyleBoxFlat:
 	var sb := StyleBoxFlat.new()
-	sb.set_corner_radius_all(21)
+	sb.set_corner_radius_all(28)
 	sb.set_border_width_all(1)
-	sb.content_margin_left = 16.0
-	sb.content_margin_right = 16.0
-	sb.content_margin_top = 8.0
-	sb.content_margin_bottom = 8.0
+	sb.content_margin_left = 22.0
+	sb.content_margin_right = 22.0
+	sb.content_margin_top = 10.0
+	sb.content_margin_bottom = 10.0
 	if activo:
 		sb.bg_color = Color(0.88, 0.68, 0.28, 0.16)
 		sb.border_color = Color(0.88, 0.68, 0.28, 0.70)
@@ -187,6 +234,21 @@ func _cargar_categoria(cat: String) -> void:
 
 	var items: Array = CATALOGO.get(cat, [])
 	label_conteo.text = "%d ARTICULOS" % items.size()
+
+	var tiene_imagenes := false
+	for it in items:
+		if str(it.get("imagen", "")) != "":
+			tiene_imagenes = true
+			break
+
+	if tiene_imagenes:
+		grid_items.columns = 3
+		grid_items.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		grid_items.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	else:
+		grid_items.columns = 2
+		grid_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid_items.size_flags_vertical = Control.SIZE_FILL
 
 	for i in range(items.size()):
 		var item: Dictionary = items[i]
@@ -308,6 +370,73 @@ func _crear_tarjeta(item: Dictionary, cat: String, indice: int, compacto: bool =
 	card.add_child(margen)
 	margen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
+	var ruta_img := str(item.get("imagen", ""))
+	var tiene_img := ruta_img != "" and ResourceLoader.exists(ruta_img)
+	if tiene_img and not compacto:
+		card.custom_minimum_size = Vector2(390, 390)
+		card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		margen.add_theme_constant_override("margin_left", 10)
+		margen.add_theme_constant_override("margin_top", 10)
+		margen.add_theme_constant_override("margin_right", 10)
+		margen.add_theme_constant_override("margin_bottom", 10)
+		var cont_v := VBoxContainer.new()
+		cont_v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cont_v.add_theme_constant_override("separation", 8)
+		margen.add_child(cont_v)
+
+		var lbl_nombre_img := Label.new()
+		lbl_nombre_img.text = str(item.get("nombre", ""))
+		lbl_nombre_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl_nombre_img.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_nombre_img.clip_text = true
+		lbl_nombre_img.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		lbl_nombre_img.add_theme_font_size_override("font_size", 22)
+		lbl_nombre_img.add_theme_color_override("font_color", C_TEXT_PRIMARY)
+		cont_v.add_child(lbl_nombre_img)
+
+		var preview_panel := PanelContainer.new()
+		preview_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		preview_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		preview_panel.clip_contents = true
+		var pv_sb := StyleBoxFlat.new()
+		pv_sb.bg_color = Color(0.05, 0.06, 0.08, 0.90)
+		pv_sb.set_border_width_all(1)
+		pv_sb.border_color = Color(acento.r, acento.g, acento.b, 0.28)
+		pv_sb.set_corner_radius_all(10)
+		preview_panel.add_theme_stylebox_override("panel", pv_sb)
+		var tex_rect := TextureRect.new()
+		tex_rect.texture = load(ruta_img) as Texture2D
+		tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tex_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		preview_panel.add_child(tex_rect)
+		cont_v.add_child(preview_panel)
+
+		var lbl_precio_img := Label.new()
+		lbl_precio_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl_precio_img.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_precio_img.add_theme_font_size_override("font_size", 26)
+		lbl_precio_img.add_theme_color_override("font_color", C_AMBER)
+		cont_v.add_child(lbl_precio_img)
+
+		card.pressed.connect(_on_card_pressed.bind(item))
+		grid_items.add_child(card)
+		_cards[id] = {
+			"button": card,
+			"normal": normal,
+			"hover": hover,
+			"selected": seleccionada,
+			"precio": lbl_precio_img,
+			"item": item
+		}
+
+		card.modulate.a = 0.0
+		var tw_img := create_tween()
+		tw_img.tween_interval(0.025 * float(indice))
+		tw_img.tween_property(card, "modulate:a", 1.0, 0.20)
+		return
+
 	var fila := HBoxContainer.new()
 	fila.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fila.add_theme_constant_override("separation", 14)
@@ -318,6 +447,7 @@ func _crear_tarjeta(item: Dictionary, cat: String, indice: int, compacto: bool =
 	tile.custom_minimum_size = Vector2(58, 58)
 	tile.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.clip_contents = true
 	var tile_sb := StyleBoxFlat.new()
 	tile_sb.bg_color = Color(acento.r, acento.g, acento.b, 0.14)
 	tile_sb.set_border_width_all(1)
@@ -473,6 +603,32 @@ func _actualizar_inspector() -> void:
 	tile_sb.border_color = Color(acento.r, acento.g, acento.b, 0.32)
 	tile_sb.set_corner_radius_all(10)
 	ins_tile.add_theme_stylebox_override("panel", tile_sb)
+	var ins_img := ins_tile.get_node_or_null("InsImg") as TextureRect
+	var margen_tile := ins_tile.get_node_or_null("MargenTile") as Control
+	var ruta_img_ins := str(item.get("imagen", ""))
+	var tiene_img_ins := ruta_img_ins != "" and ResourceLoader.exists(ruta_img_ins)
+	if tiene_img_ins:
+		ins_tile.custom_minimum_size = Vector2(0, 320)
+		if margen_tile:
+			margen_tile.visible = false
+		if ins_img == null:
+			ins_img = TextureRect.new()
+			ins_img.name = "InsImg"
+			ins_img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ins_img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			ins_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			ins_img.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			ins_tile.add_child(ins_img)
+		ins_img.texture = load(ruta_img_ins) as Texture2D
+		ins_img.visible = true
+		ins_codigo.visible = false
+	else:
+		ins_tile.custom_minimum_size = Vector2(0, 120)
+		if margen_tile:
+			margen_tile.visible = true
+		if ins_img:
+			ins_img.visible = false
+		ins_codigo.visible = true
 
 	for hijo in ins_specs.get_children():
 		hijo.free()
@@ -481,11 +637,42 @@ func _actualizar_inspector() -> void:
 		ins_specs.add_child(_crear_fila_spec(str(spec[0]), str(spec[1])))
 
 	var paquete_usd := _es_paquete_usd(item)
-	ins_specs.visible = not paquete_usd
-	ins_rendimiento_box.visible = not paquete_usd
+	var es_licencia := item.has("licencia_cat")
+	var ocultar_detalle := paquete_usd or tiene_img_ins
+	ins_specs.visible = not ocultar_detalle
+	ins_rendimiento_box.visible = not ocultar_detalle
 	var specs_titulo := ins_specs.get_parent().find_child("InsSpecsTitulo", false, false)
 	if specs_titulo is Label:
-		(specs_titulo as Label).visible = not paquete_usd
+		(specs_titulo as Label).visible = not ocultar_detalle
+
+	var fila_disp := vbox_inspector.get_node_or_null("InsDisponibleFila") as Control
+	var fila_costo := vbox_inspector.get_node_or_null("InsCostoFila") as Control
+	var div2_ctrl := vbox_inspector.get_node_or_null("InsDivisor2") as Control
+	if fila_disp: fila_disp.visible = not es_licencia
+	if fila_costo: fila_costo.visible = not es_licencia
+	if div2_ctrl: div2_ctrl.visible = not es_licencia
+
+	# Empujar el bloque de precio/disponible/botón hacia abajo cuando hay imagen grande
+	var scroll_ins := vbox_inspector.get_parent() as ScrollContainer
+	if tiene_img_ins and scroll_ins:
+		vbox_inspector.custom_minimum_size.y = maxf(scroll_ins.size.y - 4.0, 0.0)
+	else:
+		vbox_inspector.custom_minimum_size.y = 0.0
+	vbox_inspector.size_flags_vertical = Control.SIZE_EXPAND_FILL if tiene_img_ins else Control.SIZE_FILL
+	var spacer_inf := vbox_inspector.get_node_or_null("InsBottomSpacer") as Control
+	if tiene_img_ins:
+		if spacer_inf == null:
+			spacer_inf = Control.new()
+			spacer_inf.name = "InsBottomSpacer"
+			spacer_inf.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			spacer_inf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			vbox_inspector.add_child(spacer_inf)
+			var div2 := vbox_inspector.get_node_or_null("InsDivisor2")
+			if div2:
+				vbox_inspector.move_child(spacer_inf, div2.get_index())
+		spacer_inf.visible = true
+	elif spacer_inf:
+		spacer_inf.visible = false
 
 	if paquete_usd:
 		ins_barra.value = 0.0
@@ -500,6 +687,59 @@ func _actualizar_inspector() -> void:
 
 	vbox_inspector.modulate.a = 0.55
 	create_tween().tween_property(vbox_inspector, "modulate:a", 1.0, 0.18)
+
+
+func _aplicar_estilo_cuerpo_inspector() -> void:
+	if ins_desc:
+		ins_desc.add_theme_font_size_override("font_size", 28)
+		ins_desc.add_theme_color_override("font_color", Color(0.84, 0.87, 0.91, 0.95))
+		if _fuente_cuerpo:
+			ins_desc.add_theme_font_override("font", _fuente_cuerpo)
+	var lbl_disp := vbox_inspector.find_child("LabelDisponible", true, false) as Label
+	var lbl_costo := vbox_inspector.find_child("LabelCosto", true, false) as Label
+	for lbl in [lbl_disp, lbl_costo]:
+		if lbl:
+			lbl.add_theme_font_size_override("font_size", 20)
+			if _fuente_cuerpo:
+				lbl.add_theme_font_override("font", _fuente_cuerpo)
+	for lbl_val in [ins_disp_valor, ins_costo_valor]:
+		if lbl_val:
+			lbl_val.add_theme_font_size_override("font_size", 22)
+			if _fuente_cuerpo:
+				lbl_val.add_theme_font_override("font", _fuente_cuerpo)
+	if ins_estado:
+		ins_estado.add_theme_font_size_override("font_size", 20)
+		if _fuente_cuerpo:
+			ins_estado.add_theme_font_override("font", _fuente_cuerpo)
+
+	# Agrandar cabecera de catálogo y barra inferior de pasos para legibilidad en celular
+	var col_cat := main_container.find_child("ColCatalogo", true, false) as Control
+	if col_cat:
+		var lbl_cat := col_cat.find_child("LabelCatalogo", true, false) as Label
+		if lbl_cat:
+			lbl_cat.add_theme_font_size_override("font_size", 18)
+		if label_conteo:
+			label_conteo.add_theme_font_size_override("font_size", 18)
+		for titulo_paso in ["TituloPaso1", "TituloPaso2", "TituloPaso3"]:
+			var tp := col_cat.find_child(titulo_paso, true, false) as Label
+			if tp:
+				tp.add_theme_font_size_override("font_size", 17)
+		for desc_paso in ["DescPaso1", "DescPaso2", "DescPaso3"]:
+			var dp := col_cat.find_child(desc_paso, true, false) as Label
+			if dp:
+				dp.add_theme_font_size_override("font_size", 18)
+				dp.add_theme_color_override("font_color", Color(0.72, 0.76, 0.81, 0.95))
+				if _fuente_cuerpo:
+					dp.add_theme_font_override("font", _fuente_cuerpo)
+	var scroll_ins := vbox_inspector.get_parent() as ScrollContainer
+	if scroll_ins and not scroll_ins.resized.is_connected(_on_inspector_resized):
+		scroll_ins.resized.connect(_on_inspector_resized)
+
+
+func _on_inspector_resized() -> void:
+	var scroll_ins := vbox_inspector.get_parent() as ScrollContainer
+	if scroll_ins and str(_item_seleccionado.get("imagen", "")) != "":
+		vbox_inspector.custom_minimum_size.y = maxf(scroll_ins.size.y - 4.0, 0.0)
 
 
 func _crear_fila_spec(clave: String, valor: String) -> HBoxContainer:
@@ -557,8 +797,12 @@ func _actualizar_estado_compra() -> void:
 		ins_estado.add_theme_color_override("font_color", Color(0.78, 0.42, 0.40, 0.95))
 	else:
 		btn_comprar.disabled = false
-		btn_comprar.text = "COMPRAR AHORA"
-		ins_estado.text = "Se descuenta al confirmar la operacion."
+		if item.has("licencia_cat"):
+			btn_comprar.text = "ADQUIRIR Y PROBAR"
+			ins_estado.text = "Ir a la pista para realizar la prueba de manejo."
+		else:
+			btn_comprar.text = "COMPRAR AHORA"
+			ins_estado.text = "Se descuenta al confirmar la operacion."
 		ins_estado.add_theme_color_override("font_color", C_TEXT_MUTED)
 
 
@@ -858,7 +1102,20 @@ func _on_confirmar_compra() -> void:
 		DatosUsuario.esmeraldas = maxi(0, int(DatosUsuario.esmeraldas) - costo_esmeraldas)
 		DatosUsuario.dinero += float(item.get("recompensa_monedas", 0))
 		DatosUsuario.esmeraldas += int(item.get("recompensa_esmeraldas", 0))
-		DatosUsuario.save_local()
+		if item.has("licencia_cat"):
+			DatosUsuario.licencia_prueba_pendiente = str(item.get("licencia_cat", ""))
+			DatosUsuario.next_scene = "res://mundo/pruebas/pista_pruebas_pesados.tscn"
+			DatosUsuario.save_local()
+			_ocultar_modal_compra()
+			_reproducir_sonido_compra()
+			var carga_path := "res://interfaz/sistema/escena_carga.tscn"
+			if ResourceLoader.exists(carga_path):
+				get_tree().change_scene_to_file(carga_path)
+			else:
+				get_tree().change_scene_to_file("res://mundo/pruebas/pista_pruebas_pesados.tscn")
+			return
+		else:
+			DatosUsuario.save_local()
 
 	_registrar_compra(item)
 	compra_realizada.emit(item.duplicate(true))
@@ -932,7 +1189,12 @@ func _mostrar_toast(mensaje: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _esta_comprado(id: String) -> bool:
-	return _compras.has(id)
+	if _compras.has(id):
+		return true
+	if DatosUsuario and id.begins_with("licencia_") and DatosUsuario.has_method("tiene_licencia"):
+		var cat := id.trim_prefix("licencia_").to_upper()
+		return DatosUsuario.tiene_licencia(cat)
+	return false
 
 
 func _registrar_compra(item: Dictionary) -> void:

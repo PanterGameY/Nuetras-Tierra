@@ -110,17 +110,24 @@ func _aplicar_estilos_dinamicos() -> void:
 	# Avatar circular con borde metálico/ámbar y recorte anti-aliased
 	var avatar_marco := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HBoxPerfil/AvatarMarco") as PanelContainer
 	if avatar_marco:
-		avatar_marco.custom_minimum_size = Vector2(124, 124)
+		avatar_marco.custom_minimum_size = Vector2(190, 190)
+		avatar_marco.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		avatar_marco.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		var sb_av := StyleBoxFlat.new()
-		sb_av.bg_color = Color(0.07, 0.08, 0.10, 0.95)
-		sb_av.set_border_width_all(2)
-		sb_av.border_color = Color(0.88, 0.68, 0.28, 0.55)
-		sb_av.set_corner_radius_all(62)
+		sb_av.bg_color = Color(0.07, 0.08, 0.10, 1.0)
+		sb_av.set_border_width_all(3)
+		sb_av.border_color = Color(0.88, 0.68, 0.28, 0.75)
+		sb_av.set_corner_radius_all(95)
 		sb_av.content_margin_left = 4
 		sb_av.content_margin_right = 4
 		sb_av.content_margin_top = 4
 		sb_av.content_margin_bottom = 4
 		avatar_marco.add_theme_stylebox_override("panel", sb_av)
+	if avatar_rect:
+		avatar_rect.custom_minimum_size = Vector2(182, 182)
+	var vbox_datos := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HBoxPerfil/VBoxDatosPpal") as Control
+	if vbox_datos:
+		vbox_datos.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 
 	if avatar_rect:
 		var sh := Shader.new()
@@ -142,6 +149,188 @@ void fragment() {
 		if btn:
 			btn.mouse_entered.connect(func(): _tween_button_scale(btn, 1.05))
 			btn.mouse_exited.connect(func(): _tween_button_scale(btn, 1.0))
+
+	_reformar_ui_movil()
+
+
+func _reformar_ui_movil() -> void:
+	var font_cuerpo := load("res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf") as Font
+
+	# 1. TopBar más legible y táctil
+	if btn_home:
+		btn_home.custom_minimum_size = Vector2(185, 58)
+		btn_home.add_theme_font_size_override("font_size", 18)
+	if btn_cerrar_sesion:
+		btn_cerrar_sesion.custom_minimum_size = Vector2(215, 58)
+		btn_cerrar_sesion.add_theme_font_size_override("font_size", 17)
+	var lbl_titulo := get_node_or_null("MainMargin/MainVBox/TopBar/HBoxTitulo/Titulo") as Label
+	if lbl_titulo:
+		lbl_titulo.add_theme_font_size_override("font_size", 30)
+	var lbl_status := get_node_or_null("MainMargin/MainVBox/TopBar/HBoxTitulo/BadgeOnline/HBox/LabelStatus") as Label
+	if lbl_status:
+		lbl_status.add_theme_font_size_override("font_size", 14)
+		if font_cuerpo:
+			lbl_status.add_theme_font_override("font", font_cuerpo)
+
+	# 2. Columna Izquierda (Identidad, Nivel y 2 Métricas en tarjeta compacta)
+	var left_card := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard") as PanelContainer
+	if left_card:
+		left_card.custom_minimum_size = Vector2(560, 0)
+		left_card.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var lbl_lic_hdr := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HeaderIDRow/LabelLicHeader") as Label
+	if lbl_lic_hdr:
+		lbl_lic_hdr.add_theme_font_size_override("font_size", 16)
+		if font_cuerpo:
+			lbl_lic_hdr.add_theme_font_override("font", font_cuerpo)
+	if label_id_conductor:
+		label_id_conductor.add_theme_font_size_override("font_size", 18)
+	if labelnombre:
+		labelnombre.add_theme_font_size_override("font_size", 30)
+	if label_rango:
+		label_rango.add_theme_font_size_override("font_size", 18)
+		if font_cuerpo:
+			label_rango.add_theme_font_override("font", font_cuerpo)
+	if btn_avatar:
+		btn_avatar.custom_minimum_size = Vector2(170, 50)
+		btn_avatar.add_theme_font_size_override("font_size", 16)
+	if btn_nick:
+		btn_nick.custom_minimum_size = Vector2(170, 50)
+		btn_nick.add_theme_font_size_override("font_size", 16)
+	if label_nivel:
+		label_nivel.add_theme_font_size_override("font_size", 20)
+	if label_xp:
+		label_xp.add_theme_font_size_override("font_size", 18)
+		if font_cuerpo:
+			label_xp.add_theme_font_override("font", font_cuerpo)
+	if progress_bar:
+		progress_bar.custom_minimum_size = Vector2(0, 18)
+
+	var grid_met := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/GridMetricas") as GridContainer
+	if grid_met:
+		grid_met.add_theme_constant_override("h_separation", 14)
+		grid_met.add_theme_constant_override("v_separation", 14)
+		var card_saldo := grid_met.get_node_or_null("CardSaldo") as Control
+		var card_esm := grid_met.get_node_or_null("CardEsmeraldas") as Control
+		if card_saldo: card_saldo.visible = false
+		if card_esm: card_esm.visible = false
+		for card_m in grid_met.get_children():
+			if card_m is Control:
+				(card_m as Control).size_flags_vertical = Control.SIZE_SHRINK_CENTER
+				(card_m as Control).custom_minimum_size = Vector2(0, 115)
+				for lbl in card_m.find_children("*", "Label", true, false):
+					var l := lbl as Label
+					if "Tit" in l.name or "Label" in l.name:
+						l.add_theme_font_size_override("font_size", 16)
+						l.add_theme_color_override("font_color", Color(0.72, 0.76, 0.82, 0.95))
+						if font_cuerpo:
+							l.add_theme_font_override("font", font_cuerpo)
+					else:
+						l.add_theme_font_size_override("font_size", 28)
+
+	var hbox_perfil := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft/HBoxPerfil") as Control
+	if hbox_perfil:
+		hbox_perfil.size_flags_vertical = Control.SIZE_FILL
+	var vbox_left_pad := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft") as VBoxContainer
+	if vbox_left_pad:
+		vbox_left_pad.add_theme_constant_override("separation", 18)
+
+	var vbox_left := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/LeftCard/Margin/VBoxLeft") as Control
+	if vbox_left:
+		for child in vbox_left.get_children():
+			if child.name.begins_with("Footer") or child.name.begins_with("PanelFooter"):
+				for lbl in child.find_children("*", "Label", true, false):
+					var lf := lbl as Label
+					lf.add_theme_font_size_override("font_size", 16)
+					lf.add_theme_color_override("font_color", Color(0.78, 0.82, 0.87, 0.92))
+					if font_cuerpo:
+						lf.add_theme_font_override("font", font_cuerpo)
+
+	# 3. Columna Derecha (Licencias 2x2 y Logros expandidos)
+	var vbox_right := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight") as VBoxContainer
+	if vbox_right:
+		vbox_right.add_theme_constant_override("separation", 16)
+		for hdr_lbl in vbox_right.find_children("*", "Label", true, false):
+			var hl := hdr_lbl as Label
+			if hl.get_parent() and (hl.get_parent().name == "HeaderRight" or hl.get_parent().name == "SectionLicencias" or hl.get_parent().name == "SectionLogros" or hl.get_parent().name == "HBoxLogrosHdr"):
+				if "CERTIFICACIONES" in hl.text:
+					hl.add_theme_font_size_override("font_size", 26)
+				else:
+					hl.add_theme_font_size_override("font_size", 17)
+					if font_cuerpo and not "CERTIFICACIONES" in hl.text:
+						hl.add_theme_font_override("font", font_cuerpo)
+
+	var sec_lic := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight/SectionLicencias") as Control
+	var old_lic_box := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight/SectionLicencias/GridLicencias")
+	if sec_lic and old_lic_box:
+		var grid_lic := old_lic_box as GridContainer
+		if grid_lic == null:
+			grid_lic = GridContainer.new()
+			grid_lic.name = "GridLicencias2x2"
+			grid_lic.columns = 2
+			grid_lic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sec_lic.add_child(grid_lic)
+			sec_lic.move_child(grid_lic, old_lic_box.get_index())
+			for card_l in [card_lic_b1, card_lic_c1, card_lic_c2, card_lic_c3]:
+				if card_l:
+					card_l.reparent(grid_lic, false)
+			old_lic_box.visible = false
+		grid_lic.columns = 2
+		grid_lic.add_theme_constant_override("h_separation", 14)
+		grid_lic.add_theme_constant_override("v_separation", 14)
+		for card_l in [card_lic_b1, card_lic_c1, card_lic_c2, card_lic_c3]:
+			if card_l:
+				card_l.custom_minimum_size = Vector2(0, 112)
+				card_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				for lbl in card_l.find_children("*", "Label", true, false):
+					var ll := lbl as Label
+					if ll.text.length() <= 3:
+						ll.add_theme_font_size_override("font_size", 26)
+					elif "ACTIVA" in ll.text or "PENDIENTE" in ll.text:
+						ll.add_theme_font_size_override("font_size", 16)
+						if font_cuerpo:
+							ll.add_theme_font_override("font", font_cuerpo)
+					else:
+						ll.add_theme_font_size_override("font_size", 19)
+						ll.add_theme_color_override("font_color", Color(0.80, 0.84, 0.89, 0.95))
+						if font_cuerpo:
+							ll.add_theme_font_override("font", font_cuerpo)
+
+	var sec_logros := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight/SectionLogros") as Control
+	if sec_logros:
+		sec_logros.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var scroll_logros := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight/SectionLogros/ScrollLogros") as ScrollContainer
+	if scroll_logros:
+		scroll_logros.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var grid_logros := get_node_or_null("MainMargin/MainVBox/ColumnsHBox/RightCard/Margin/VBoxRight/SectionLogros/ScrollLogros/GridLogros") as GridContainer
+	if grid_logros:
+		grid_logros.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		grid_logros.add_theme_constant_override("h_separation", 14)
+		grid_logros.add_theme_constant_override("v_separation", 14)
+		for card_g in grid_logros.get_children():
+			if card_g is PanelContainer:
+				var cg := card_g as PanelContainer
+				cg.custom_minimum_size = Vector2(0, 185)
+				cg.size_flags_vertical = Control.SIZE_EXPAND_FILL
+				var ico := cg.find_child("Icono", true, false) as TextureRect
+				if ico:
+					ico.custom_minimum_size = Vector2(36, 36)
+				var tit := cg.find_child("Titulo", true, false) as Label
+				if tit:
+					tit.add_theme_font_size_override("font_size", 22)
+				var pre := cg.find_child("Premio", true, false) as Label
+				if pre:
+					pre.add_theme_font_size_override("font_size", 20)
+				var dsc := cg.find_child("Desc", true, false) as Label
+				if dsc:
+					dsc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+					dsc.add_theme_font_size_override("font_size", 19)
+					dsc.add_theme_color_override("font_color", Color(0.80, 0.84, 0.89, 0.95))
+					if font_cuerpo:
+						dsc.add_theme_font_override("font", font_cuerpo)
+	for btn_r in [btn_reclamar1, btn_reclamar2, btn_reclamar3, btn_reclamar4]:
+		if btn_r:
+			btn_r.custom_minimum_size = Vector2(0, 56)
+			btn_r.add_theme_font_size_override("font_size", 18)
 
 func _tween_button_scale(btn: Control, target_scale: float) -> void:
 	var tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -373,6 +562,10 @@ func _formatear_numero(valor: int) -> String:
 # ==============================================================================
 func _cargar_avatar() -> void:
 	if not avatar_rect:
+		return
+
+	if DatosUsuario and "avatar_texture" in DatosUsuario and DatosUsuario.avatar_texture is Texture2D:
+		avatar_rect.texture = DatosUsuario.avatar_texture
 		return
 		
 	var ruta_avatar = ""
@@ -622,6 +815,10 @@ func _actualizar_tarjeta_licencia(card: PanelContainer, habilitada: bool, catego
 	var sb = StyleBoxFlat.new()
 	sb.set_corner_radius_all(10)
 	sb.set_border_width_all(1)
+	sb.content_margin_left = 18
+	sb.content_margin_right = 18
+	sb.content_margin_top = 14
+	sb.content_margin_bottom = 14
 	
 	if habilitada:
 		sb.bg_color = Color(0.10, 0.12, 0.14, 0.85)
