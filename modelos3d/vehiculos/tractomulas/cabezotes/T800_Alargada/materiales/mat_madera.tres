@@ -1,0 +1,9 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/textures/woodtexture.png" id="1_qh6fj"]
+
+[resource]
+albedo_color = Color(0.95, 0.92, 0.88, 1)
+albedo_texture = ExtResource("1_qh6fj")
+metallic = 0.05
+roughness = 0.35

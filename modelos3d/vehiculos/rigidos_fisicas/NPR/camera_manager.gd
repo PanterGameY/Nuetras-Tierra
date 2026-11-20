@@ -11,6 +11,7 @@ extends Node3D
 @export_group("Configuración Inicial")
 @export var camara_inicial: int = 0  # 0=Libre (Orbital 360°), 1=Interna
 @export var auto_centrado_libre: bool = false # Si es false, la cámara libre no se auto-centra al conducir
+@export var solo_interna_y_libre: bool = true # Dejar únicamente Cámara Exterior 360° e Interior
 
 @export_group("Debug")
 @export var debug_camera_manager: bool = true
@@ -223,6 +224,9 @@ func _crear_camaras_codigo() -> void:
 		cam_interna = fallback_cabina
 		listado_camaras.append(fallback_cabina)
 		nombres_camaras.append("Interna")
+
+	if solo_interna_y_libre:
+		return
 
 	# ---- 2. CÁMARA PARAGOLPES (BUMPER) ----
 	var cam_paragolpes = Camera3D.new()

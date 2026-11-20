@@ -1,0 +1,9 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/textures/leather_dark.png" id="1_02blk"]
+
+[resource]
+cull_mode = 2
+albedo_color = Color(0.88, 0.88, 0.9, 1)
+albedo_texture = ExtResource("1_02blk")
+roughness = 0.48

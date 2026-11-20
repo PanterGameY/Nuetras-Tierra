@@ -70,8 +70,9 @@ func _physics_process(delta: float) -> void:
 		# debug prints removed per user request
 
 	# 2. CALCULAR OBJETIVOS (Hacia dónde quiere ir el chasis por la inercia)
-	# Nota: Al acelerar adelante (Z negativo), el chasis se inclina atrás (Pitch positivo)
-	var target_pitch = clamp(-aceleracion.z * factor_pitch, -max_angulo, max_angulo)
+	# Nota: Al acelerar adelante (Z negativo), el chasis se inclina atrás (Pitch positivo), pero contenido (+1.3° máx);
+	# al frenar (Z positivo), el morro se hunde más (hasta -3.4°) para transmitir sensación realista de peso.
+	var target_pitch = clamp(-aceleracion.z * factor_pitch, -minf(max_angulo, 3.4), minf(max_angulo, 1.3))
 
 	# 1) Giro local del vehículo (eje Y) para calcular efecto centrífugo
 	var vel_giro: float = (inv_basis * _coche.angular_velocity).y

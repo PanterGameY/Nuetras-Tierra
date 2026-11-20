@@ -97,25 +97,31 @@ func apply_preset(preset_idx: int) -> void:
 
 func _apply_graphics(cfg: ConfigFile) -> void:
 	var vp = get_viewport()
+	var es_compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
 	
 	# Anti-aliasing
 	var aa = cfg.get_value("graficos", "aa", 0)
-	match aa:
-		0:
-			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-		1:
-			vp.msaa_3d = Viewport.MSAA_DISABLED
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
-		2:
-			vp.msaa_3d = Viewport.MSAA_2X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-		3:
-			vp.msaa_3d = Viewport.MSAA_4X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
-		4:
-			vp.msaa_3d = Viewport.MSAA_8X
-			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	if es_compat:
+		# En OpenGL ES 3 (gl_compatibility), MSAA/FXAA en FBO puede invertir o corromper el Z-buffer en emuladores
+		vp.msaa_3d = Viewport.MSAA_DISABLED
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+	else:
+		match aa:
+			0:
+				vp.msaa_3d = Viewport.MSAA_DISABLED
+				vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+			1:
+				vp.msaa_3d = Viewport.MSAA_DISABLED
+				vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			2:
+				vp.msaa_3d = Viewport.MSAA_2X
+				vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+			3:
+				vp.msaa_3d = Viewport.MSAA_4X
+				vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+			4:
+				vp.msaa_3d = Viewport.MSAA_8X
+				vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 
 	# VSync
 	var vsync = cfg.get_value("graficos", "vsync", true)
@@ -167,9 +173,9 @@ func _apply_graphics(cfg: ConfigFile) -> void:
 		_configurar_luz_sombras(l, sombras)
 
 	# Render scale & FSR
-	var render_scale = cfg.get_value("graficos", "render_scale", 75) / 100.0
+	var render_scale = 1.0 if es_compat else (cfg.get_value("graficos", "render_scale", 75) / 100.0)
 	var method = ProjectSettings.get_setting("rendering/renderer/rendering_method")
-	if method == "forward_plus":
+	if not es_compat and method == "forward_plus":
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 	else:
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
@@ -251,6 +257,10 @@ func _find_directional_lights(node: Node, result: Array) -> void:
 	_find_all_lights(node, result)
 
 func _on_node_added(node: Node) -> void:
+	if node is SubViewport and RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		node.msaa_3d = Viewport.MSAA_DISABLED
+		node.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		node.scaling_3d_scale = 1.0
 	if node is Light3D:
 		_configurar_luz_sombras(node, current_sombras)
 	if node.name == "CieloSistema" or node.has_method("clima_despejado"):

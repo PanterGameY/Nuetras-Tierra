@@ -19,8 +19,8 @@ enum TipoPesado {
 
 @export_range(0.5, 1.5, 0.05) var multiplicador_tono_global: float = 0.85
 @export_range(-20.0, 15.0, 0.5) var volumen_maestro_db: float = 2.0
-@export_range(5.0, 100.0, 1.0) var alcance_sonido: float = 45.0
-@export_range(20.0, 300.0, 5.0) var distancia_maxima: float = 140.0
+@export_range(1.0, 100.0, 0.5) var alcance_sonido: float = 45.0
+@export_range(5.0, 300.0, 1.0) var distancia_maxima: float = 140.0
 
 # --- RUTAS DE LOS SONIDOS (Organizados en camion_pesado) ---
 @export_group("Sonidos de Motor Diésel")

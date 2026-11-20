@@ -332,6 +332,7 @@ func _optimizar_mallas_e_iluminacion(raiz: Node) -> void:
 
 	# Propagar config después de que los hijos estén listos
 	_propagar_config_async.call_deferred()
+	_restaurar_ubicacion_guardada.call_deferred()
 
 func _exit_tree() -> void:
 	# RESCATE CRÍTICO: Si el vehículo se destruye mientras el jugador está adentro (Ej: Cancelar trabajo de mensajería)
@@ -904,6 +905,56 @@ func bajar_jugador() -> void:
 		linear_velocity  = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		freeze = true
+
+	_guardar_ubicacion_vehiculo()
+
+
+func _es_escena_prueba_vehiculo() -> bool:
+	var cs := get_tree().current_scene if get_tree() else null
+	if cs and cs.scene_file_path != "":
+		var sp := cs.scene_file_path.to_lower()
+		if "academia_licencias" in sp or "/pruebas/" in sp:
+			return true
+	return false
+
+
+func _clave_ubicacion_vehiculo() -> String:
+	return scene_file_path if scene_file_path != "" else str(name)
+
+
+func _guardar_ubicacion_vehiculo() -> void:
+	if _es_escena_prueba_vehiculo():
+		return
+	var datos := get_node_or_null("/root/DatosUsuario")
+	if not datos or typeof(datos.vehiculos_posiciones) != TYPE_DICTIONARY:
+		return
+	var cur_sc := get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
+	datos.vehiculos_posiciones[_clave_ubicacion_vehiculo()] = {
+		"pos": global_position,
+		"rot": global_rotation,
+		"scene": cur_sc,
+		"nombre": str(name)
+	}
+	datos.save_local()
+
+
+func _restaurar_ubicacion_guardada() -> void:
+	if _es_escena_prueba_vehiculo():
+		return
+	var datos := get_node_or_null("/root/DatosUsuario")
+	if not datos or typeof(datos.vehiculos_posiciones) != TYPE_DICTIONARY:
+		return
+	var clave := _clave_ubicacion_vehiculo()
+	if not datos.vehiculos_posiciones.has(clave):
+		return
+	var entry = datos.vehiculos_posiciones[clave]
+	if typeof(entry) != TYPE_DICTIONARY:
+		return
+	var cur_sc := get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
+	if str(entry.get("scene", "")) == cur_sc and entry.get("pos") is Vector3:
+		global_position = entry["pos"]
+		if entry.get("rot") is Vector3:
+			global_rotation = entry["rot"]
 
 
 # ═══════════════════════════════════════════════════════════════════════

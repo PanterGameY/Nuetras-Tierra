@@ -777,7 +777,8 @@ func _actualizar_estado_compra() -> void:
 		return
 
 	var paquete_usd := _es_paquete_usd(item)
-	var adquirido := _esta_comprado(str(item.get("id", ""))) and not paquete_usd
+	var es_reintento := _es_licencia_reintento(item)
+	var adquirido := _esta_comprado(str(item.get("id", ""))) and not paquete_usd and not es_reintento
 	var puede := _puede_pagar(item)
 
 	if paquete_usd:
@@ -797,7 +798,10 @@ func _actualizar_estado_compra() -> void:
 		ins_estado.add_theme_color_override("font_color", Color(0.78, 0.42, 0.40, 0.95))
 	else:
 		btn_comprar.disabled = false
-		if item.has("licencia_cat"):
+		if es_reintento:
+			btn_comprar.text = "REINTENTAR PRUEBA"
+			ins_estado.text = "Ya tienes esta licencia. Repite la prueba con tarifa reducida."
+		elif item.has("licencia_cat"):
 			btn_comprar.text = "ADQUIRIR Y PROBAR"
 			ins_estado.text = "Ir a la pista para realizar la prueba de manejo."
 		else:
@@ -850,12 +854,23 @@ func _esmeraldas_actuales() -> int:
 	return int(DatosUsuario.esmeraldas)
 
 
+func _es_licencia_reintento(item: Dictionary) -> bool:
+	return item.has("licencia_cat") and _esta_comprado(str(item.get("id", "")))
+
+
+func _costo_item_monedas(item: Dictionary) -> int:
+	var base := int(item.get("precio_monedas", 0))
+	if _es_licencia_reintento(item):
+		return int(round(float(base) * 0.20 / 1000.0)) * 1000
+	return base
+
+
 func _puede_pagar(item: Dictionary) -> bool:
 	if item.is_empty():
 		return false
 	if _es_paquete_usd(item):
 		return true
-	return _dinero_actual() >= int(item.get("precio_monedas", 0)) \
+	return _dinero_actual() >= _costo_item_monedas(item) \
 		and _esmeraldas_actuales() >= int(item.get("precio_esmeraldas", 0))
 
 
@@ -874,7 +889,7 @@ func _texto_precio(item: Dictionary, compacto: bool) -> String:
 	if _es_paquete_usd(item):
 		return _formato_usd(float(item.get("precio_usd", 0.0)))
 	var partes := PackedStringArray()
-	var monedas := int(item.get("precio_monedas", 0))
+	var monedas := _costo_item_monedas(item)
 	var esmeraldas := int(item.get("precio_esmeraldas", 0))
 	if monedas > 0:
 		partes.append("$ " + _formato_entero(monedas))
@@ -904,7 +919,7 @@ func _texto_faltante(item: Dictionary) -> String:
 	if _es_paquete_usd(item):
 		return ""
 	var faltantes := PackedStringArray()
-	var monedas := int(item.get("precio_monedas", 0)) - _dinero_actual()
+	var monedas := _costo_item_monedas(item) - _dinero_actual()
 	if monedas > 0:
 		faltantes.append("$ " + _formato_entero(monedas))
 	var esmeraldas := int(item.get("precio_esmeraldas", 0)) - _esmeraldas_actuales()
@@ -970,7 +985,11 @@ func _actualizar_tarjetas() -> void:
 
 		var precio: Label = datos["precio"]
 		var es_usd := _es_paquete_usd(item)
-		if _esta_comprado(str(id)) and not es_usd:
+		var es_reintento := _es_licencia_reintento(item)
+		if es_reintento:
+			precio.text = "REINTENTO"
+			precio.add_theme_color_override("font_color", C_AMBER if _puede_pagar(item) else Color(0.72, 0.42, 0.40, 0.95))
+		elif _esta_comprado(str(id)) and not es_usd:
 			precio.text = "ADQUIRIDO"
 			precio.add_theme_color_override("font_color", C_AMBER)
 		else:
@@ -988,7 +1007,7 @@ func _actualizar_tarjetas() -> void:
 func _on_btn_comprar_pressed() -> void:
 	if _item_seleccionado.is_empty():
 		return
-	if _esta_comprado(str(_item_seleccionado.get("id", ""))) and not _es_paquete_usd(_item_seleccionado):
+	if _esta_comprado(str(_item_seleccionado.get("id", ""))) and not _es_paquete_usd(_item_seleccionado) and not _es_licencia_reintento(_item_seleccionado):
 		return
 	_mostrar_modal_compra()
 
@@ -999,14 +1018,14 @@ func _mostrar_modal_compra() -> void:
 		return
 
 	var paquete_usd := _es_paquete_usd(item)
+	var es_reintento := _es_licencia_reintento(item)
 	modal_titulo.text = str(item.get("nombre", ""))
 	modal_tipo.text = str(item.get("tipo", "")).to_upper()
-	modal_desc.text = str(item.get("desc", ""))
+	modal_desc.text = str(item.get("desc", "")).replace("Ó", "O").replace("ó", "o")
 	modal_precio.text = _texto_precio(item, false)
-	modal_eyebrow.text = "PAGO SIMULADO" if paquete_usd else "CONFIRMAR OPERACION"
+	modal_eyebrow.text = "PAGO SIMULADO" if paquete_usd else ("REINTENTAR PRUEBA" if es_reintento else "CONFIRMAR COMPRA")
 
 	if paquete_usd:
-		modal_saldo_actual.text = "%d ESM" % _esmeraldas_actuales()
 		modal_saldo_despues.text = "%d ESM" % (_esmeraldas_actuales() + int(item.get("recompensa_esmeraldas", 0)))
 		modal_saldo_despues.add_theme_color_override("font_color", C_AMBER)
 		modal_incluye.visible = true
@@ -1016,12 +1035,18 @@ func _mostrar_modal_compra() -> void:
 		modal_confirmar.disabled = false
 		modal_confirmar.text = "CONFIRMAR PAGO SIMULADO"
 	else:
-		modal_saldo_actual.text = _texto_saldo()
 		var puede := _puede_pagar(item)
-		var dinero_final := _dinero_actual() - int(item.get("precio_monedas", 0)) + int(item.get("recompensa_monedas", 0))
-		var esm_final := _esmeraldas_actuales() - int(item.get("precio_esmeraldas", 0)) + int(item.get("recompensa_esmeraldas", 0))
+		var costo_monedas := _costo_item_monedas(item)
+		var costo_esm := int(item.get("precio_esmeraldas", 0))
+		var dinero_final := _dinero_actual() - costo_monedas + int(item.get("recompensa_monedas", 0))
+		var esm_final := _esmeraldas_actuales() - costo_esm + int(item.get("recompensa_esmeraldas", 0))
 		if puede:
-			modal_saldo_despues.text = "$ %s  /  %d ESM" % [_formato_entero(dinero_final), esm_final]
+			if costo_esm > 0 and costo_monedas <= 0:
+				modal_saldo_despues.text = "%s ESM" % _formato_entero(esm_final)
+			elif costo_esm > 0 and costo_monedas > 0:
+				modal_saldo_despues.text = "$ %s  |  %s ESM" % [_formato_entero(dinero_final), _formato_entero(esm_final)]
+			else:
+				modal_saldo_despues.text = "$ %s" % _formato_entero(dinero_final)
 			modal_saldo_despues.add_theme_color_override("font_color", C_AMBER)
 		else:
 			modal_saldo_despues.text = "SALDO INSUFICIENTE"
@@ -1086,7 +1111,7 @@ func _on_confirmar_compra() -> void:
 	if _es_paquete_usd(item):
 		_procesar_compra_esmeraldas(item)
 		return
-	if _esta_comprado(str(item.get("id", ""))):
+	if _esta_comprado(str(item.get("id", ""))) and not _es_licencia_reintento(item):
 		_ocultar_modal_compra()
 		return
 	if not _puede_pagar(item):
@@ -1094,7 +1119,7 @@ func _on_confirmar_compra() -> void:
 		modal_alerta.visible = true
 		return
 
-	var costo_monedas := int(item.get("precio_monedas", 0))
+	var costo_monedas := _costo_item_monedas(item)
 	var costo_esmeraldas := int(item.get("precio_esmeraldas", 0))
 
 	if DatosUsuario:
@@ -1104,7 +1129,7 @@ func _on_confirmar_compra() -> void:
 		DatosUsuario.esmeraldas += int(item.get("recompensa_esmeraldas", 0))
 		if item.has("licencia_cat"):
 			DatosUsuario.licencia_prueba_pendiente = str(item.get("licencia_cat", ""))
-			DatosUsuario.next_scene = "res://mundo/pruebas/pista_pruebas_pesados.tscn"
+			DatosUsuario.next_scene = "res://mundo/pruebas/academia_licencias.tscn"
 			DatosUsuario.save_local()
 			_ocultar_modal_compra()
 			_reproducir_sonido_compra()
@@ -1112,7 +1137,7 @@ func _on_confirmar_compra() -> void:
 			if ResourceLoader.exists(carga_path):
 				get_tree().change_scene_to_file(carga_path)
 			else:
-				get_tree().change_scene_to_file("res://mundo/pruebas/pista_pruebas_pesados.tscn")
+				get_tree().change_scene_to_file("res://mundo/pruebas/academia_licencias.tscn")
 			return
 		else:
 			DatosUsuario.save_local()
@@ -1189,11 +1214,13 @@ func _mostrar_toast(mensaje: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _esta_comprado(id: String) -> bool:
+	if id.begins_with("licencia_"):
+		if DatosUsuario and DatosUsuario.has_method("tiene_licencia"):
+			var cat := id.trim_prefix("licencia_").to_upper()
+			return DatosUsuario.tiene_licencia(cat)
+		return false
 	if _compras.has(id):
 		return true
-	if DatosUsuario and id.begins_with("licencia_") and DatosUsuario.has_method("tiene_licencia"):
-		var cat := id.trim_prefix("licencia_").to_upper()
-		return DatosUsuario.tiene_licencia(cat)
 	return false
 
 

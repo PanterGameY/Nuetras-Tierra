@@ -10,7 +10,7 @@ extends Node
 
 const PLAYER_SCENE: String = "res://modelos3d/personajes/Jugador/Jugador.tscn"
 const VEHICLE_SCENE: String = "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn"
-const VEHICLE_SCENE_FALLBACK: String = "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_Alargada.tscn"
+const VEHICLE_SCENE_FALLBACK: String = "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn"
 const MAX_JUGADORES: int = 5
 
 # Coordenadas base en el parqueadero principal (junto al remolque carpado)

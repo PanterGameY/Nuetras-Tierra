@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MotorConfig" format=3]
+
+[ext_resource type="Script" path="res://codigo/entidades/vehiculo/motor/motor_config.gd" id="1_m"]
+
+[resource]
+script = ExtResource("1_m")
+fuerza_motor = 16000.0
+rpm_minimas = 650.0
+rpm_maximas = 2800.0
+freno_motor_fuerza = 0.3
+duracion_marchas = Array[float]([3.5, 3.5, 4.0, 4.0, 4.5, 5.0])
+velocidad_marchas = Array[float]([16.0, 30.0, 46.0, 64.0, 82.0, 100.0])
+fuerza_reversa = 9500.0
+velocidad_maxima_kmh = 105.0

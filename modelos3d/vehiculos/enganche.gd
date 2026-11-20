@@ -73,6 +73,7 @@ var _ultimo_tiempo_desenganche_ms: int = 0
 var _tiempo_desenganche_bloqueo: float = 0.0
 var _remolque_desenganchado_reciente: Node = null
 var _separado_tras_desenganche: bool = true
+var _excepcion_aprox_cuerpo: PhysicsBody3D = null
 
 
 func _ready() -> void:
@@ -897,6 +898,29 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if not conectado and not es_remolque:
+		var cuerpo_propio := _buscar_cuerpo(self)
+		if cuerpo_propio:
+			var mejor_cuerpo: PhysicsBody3D = null
+			var mejor_dist: float = 4.5
+			for n_rem in get_tree().get_nodes_in_group("enganche_remolque"):
+				if not is_instance_valid(n_rem) or not (n_rem is Node3D):
+					continue
+				var d := global_position.distance_to((n_rem as Node3D).global_position)
+				if d < mejor_dist:
+					var cr := _buscar_cuerpo(n_rem)
+					if cr:
+						mejor_dist = d
+						mejor_cuerpo = cr
+			if mejor_cuerpo != _excepcion_aprox_cuerpo:
+				if is_instance_valid(_excepcion_aprox_cuerpo):
+					cuerpo_propio.remove_collision_exception_with(_excepcion_aprox_cuerpo)
+					_excepcion_aprox_cuerpo.remove_collision_exception_with(cuerpo_propio)
+				_excepcion_aprox_cuerpo = mejor_cuerpo
+				if is_instance_valid(_excepcion_aprox_cuerpo):
+					cuerpo_propio.add_collision_exception_with(_excepcion_aprox_cuerpo)
+					_excepcion_aprox_cuerpo.add_collision_exception_with(cuerpo_propio)
+
 	if conectado and not es_remolque:
 		var cuerpo_propio := _buscar_cuerpo(self)
 		var cuerpo_remolque := _buscar_cuerpo(enganche_remoto) if is_instance_valid(enganche_remoto) else null

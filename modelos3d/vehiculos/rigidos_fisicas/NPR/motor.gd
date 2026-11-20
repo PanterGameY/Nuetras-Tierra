@@ -142,10 +142,9 @@ func _physics_process(delta: float) -> void:
 		marcha = iv.marcha_actual
 		motor_on = iv.motor_encendido
 
-	# Suavizar la respuesta del acelerador para simular la inercia del motor de un camión pesado
-	# Subida progresiva (p.ej. tarda más en llegar a full torque), bajada más rápida (a ralentí)
-	var ritmo_subida: float = 0.45
-	var ritmo_bajada: float = 1.2
+	# Suavizar la respuesta del acelerador (ágil pero progresiva, sin sensación de cámara lenta)
+	var ritmo_subida: float = 1.8
+	var ritmo_bajada: float = 2.5
 	if pedal_raw > gas_suavizado:
 		gas_suavizado = move_toward(gas_suavizado, pedal_raw, delta * ritmo_subida)
 	else:
@@ -253,7 +252,7 @@ func _physics_process(delta: float) -> void:
 	if gas < 0.1:
 		if iv:
 			freno_obj = clamp(iv.freno, 0.0, 1.0)
-	var vel_fr: float    = 4.0 if freno_obj > freno_suavizado else 12.0
+	var vel_fr: float    = 16.0 if freno_obj > freno_suavizado else 20.0
 	freno_suavizado      = move_toward(freno_suavizado, freno_obj, vel_fr * delta)
 	var auto_hold: bool  = auto_hold_habilitado and gas < 0.02 and abs(speed_ms) < auto_hold_velocidad_ms
 	llantas_ctrl.aplicar_freno(max(freno_suavizado, auto_hold_freno if auto_hold else 0.0))

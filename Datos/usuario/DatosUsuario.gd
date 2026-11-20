@@ -61,7 +61,7 @@ var pase_elite_desde : String = ""
 var pase_elite_ultimo_reclamo : String = ""
 var pase_elite_dias_reclamados : int = 0
 var trabajos_legales_desbloqueados : bool = false
-var licencia_automovil : bool = true
+var licencia_automovil : bool = false
 var licencia_camion : bool = false
 var licencia_carga_delicada : bool = false
 var licencia_carga_sobredimensionada : bool = false
@@ -307,9 +307,9 @@ func load_local() -> bool:
 			licencia_camion = bool(cfg.get_value("usuario", "licencia_camion", false))
 			licencia_carga_delicada = bool(cfg.get_value("usuario", "licencia_carga_delicada", false))
 			licencia_carga_sobredimensionada = bool(cfg.get_value("usuario", "licencia_carga_sobredimensionada", false))
-			licencia_c1 = bool(cfg.get_value("usuario", "licencia_c1", licencia_automovil))
-			licencia_c2 = bool(cfg.get_value("usuario", "licencia_c2", licencia_camion))
-			licencia_c3 = bool(cfg.get_value("usuario", "licencia_c3", licencia_carga_sobredimensionada))
+			licencia_c1 = bool(cfg.get_value("usuario", "licencia_c1", false))
+			licencia_c2 = bool(cfg.get_value("usuario", "licencia_c2", false))
+			licencia_c3 = bool(cfg.get_value("usuario", "licencia_c3", false))
 			guardado_player_pos = cfg.get_value("usuario", "guardado_player_pos", Vector3.ZERO)
 			guardado_player_rot_y = float(cfg.get_value("usuario", "guardado_player_rot_y", 0.0))
 			guardado_player_scene = str(cfg.get_value("usuario", "guardado_player_scene", ""))
@@ -1152,13 +1152,13 @@ func _mostrar_celebracion_nivel(n: int, prem_esm: int, prem_mon: int) -> void:
 func tiene_licencia(categoria: String) -> bool:
 	match categoria.to_upper().strip_edges():
 		"C1":
-			return licencia_c1 or licencia_automovil or licencia_c2 or licencia_c3
+			return licencia_c1
 		"C2":
-			return licencia_c2 or licencia_camion or licencia_c3
+			return licencia_c2
 		"C3":
-			return licencia_c3 or licencia_carga_sobredimensionada
+			return licencia_c3
 		_:
-			return true
+			return false
 
 func otorgar_licencia(categoria: String) -> void:
 	match categoria.to_upper().strip_edges():

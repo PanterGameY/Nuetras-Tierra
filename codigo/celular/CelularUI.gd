@@ -4855,16 +4855,16 @@ func _process(delta: float) -> void:
 			_actualizar_posicion_tableta()
 		return
 
-	# Gestion de descarga / carga de bateria
+	# Gestion de descarga / carga de bateria (parametros realistas)
 	if is_charging:
-		battery_level += delta * 3.5 * battery_charge_speed
+		battery_level += delta * 4.5 * battery_charge_speed
 		if battery_level >= 100.0:
 			battery_level = 100.0
 			is_charging = false
 			_restaurar_pantalla_bateria()
 	else:
-		# Descarga activa si la tableta esta abierta o descarga pasiva regular
-		var drain_rate = (1.2 if is_open else 0.4) * battery_discharge_speed
+		# Descarga realista: ~25 min en uso continuo abierta, >2h en reposo cerrada
+		var drain_rate = (0.065 if is_open else 0.012) * battery_discharge_speed
 		battery_level -= delta * drain_rate
 		if battery_level <= 0.0:
 			battery_level = 0.0

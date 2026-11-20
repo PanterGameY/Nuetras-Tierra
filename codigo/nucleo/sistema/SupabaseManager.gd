@@ -31,6 +31,7 @@ var _http_rest: HTTPRequest = null
 var sesion_cerrada_manualmente: bool = false
 var _sincronizando_desde_nube: bool = false
 var _sync_pendiente: bool = false
+var _godot_app_java = null
 
 func _ready() -> void:
 	_http_auth = HTTPRequest.new()
@@ -41,9 +42,20 @@ func _ready() -> void:
 	_http_rest.name = "SupabaseRestHTTP"
 	add_child(_http_rest)
 
+	if OS.has_feature("android"):
+		_godot_app_java = JavaClassWrapper.wrap("com.godot.game.GodotApp")
+
 	_cargar_sesion_local()
+	_revisar_deep_link_android()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED or what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		_revisar_deep_link_android()
 
 func _process(_delta: float) -> void:
+	if OS.has_feature("android") and not _oauth_provider_pendiente.is_empty():
+		_revisar_deep_link_android()
+
 	if _tcp_server == null or not _tcp_server.is_listening():
 		return
 
@@ -102,6 +114,7 @@ func iniciar_sesion_oauth(proveedor: String) -> void:
 func procesar_callback_url(callback_url: String) -> void:
 	if callback_url.is_empty():
 		return
+	_oauth_provider_pendiente = ""
 	var code := _extraer_parametro_url(callback_url, "code")
 	if not code.is_empty():
 		_intercambiar_codigo_pkce(code)
@@ -172,6 +185,14 @@ func refrescar_sesion() -> void:
 
 func _es_movil() -> bool:
 	return OS.has_feature("android") or OS.has_feature("ios")
+
+func _revisar_deep_link_android() -> void:
+	if _godot_app_java == null:
+		return
+	var url := str(_godot_app_java.consumePendingDeepLink()).strip_edges()
+	if not url.is_empty() and url.begins_with("nuestratierra://"):
+		print("[SupabaseManager] Deep link Android recibido: ", url)
+		procesar_callback_url(url)
 
 func _iniciar_servidor_local() -> void:
 	_detener_servidor_local()
@@ -467,13 +488,13 @@ func _sincronizar_perfil_a_datos_usuario(p: Dictionary) -> void:
 		du.vehiculos_personalizados = p["vehiculos_personalizados"]
 	if p.has("licencias") and p["licencias"] is Dictionary:
 		var lic: Dictionary = p["licencias"]
-		du.licencia_automovil = bool(lic.get("automovil", du.licencia_automovil))
-		du.licencia_camion = bool(lic.get("camion", du.licencia_camion))
-		du.licencia_carga_delicada = bool(lic.get("carga_delicada", du.licencia_carga_delicada))
-		du.licencia_carga_sobredimensionada = bool(lic.get("carga_sobredimensionada", du.licencia_carga_sobredimensionada))
-		du.licencia_c1 = bool(lic.get("c1", du.licencia_c1))
-		du.licencia_c2 = bool(lic.get("c2", du.licencia_c2))
-		du.licencia_c3 = bool(lic.get("c3", du.licencia_c3))
+		du.licencia_automovil = bool(lic.get("automovil", false))
+		du.licencia_camion = bool(lic.get("camion", false))
+		du.licencia_carga_delicada = bool(lic.get("carga_delicada", false))
+		du.licencia_carga_sobredimensionada = bool(lic.get("carga_sobredimensionada", false))
+		du.licencia_c1 = bool(lic.get("c1", false))
+		du.licencia_c2 = bool(lic.get("c2", false))
+		du.licencia_c3 = bool(lic.get("c3", false))
 	if p.has("avatar_url") and p["avatar_url"] != null and not str(p["avatar_url"]).is_empty() and du.avatar_path.is_empty():
 		descargar_y_aplicar_avatar(str(p["avatar_url"]))
 	du.save_local()

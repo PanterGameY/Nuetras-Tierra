@@ -345,8 +345,8 @@ func _physics_process(delta: float) -> void:
 	rotation.y = lerp_angle(rotation.y, target_rot.y, rot_factor)
 	rotation.z = lerp_angle(rotation.z, target_rot.z, rot_factor)
 
-	# Suavizado de FOV
-	var fov_factor: float = 1.0 - exp(-2.0 * delta)
+	# Suavizado de FOV (ágil para enfoque de espejos)
+	var fov_factor: float = 1.0 - exp(-6.0 * delta)
 	fov = lerpf(fov, state["fov"], fov_factor)
 
 	# Gestión con CameraManager
@@ -414,9 +414,9 @@ func compute_local_state(delta: float) -> Dictionary:
 
 	var rise_accel: float = clampf(-acc_local.z * altura_aceleracion * 0.004, -0.08, 0.08)
 	var target_offset := Vector3(
-		-acc_local.x * 0.0008 * intensidad_g,
-		(-absf(acc_local.x) * 0.0004) + rise_accel + _salto_asiento_y,
-		 acc_local.z * 0.0012 * intensidad_g
+		clampf(-acc_local.x * 0.0045 * intensidad_g, -0.055, 0.055),
+		clampf((-absf(acc_local.x) * 0.0012) + rise_accel + _salto_asiento_y, -0.06, 0.06),
+		clampf(acc_local.z * 0.0055 * intensidad_g, -0.065, 0.065)
 	)
 	var g_smooth_t: float = 1.0 - exp(-suavizado_g * delta)
 	_offset_cabeza = _offset_cabeza.lerp(target_offset, g_smooth_t)
@@ -442,6 +442,8 @@ func compute_local_state(delta: float) -> Dictionary:
 	# 3. Posición (Asomarse por ventana ergonómico y ajuste de espejos)
 	var target_pos: Vector3 = _pos_original + _offset_cabeza + vibracion
 	target_pos = _aplicar_asomarse(target_pos)
+	if is_instance_valid(controlador_chasis):
+		target_pos = controlador_chasis.transform * target_pos
 
 	# 4. Rotación dinámica base
 	var rot_final: Vector3 = _calcular_rotacion(delta, inv_basis)
@@ -459,12 +461,10 @@ func compute_local_state(delta: float) -> Dictionary:
 	if is_instance_valid(InputVehiculo):
 		dir_input = InputVehiculo.direccion
 
-	var target_pitch: float = clampf(acc_local.z * intensidad_pitch_aceleracion * 0.01, -3.5, 3.5)
+	var target_pitch: float = clampf(acc_local.z * intensidad_pitch_aceleracion * 0.08, -3.5, 3.5)
 	_pitch_dinamico = lerpf(_pitch_dinamico, target_pitch, 1.0 - exp(-suavizado_pitch * delta))
 
-	var vel_local: Vector3 = inv_basis * coche.linear_velocity
-	var giro_factor: float = -vel_local.x * intensidad_roll_giro * 0.02
-	var target_roll: float = clampf(giro_factor + (dir_input * intensidad_roll_giro * 0.3), -4.5, 4.5)
+	var target_roll: float = clampf(-acc_local.x * intensidad_roll_giro * 0.08, -2.8, 2.8)
 	_roll_dinamico = lerpf(_roll_dinamico, target_roll, 1.0 - exp(-suavizado_roll * delta))
 
 	# 7. Inclinación biomecánica lateral al girar la mirada (Head Tilt / Dutch Angle)
@@ -476,6 +476,9 @@ func compute_local_state(delta: float) -> Dictionary:
 
 	rot_final.x += deg_to_rad(_pitch_dinamico)
 	rot_final.z += deg_to_rad(_roll_dinamico + _roll_mirada)
+	if is_instance_valid(controlador_chasis):
+		rot_final.x += controlador_chasis.rotation.x
+		rot_final.z += controlador_chasis.rotation.z
 
 	# 8. Vibración adicional por RPM de motor si está configurada
 	if is_instance_valid(InputVehiculo) and InputVehiculo.get("motor_encendido") == true:

@@ -207,6 +207,8 @@ func _actualizar_destino_badge() -> void:
 		destino_badge.text = "PERFIL DE CONDUCTOR"
 	elif ruta.contains("garaje"):
 		destino_badge.text = "TALLER Y FLOTA"
+	elif ruta.contains("academia_licencias"):
+		destino_badge.text = "ACADEMIA DE LICENCIAS"
 	elif ruta.contains("tienda"):
 		destino_badge.text = "CONCESIONARIO"
 	else:

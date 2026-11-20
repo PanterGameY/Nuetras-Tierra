@@ -34,8 +34,8 @@ android.debug.arm64 = "res://addons/terrain_3d/bin/libterrain.android.debug.arm6
 android.release.arm64 = "res://addons/terrain_3d/bin/libterrain.android.release.arm64.so"
 android.debug.arm32 = "res://addons/terrain_3d/bin/libterrain.android.debug.arm32.so"
 android.release.arm32 = "res://addons/terrain_3d/bin/libterrain.android.release.arm32.so"
-#android.debug.x86_64 = "res://addons/terrain_3d/bin/libterrain.android.debug.x86_64.so"
-#android.release.x86_64 = "res://addons/terrain_3d/bin/libterrain.android.release.x86_64.so"
+android.debug.x86_64 = "res://addons/terrain_3d/bin/libterrain.android.debug.x86_64.so"
+android.release.x86_64 = "res://addons/terrain_3d/bin/libterrain.android.release.x86_64.so"
 #android.debug.x86_32 = "res://addons/terrain_3d/bin/libterrain.android.debug.x86_32.so"
 #android.release.x86_32 = "res://addons/terrain_3d/bin/libterrain.android.release.x86_32.so"
 

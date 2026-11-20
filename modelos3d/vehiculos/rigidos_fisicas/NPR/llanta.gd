@@ -166,19 +166,20 @@ func _physics_process(delta: float) -> void:
 			var vel_factor = clamp(coche.linear_velocity.length() / 10.0, 0.1, 1.5)
 			coche.notificar_suciedad(delta * 0.04 * vel_factor)
 
-	# Controlar partículas de polvo
+	# Controlar partículas de polvo (solo en tierra real y rodando a velocidad media/alta o patinando)
 	if polvo_emisor:
-		if en_tierra and coche and coche.linear_velocity.length() > 0.8:
-			polvo_emisor.global_position = punto_contacto
+		var vel_kmh_polvo := coche.linear_velocity.length() * 3.6 if coche else 0.0
+		if en_tierra and coche and vel_kmh_polvo > 10.0:
+			polvo_emisor.global_position = punto_contacto + Vector3(0.0, 0.06, 0.0)
 			polvo_emisor.emitting = true
 			
 			# Alinear dirección de emisión opuesta al movimiento
 			var dir_atras = -coche.linear_velocity.normalized()
 			var local_dir = to_local(global_position + dir_atras) - to_local(global_position)
-			local_dir.y = 0.5
+			local_dir.y = 0.35
 			polvo_emisor.direction = local_dir.normalized()
-			polvo_emisor.initial_velocity_min = max(0.5, coche.linear_velocity.length() * 0.1)
-			polvo_emisor.initial_velocity_max = max(1.5, coche.linear_velocity.length() * 0.25)
+			polvo_emisor.initial_velocity_min = clampf(coche.linear_velocity.length() * 0.12, 0.4, 2.0)
+			polvo_emisor.initial_velocity_max = clampf(coche.linear_velocity.length() * 0.25, 0.9, 3.8)
 		else:
 			polvo_emisor.emitting = false
 
@@ -431,7 +432,13 @@ func _is_ground_tierra(collider: Node) -> bool:
 	if coche and "debug_vehiculo" in coche and coche.debug_vehiculo:
 		print("[Llanta Debug] Colisiona con: ", n_name, " | Padre: ", p_name)
 	
-	var keywords = ["tierra", "dirt", "terreno", "barro", "mud", "sand", "arena", "pasto", "grass", "suelo", "road", "trocha", "via", "ruta", "hierba", "weed", "foliage", "gridmap"]
+	# Si es explícitamente asfalto, pavimento, pista o concreto, nunca es tierra
+	var asfalto_kw = ["asfalto", "asphalt", "pavimento", "concreto", "concrete", "pista", "acera", "calle", "carretera", "parking", "parqueadero", "garaje"]
+	for akw in asfalto_kw:
+		if akw in n_name or akw in p_name:
+			return false
+
+	var keywords = ["tierra", "dirt", "barro", "mud", "sand", "arena", "pasto", "grass", "trocha", "hierba", "weed", "gravel", "grava"]
 	for kw in keywords:
 		if kw in n_name or kw in p_name:
 			return true
@@ -440,6 +447,9 @@ func _is_ground_tierra(collider: Node) -> bool:
 		for sibling in collider.get_parent().get_children():
 			if sibling is MeshInstance3D:
 				var s_name = sibling.name.to_lower()
+				for akw in asfalto_kw:
+					if akw in s_name:
+						return false
 				for kw in keywords:
 					if kw in s_name:
 						return true
@@ -449,6 +459,9 @@ func _is_ground_tierra(collider: Node) -> bool:
 					if mat:
 						var m_name = mat.resource_name.to_lower()
 						var m_path = mat.resource_path.to_lower()
+						for akw in asfalto_kw:
+							if akw in m_name or akw in m_path:
+								return false
 						for kw in keywords:
 							if kw in m_name or kw in m_path:
 								return true
@@ -469,46 +482,57 @@ func _crear_sistema_polvo() -> void:
 	add_child(polvo_emisor)
 	
 	polvo_emisor.emitting = false
-	polvo_emisor.amount = 24
-	polvo_emisor.lifetime = 1.2
+	polvo_emisor.amount = 14
+	polvo_emisor.lifetime = 0.75
 	polvo_emisor.one_shot = false
 	polvo_emisor.explosiveness = 0.0
-	polvo_emisor.randomness = 0.6
-	polvo_emisor.local_coords = false # IMPORTANTE: dejar las partículas en el mundo (rastro)
+	polvo_emisor.randomness = 0.65
+	polvo_emisor.local_coords = false
 	
-	polvo_emisor.direction = Vector3(0, 0.4, 1)
-	polvo_emisor.spread = 35.0
-	polvo_emisor.gravity = Vector3(0, 0.6, 0) # El polvo flota hacia arriba suavemente
-	polvo_emisor.initial_velocity_min = 1.0
-	polvo_emisor.initial_velocity_max = 3.5
+	polvo_emisor.direction = Vector3(0, 0.35, 1)
+	polvo_emisor.spread = 28.0
+	polvo_emisor.gravity = Vector3(0, 0.35, 0)
+	polvo_emisor.initial_velocity_min = 0.5
+	polvo_emisor.initial_velocity_max = 2.0
 	
-	# Curva de tamaño para mobiles
 	var curve = Curve.new()
-	curve.add_point(Vector2(0.0, 0.4))
-	curve.add_point(Vector2(0.15, 1.5))
-	curve.add_point(Vector2(1.0, 3.0))
+	curve.add_point(Vector2(0.0, 0.35))
+	curve.add_point(Vector2(0.35, 0.85))
+	curve.add_point(Vector2(1.0, 1.35))
 	polvo_emisor.scale_amount_curve = curve
-	polvo_emisor.scale_amount_min = 0.8
-	polvo_emisor.scale_amount_max = 2.5
+	polvo_emisor.scale_amount_min = 0.45
+	polvo_emisor.scale_amount_max = 1.05
 	
-	# Degradado de desvanecimiento con mayor opacidad
 	var gradient = Gradient.new()
-	gradient.add_point(0.0, Color(0.48, 0.40, 0.32, 0.0))
-	gradient.add_point(0.15, Color(0.48, 0.40, 0.32, 0.55))
-	gradient.add_point(1.0, Color(0.48, 0.40, 0.32, 0.0))
+	gradient.add_point(0.0, Color(0.52, 0.44, 0.35, 0.0))
+	gradient.add_point(0.20, Color(0.52, 0.44, 0.35, 0.28))
+	gradient.add_point(1.0, Color(0.52, 0.44, 0.35, 0.0))
 	polvo_emisor.color_ramp = gradient
+
+	# Textura radial suave (evita cuadros duros)
+	var grad_tex := GradientTexture2D.new()
+	grad_tex.width = 64
+	grad_tex.height = 64
+	grad_tex.fill = GradientTexture2D.FILL_RADIAL
+	grad_tex.fill_from = Vector2(0.5, 0.5)
+	grad_tex.fill_to = Vector2(0.5, 0.0)
+	var g_alpha := Gradient.new()
+	g_alpha.add_point(0.0, Color(1, 1, 1, 1))
+	g_alpha.add_point(0.45, Color(1, 1, 1, 0.45))
+	g_alpha.add_point(1.0, Color(1, 1, 1, 0))
+	grad_tex.gradient = g_alpha
 	
-	# Material de cartelera de partículas (Billboard)
 	var mat = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.vertex_color_use_as_albedo = true
 	mat.albedo_color = Color.WHITE
+	mat.albedo_texture = grad_tex
 	polvo_emisor.material_override = mat
 	
 	var mesh = QuadMesh.new()
-	mesh.size = Vector2(0.8, 0.8)
+	mesh.size = Vector2(0.40, 0.40)
 	polvo_emisor.mesh = mesh
 
 

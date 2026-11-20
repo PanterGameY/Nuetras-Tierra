@@ -1,0 +1,8 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800/T800 Econom_0_4.png" id="1_dlqhc"]
+
+[resource]
+albedo_color = Color(0.95, 0.95, 0.95, 1)
+albedo_texture = ExtResource("1_dlqhc")
+roughness = 0.35

@@ -1,0 +1,9 @@
+[gd_resource type="StandardMaterial3D" format=3]
+
+[ext_resource type="Texture2D" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/textures/negro.png" id="1_cicrb"]
+
+[resource]
+cull_mode = 2
+albedo_color = Color(0.14, 0.145, 0.16, 1)
+albedo_texture = ExtResource("1_cicrb")
+roughness = 0.65

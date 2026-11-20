@@ -172,6 +172,16 @@ func _recursive_find_by_name(node: Node, target: String) -> Node:
 				return res
 	return null
 
+func _es_modo_prueba() -> bool:
+	if get_meta("en_modo_prueba", false):
+		return true
+	var cs := get_tree().current_scene if get_tree() else null
+	if cs and cs.scene_file_path != "":
+		var sp := cs.scene_file_path.to_lower()
+		if "academia_licencias" in sp or "/pruebas/" in sp:
+			return true
+	return false
+
 func _ready():
 	add_to_group("jugador")
 	# Configuración para subir aceras/escalones automáticamente
@@ -259,7 +269,7 @@ func _ready():
 	await get_tree().process_frame
 
 	var datos = get_node_or_null("/root/DatosUsuario")
-	if not get_meta("en_modo_prueba", false) and datos and datos.guardado_player_scene != "":
+	if not _es_modo_prueba() and datos and datos.guardado_player_scene != "":
 		var current_scene_path = get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
 		if current_scene_path == datos.guardado_player_scene:
 			if datos.guardado_player_pos != Vector3.ZERO:
@@ -651,7 +661,7 @@ func _physics_process(delta: float) -> void:
 					_skeleton.set_bone_pose_rotation(right_shoulder_idx, q)
 
 	# Auto-save player position & current scene path
-	if not get_meta("en_modo_prueba", false) and (not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()):
+	if not _es_modo_prueba() and (not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()):
 		_autosave_timer += delta
 		if _autosave_timer >= AUTOSAVE_INTERVAL:
 			_autosave_timer = 0.0
@@ -1256,6 +1266,11 @@ func _manterner_en_vehiculo(v):
 		global_position = v.global_position + Vector3.UP * 1.5
 
 func _reproducir_anim(n, b = BLEND_LOCOMOCION):
+	if n == ANIM_IDLE:
+		if anim_player and _anim_actual != ANIM_IDLE:
+			anim_player.stop()
+			_anim_actual = ANIM_IDLE
+		return
 	if anim_player and not _anim_lock and _anim_actual != n and anim_player.has_animation(n):
 		anim_player.play(n, b)
 		_anim_actual = n
@@ -1435,6 +1450,8 @@ func actualizar_transform_remoto(pos: Vector3, rot_y: float, vel: Vector3, anim:
 		_conduciendo = cond
 
 func _guardar_posicion_rapida() -> void:
+	if _es_modo_prueba():
+		return
 	var datos = get_node_or_null("/root/DatosUsuario")
 	if datos:
 		var pos = global_position
@@ -1442,6 +1459,15 @@ func _guardar_posicion_rapida() -> void:
 		if _conduciendo and _vehiculo_actual:
 			pos = _vehiculo_actual.global_position
 			rot_y = _vehiculo_actual.rotation.y
+			var clave_v := str(_vehiculo_actual.scene_file_path) if _vehiculo_actual.scene_file_path != "" else str(_vehiculo_actual.name)
+			if typeof(datos.vehiculos_posiciones) == TYPE_DICTIONARY and clave_v != "":
+				var cur_sc := get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
+				datos.vehiculos_posiciones[clave_v] = {
+					"pos": _vehiculo_actual.global_position,
+					"rot": _vehiculo_actual.global_rotation,
+					"scene": cur_sc,
+					"nombre": str(_vehiculo_actual.name)
+				}
 		datos.guardado_player_pos = pos
 		datos.guardado_player_rot_y = rot_y
 		var current_scene_path = get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""

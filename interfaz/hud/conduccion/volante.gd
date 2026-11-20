@@ -4,7 +4,7 @@ extends TextureRect
 signal rotacion_cambiada(valor: float)
 
 @export_group("Configuración Visual")
-@export var sensibilidad: float = 1.0
+@export var sensibilidad: float = 0.72
 @export var velocidad_retorno: float = 4.0
 @export var vueltas_totales: float = 1.5
 @export var retorno_automatico: bool = true
