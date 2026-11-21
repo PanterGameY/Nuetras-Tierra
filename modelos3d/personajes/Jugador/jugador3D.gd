@@ -103,6 +103,9 @@ var _hips_bone_idx = -1
 var _spine_bone_idx = -1
 var _hips_offset_y: float = 0.0
 var _spine_rot_x: float = 0.0
+var _hips_base_pos: Vector3 = Vector3.ZERO
+var _spine_base_rot: Quaternion = Quaternion.IDENTITY
+var _tiene_base_bones: bool = false
 var _vigneta_layer: CanvasLayer
 var _collision_shape: CollisionShape3D
 
@@ -203,6 +206,11 @@ func _ready():
 		_cabeza_bone_idx = _skeleton.find_bone("mixamorig_Head")
 		_hips_bone_idx = _skeleton.find_bone("mixamorig_Hips")
 		_spine_bone_idx = _skeleton.find_bone("mixamorig_Spine")
+		if _hips_bone_idx >= 0:
+			_hips_base_pos = _skeleton.get_bone_rest(_hips_bone_idx).origin
+		if _spine_bone_idx >= 0:
+			_spine_base_rot = _skeleton.get_bone_rest(_spine_bone_idx).basis.get_rotation_quaternion()
+		_tiene_base_bones = true
 		
 		# Crear nodos IK de las manos para agarrar cajas programáticamente
 		mano_izq_ik = SkeletonIK3D.new()
@@ -290,6 +298,11 @@ func _ready():
 	_vel_horizontal = Vector3.ZERO
 	_ajustar_altura_aparicion()
 	_verificar_seguridad_mapa(true)
+	if not _tiene_pos_segura:
+		var res_ini := _raycast_suelo_estatico(global_position.y + 5.0, global_position.y - 10.0, global_position)
+		if not res_ini.is_empty():
+			_ultima_pos_segura = global_position
+			_tiene_pos_segura = true
 	_pos_objetivo = global_position
 	_rot_y_objetivo = rotation.y
 	_spawn_estabilizar_timer = 0.65
@@ -690,6 +703,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if _conduciendo:
 		if _vehiculo_actual:
+			var gv := get_node_or_null("/root/GestorVehiculos")
+			if gv and gv.has_method("asegurar_vehiculo_sobre_mapa") and _vehiculo_actual is RigidBody3D:
+				var prev_seg_v: Vector3 = _vehiculo_actual.get_meta("_pos_segura_mapa", Vector3.ZERO)
+				_vehiculo_actual.set_meta("_pos_segura_mapa", gv.asegurar_vehiculo_sobre_mapa(_vehiculo_actual, prev_seg_v))
 			_manterner_en_vehiculo(_vehiculo_actual)
 			# Cambiado para salir usando la tecla ESC (ui_cancel) o el boton interactuar para evitar conflictos con S (freno)
 			if Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("interactuar"):
@@ -766,6 +783,17 @@ func _physics_process(delta: float) -> void:
 	velocity.x = clampf(velocity.x, -25.0, 25.0)
 	velocity.z = clampf(velocity.z, -25.0, 25.0)
 
+	# Anti-túnel vertical: evitar que un pico de delta/gravedad atraviese mallas de grosor cero en 1 frame
+	if not suelo and velocity.y < -3.0:
+		var paso_y: float = absf(velocity.y * delta) + 0.25
+		var res_tunel := _raycast_suelo_estatico(global_position.y + 0.3, global_position.y - paso_y, global_position)
+		if not res_tunel.is_empty():
+			var hit_y: float = (res_tunel["position"] as Vector3).y
+			if global_position.y >= hit_y - 0.35:
+				global_position.y = hit_y + 0.05
+				velocity.y = 0.0
+				suelo = true
+
 	# Lógica para subir aceras/escalones
 	if suelo and idir.length() > 0.1:
 		move_and_slide()
@@ -816,16 +844,13 @@ func _physics_process(delta: float) -> void:
 				_hips_offset_y = lerp(_hips_offset_y, 0.0, delta * 9.0)
 				_spine_rot_x = lerp(_spine_rot_x, 0.0, delta * 9.0)
 		
-		# Aplicar modificaciones directamente en el esqueleto
-		if _hips_bone_idx >= 0:
-			var default_pos = _skeleton.get_bone_pose_position(_hips_bone_idx)
-			default_pos.y += _hips_offset_y
-			_skeleton.set_bone_pose_position(_hips_bone_idx, default_pos)
-			
-		if _spine_bone_idx >= 0:
-			var default_rot = _skeleton.get_bone_pose_rotation(_spine_bone_idx)
-			var tilt_offset = Quaternion(Vector3.RIGHT, _spine_rot_x)
-			_skeleton.set_bone_pose_rotation(_spine_bone_idx, default_rot * tilt_offset)
+		# Aplicar modificaciones de postura SIN acumulación infinita entre frames
+		if anim_player == null or not anim_player.is_playing():
+			if _hips_bone_idx >= 0 and _tiene_base_bones:
+				_skeleton.set_bone_pose_position(_hips_bone_idx, _hips_base_pos + Vector3(0.0, _hips_offset_y, 0.0))
+			if _spine_bone_idx >= 0 and _tiene_base_bones:
+				var tilt_offset := Quaternion(Vector3.RIGHT, _spine_rot_x)
+				_skeleton.set_bone_pose_rotation(_spine_bone_idx, _spine_base_rot * tilt_offset)
 			
 	# Asegurar escala e inclinación base del modelo limpias
 	if is_instance_valid(_modelo):
@@ -897,10 +922,8 @@ func _aplicar_camara(delta, idir, run):
 		spring_arm.rotation.z = _camara_tilt
 		spring_arm.spring_length = ZOOM_1P
 		var fwd = Vector3(-sin(_camara_yaw), 0, -cos(_camara_yaw))
-		if _skeleton and _cabeza_bone_idx >= 0:
-			spring_arm.global_position = (_skeleton.global_transform * _skeleton.get_bone_global_pose(_cabeza_bone_idx)).origin + fwd * CAM_1P_FORWARD
-		else:
-			spring_arm.position = CAM_1P_OFFSET + fwd * CAM_1P_FORWARD - Vector3(0.0, _agachado_t * 0.5, 0.0)
+		var head_local_pos := CAM_1P_OFFSET + Vector3(0.0, -_agachado_t * 0.5 + clampf(_hips_offset_y * 0.35, -0.25, 0.08), 0.0)
+		spring_arm.global_position = to_global(head_local_pos) + fwd * CAM_1P_FORWARD
 		if _camara_1p and _camera:
 			_camara_1p.global_transform = _camera.global_transform
 		if _cabeza:
@@ -1299,6 +1322,8 @@ func _reproducir_anim(n, b = BLEND_LOCOMOCION):
 	if n == ANIM_IDLE:
 		if anim_player and _anim_actual != ANIM_IDLE:
 			anim_player.stop()
+			if is_instance_valid(_skeleton):
+				_skeleton.reset_bone_poses()
 			_anim_actual = ANIM_IDLE
 		return
 	if anim_player and not _anim_lock and _anim_actual != n and anim_player.has_animation(n):
@@ -1605,41 +1630,61 @@ func _raycast_via_arriba_en_xz(pos: Vector3, incluir_terreno: bool) -> float:
 	return -9999.0
 
 
+func _rescatar_a_superficie_segura() -> void:
+	# 1. Buscar superficie directamente sobre o bajo la columna actual
+	var res := _raycast_suelo_estatico(90.0, -30.0, global_position)
+	if not res.is_empty():
+		global_position.y = (res["position"] as Vector3).y + 0.28
+		velocity = Vector3.ZERO
+		_vel_horizontal = Vector3.ZERO
+		return
+	# 2. Buscar en espiral alrededor por si cayó por un hueco estrecho al vacío
+	for r in [2.0, 5.0]:
+		for ang in [0.0, PI * 0.5, PI, PI * 1.5]:
+			var probe := global_position + Vector3(cos(ang) * r, 0.0, sin(ang) * r)
+			var res_rad := _raycast_suelo_estatico(90.0, -30.0, probe)
+			if not res_rad.is_empty():
+				global_position = Vector3(probe.x, (res_rad["position"] as Vector3).y + 0.28, probe.z)
+				velocity = Vector3.ZERO
+				_vel_horizontal = Vector3.ZERO
+				return
+	# 3. Última posición segura registrada o spawn principal seguro
+	if _tiene_pos_segura:
+		global_position = _ultima_pos_segura + Vector3(0.0, 0.28, 0.0)
+	else:
+		global_position = Vector3(30.4923, 1.2, 786.3555)
+	velocity = Vector3.ZERO
+	_vel_horizontal = Vector3.ZERO
+
+
 func _verificar_seguridad_mapa(forzar: bool = false) -> void:
 	if _conduciendo:
 		return
 
-	# 1. Caída al vacío o por debajo de la cota del mapa
-	if global_position.y < -2.8:
-		var res := _raycast_suelo_estatico(80.0, -2.5, global_position)
-		if not res.is_empty():
-			global_position.y = (res["position"] as Vector3).y + 0.25
-			velocity = Vector3.ZERO
-			_vel_horizontal = Vector3.ZERO
-			return
-		elif _tiene_pos_segura:
-			global_position = _ultima_pos_segura + Vector3(0.0, 0.25, 0.0)
-			velocity = Vector3.ZERO
-			_vel_horizontal = Vector3.ZERO
-			return
-		else:
-			global_position.y = 1.5
-			velocity.y = 0.0
+	var en_suelo: bool = is_on_floor()
+
+	# 1. Caída al vacío puro (ej. bajo autopista sin malla inferior) o por debajo de la cota del mapa
+	if global_position.y < -2.2:
+		_rescatar_a_superficie_segura()
+		return
+	if not en_suelo and global_position.y < -0.5:
+		var res_bajo := _raycast_suelo_estatico(global_position.y + 0.5, global_position.y - 40.0, global_position)
+		if res_bajo.is_empty():
+			_rescatar_a_superficie_segura()
 			return
 
 	# 2. Jugador atrapado bajo una carretera/acera (o cayendo bajo un terreno de montaña)
-	var en_suelo: bool = is_on_floor()
-	var chequear_arriba: bool = forzar or (_spawn_estabilizar_timer > 0.0) or (global_position.y < 0.35) or (not en_suelo and velocity.y < -1.0) or (Engine.get_physics_frames() % 8 == 0)
+	var chequear_arriba: bool = forzar or (not en_suelo) or (_spawn_estabilizar_timer > 0.0) or (global_position.y < 0.35) or (Engine.get_physics_frames() % 4 == 0)
 	if chequear_arriba:
 		var y_via: float = _buscar_superficie_via_arriba(global_position, not en_suelo)
 		if y_via > -9000.0:
-			global_position.y = y_via + 0.25
+			global_position.y = y_via + 0.28
 			velocity = Vector3.ZERO
 			_vel_horizontal = Vector3.ZERO
 			return
 
 	# 3. Registrar última posición segura cuando camina normalmente sobre una superficie válida
-	if en_suelo and global_position.y >= -2.0 and (Engine.get_physics_frames() % 15 == 0 or not _tiene_pos_segura):
+	if en_suelo and global_position.y >= -2.0 and (Engine.get_physics_frames() % 10 == 0 or not _tiene_pos_segura):
 		if _buscar_superficie_via_arriba(global_position) <= -9000.0:
 			_ultima_pos_segura = global_position
 			_tiene_pos_segura = true

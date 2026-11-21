@@ -165,16 +165,13 @@ func _physics_process(delta: float) -> void:
 	if not is_inside_tree() or (path_follow == null and current_lane == null):
 		return
 
-	# 1. Gestionar toma de decisiones y cambios de carril/filtrado estilo latinoamericano
-	_procesar_comportamiento_moto(delta)
-
 	# Si está adelantando con suficiente desfase lateral, el vehículo líder de la curva está a un lado (no de frente)
-	var esquivando_lateralmente := (_estado_moto == EstadoMoto.ADELANTANDO and path_follow != null and absf(path_follow.h_offset) > 1.0)
+	var esquivando_lateralmente := (_estado_moto == EstadoMoto.ADELANTANDO and absf(_desfase_lateral_actual) > 1.0)
 	var dist_lider_respaldo := distancia_lider
 	if esquivando_lateralmente:
 		distancia_lider = INF
 
-	# 2. Física base de avance y freno
+	# 1-2. Física base de avance, freno y comportamiento de carril (via _procesar_cambio_carril sobreescrito)
 	super._physics_process(delta)
 
 	if esquivando_lateralmente:
@@ -182,6 +179,10 @@ func _physics_process(delta: float) -> void:
 
 	# 3. Efectos visuales de moto: rodamiento de ruedas, giro de manubrio e inclinación en curva/esquiva
 	_actualizar_efectos_moto(delta)
+
+
+func _procesar_cambio_carril(delta: float) -> void:
+	_procesar_comportamiento_moto(delta)
 
 
 ## Lógica de adelantamiento, filtrado ("pasar por la mitad") y variación orgánica de acelerador
@@ -196,6 +197,7 @@ func _procesar_comportamiento_moto(delta: float) -> void:
 
 	var sensor_delante := _obtener_menor_distancia_sensores()
 	var espacio_frente := minf(distancia_lider, sensor_delante)
+	var bloqueo_jugador := _bloqueado_directo_por_jugador()
 
 	# Distancia a la cual la moto decide no frenar pasivamente sino esquivar/adelantar
 	var umbral_adelanto := 22.0 if perfil_actual == PerfilConduccion.REPARTIDOR else (18.0 if perfil_actual == PerfilConduccion.PROMEDIO else 14.0)
@@ -203,12 +205,12 @@ func _procesar_comportamiento_moto(delta: float) -> void:
 	match _estado_moto:
 		EstadoMoto.CRUCERO:
 			_desfase_objetivo = _desfase_crucero_base
-			if permitir_adelantamiento and espacio_frente < umbral_adelanto and not frenar_por_semaforo:
+			if permitir_adelantamiento and not bloqueo_jugador and espacio_frente < umbral_adelanto and not frenar_por_semaforo:
 				# REQUISITO ESTRICTO: Solo adelantar si hay otro carril paralelo en la misma dirección
 				var dir_fwd := -global_transform.basis.z.normalized()
 				var info_paralelo: Dictionary = {}
 				if network_manager != null and network_manager.has_method("obtener_info_carril_paralelo"):
-					info_paralelo = network_manager.obtener_info_carril_paralelo(camino, global_position, dir_fwd)
+					info_paralelo = network_manager.obtener_info_carril_paralelo(camino, global_position, dir_fwd, self)
 
 				if info_paralelo.get("encontrado", false):
 					_estado_moto = EstadoMoto.ADELANTANDO
@@ -225,20 +227,20 @@ func _procesar_comportamiento_moto(delta: float) -> void:
 			_tiempo_en_adelanto += delta
 			var avance_desde_inicio: float = fposmod(path_follow.progress - _progreso_inicio_adelanto, c_len)
 
-			# Condiciones para completar el adelantamiento y retornar:
-			if (espacio_frente > 14.0 and avance_desde_inicio > 16.0) or avance_desde_inicio > 26.0 or _tiempo_en_adelanto > 4.5:
+			# Condiciones para completar el adelantamiento o abortar solo si el jugador bloquea directamente:
+			if bloqueo_jugador or (espacio_frente > 14.0 and avance_desde_inicio > 16.0) or avance_desde_inicio > 26.0 or _tiempo_en_adelanto > 5.0:
 				_estado_moto = EstadoMoto.RETORNANDO
 				_desfase_objetivo = _desfase_crucero_base
 
 		EstadoMoto.RETORNANDO:
 			_desfase_objetivo = _desfase_crucero_base
-			if absf(path_follow.h_offset - _desfase_crucero_base) < 0.15:
+			if absf(_desfase_lateral_actual - _desfase_crucero_base) < 0.15:
 				_estado_moto = EstadoMoto.CRUCERO
 				_desfase_crucero_base = [-0.45, 0.45].pick_random()
 
-	# Desplazamiento lateral suave hacia _desfase_objetivo
-	var h_actual := path_follow.h_offset
-	path_follow.h_offset = move_toward(h_actual, _desfase_objetivo, velocidad_cambio_lateral * delta)
+	# Desplazamiento lateral suave usando _desfase_lateral_actual (perpendicular a la curva)
+	path_follow.h_offset = 0.0
+	_desfase_lateral_actual = move_toward(_desfase_lateral_actual, _desfase_objetivo, velocidad_cambio_lateral * delta)
 
 
 ## Cálculo de velocidad objetivo con variaciones orgánicas y ráfaga al adelantar
@@ -266,17 +268,24 @@ func _calcular_velocidad_objetivo() -> float:
 		if limite_ms > 0.0:
 			objetivo = minf(objetivo, limite_ms * 1.15) # Motos suelen superar levemente el límite
 
-	# Al adelantar con suficiente desfase lateral (|h_offset| > 1.1m), no nos frena el vehículo central del carril
-	var esquivando_lateralmente := (_estado_moto == EstadoMoto.ADELANTANDO and path_follow != null and absf(path_follow.h_offset) > 1.1)
+	# Al adelantar hacia carril despejado, no quedar clavada por el líder detenido del carril previo
+	var esquivando_lateralmente := (_estado_moto == EstadoMoto.ADELANTANDO and (absf(_desfase_lateral_actual) > 0.9 or not _bloqueado_directo_por_jugador()))
 
 	if not esquivando_lateralmente:
 		if distancia_lider < INF:
 			objetivo = minf(objetivo, _velocidad_segura(distancia_lider))
 
-	# Los sensores frontales inmediatos siempre protegen contra choque directo
+	# Los sensores frontales inmediatos siempre protegen contra choque directo o jugador
 	var sensor_corto := _obtener_menor_distancia_sensores()
-	if sensor_corto < INF:
+	var dist_jug_directo := _obtener_distancia_jugador_directa()
+	if dist_jug_directo <= 4.5 or _bloqueado_directo_por_jugador():
 		if sensor_corto <= distancia_raycast_corto:
+			objetivo = 0.0
+		elif sensor_corto < INF:
+			objetivo = minf(objetivo, _velocidad_segura(sensor_corto))
+	elif sensor_corto < INF:
+		var umbral_freno := 2.8 if _estado_moto == EstadoMoto.ADELANTANDO else distancia_raycast_corto
+		if sensor_corto <= umbral_freno:
 			objetivo = 0.0
 		elif not esquivando_lateralmente or sensor_corto < 7.0:
 			objetivo = minf(objetivo, _velocidad_segura(sensor_corto))
@@ -310,10 +319,8 @@ func _actualizar_efectos_moto(delta: float) -> void:
 
 	# 3. Inclinación dinámica de la moto (Banking / Roll)
 	if is_instance_valid(_nodo_visual):
-		var vel_lateral := 0.0
-		if path_follow != null:
-			vel_lateral = (path_follow.h_offset - _h_offset_anterior) / delta
-			_h_offset_anterior = path_follow.h_offset
+		var vel_lateral := (_desfase_lateral_actual - _h_offset_anterior) / delta
+		_h_offset_anterior = _desfase_lateral_actual
 
 		var factor_inclinacion := deg_to_rad(inclinacion_maxima_deg)
 		# Se inclina proporcionalmente a la curva de la carretera (angulo_ruedas) y a las esquivas rápidas (vel_lateral)

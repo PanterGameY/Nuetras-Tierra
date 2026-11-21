@@ -98,8 +98,12 @@ var _distancia_ray_cache: float = INF
 var _estado_carril: EstadoCarril = EstadoCarril.CARRIL_BASE
 var _desfase_lateral_actual: float = 0.0
 var _desfase_lateral_objetivo: float = 0.0
+var _desfase_inicio_cambio: float = 0.0
+var _duracion_cambio_carril: float = 2.4
+var _yaw_cambio_carril: float = 0.0
+var _carril_destino_cambio: Path3D = null
 var _tiempo_en_estado_carril: float = 0.0
-var _cooldown_cambio_carril: float = 8.0
+var _cooldown_cambio_carril: float = 2.5
 
 # ── Estado de cruce continuo entre Path3D separados ───────────────────────────
 var _cruzando_interseccion: bool = false
@@ -282,7 +286,7 @@ func _setup_sensores() -> void:
 		ray.position = cfg["pos"]
 		ray.target_position = cfg["tgt"]
 		ray.collision_mask = 7  # Capas 1 (Jugador/Terreno), 2 (Vehículos), 3 (Tráfico IA)
-		ray.hit_from_inside = false
+		ray.hit_from_inside = true
 		ray.enabled = true
 		ray.exclude_parent = true
 		ray.add_exception(self)
@@ -465,6 +469,8 @@ func setup_vehicle(manager: TrafficNetworkManager3D, start_lane: TrafficLane3D) 
 	luces_direccional_der = false
 	_desfase_lateral_actual = 0.0
 	_desfase_lateral_objetivo = 0.0
+	_yaw_cambio_carril = 0.0
+	_carril_destino_cambio = null
 	_estado_carril = EstadoCarril.CARRIL_BASE
 	visible = true
 	aplicar_apariencia_aleatoria()
@@ -492,6 +498,8 @@ func reset_for_pool(manager: TrafficNetworkManager3D, start_lane: TrafficLane3D,
 	luces_direccional_der = false
 	_desfase_lateral_actual = 0.0
 	_desfase_lateral_objetivo = 0.0
+	_yaw_cambio_carril = 0.0
+	_carril_destino_cambio = null
 	_estado_carril = EstadoCarril.CARRIL_BASE
 	_cooldown_cambio_carril = randf_range(12.0, 30.0)
 	visible = true
@@ -511,7 +519,7 @@ func activar(nuevo_path_follow: PathFollow3D, progreso_inicial: float, nuevo_sen
 	path_follow.progress = progreso_inicial
 	_desfase_lateral_actual = desfase_carril
 	_desfase_lateral_objetivo = desfase_carril
-	path_follow.h_offset = _desfase_lateral_actual * float(sentido)
+	path_follow.h_offset = 0.0
 	position = Vector3(0.0, offset_y, 0.0)
 	rotation = Vector3(0.0, 0.0 if sentido > 0 else PI, 0.0)
 	velocidad_actual = velocidad_crucero * multiplicador_velocidad
@@ -520,10 +528,12 @@ func activar(nuevo_path_follow: PathFollow3D, progreso_inicial: float, nuevo_sen
 	luces_stop = false
 	luces_direccional_izq = false
 	luces_direccional_der = false
+	_yaw_cambio_carril = 0.0
+	_carril_destino_cambio = null
 	_estado_carril = EstadoCarril.CARRIL_BASE
 	_cruzando_interseccion = false
 	_cruce_camino_destino = null
-	_cooldown_cambio_carril = randf_range(10.0, 25.0)
+	_cooldown_cambio_carril = randf_range(1.5, 4.0)
 	visible = true
 	aplicar_apariencia_aleatoria()
 	set_physics_process(true)
@@ -544,6 +554,8 @@ func desactivar() -> void:
 	luces_direccional_der = false
 	_desfase_lateral_actual = 0.0
 	_desfase_lateral_objetivo = 0.0
+	_yaw_cambio_carril = 0.0
+	_carril_destino_cambio = null
 	_estado_carril = EstadoCarril.CARRIL_BASE
 	rotation.y = 0.0
 	if path_follow != null:
@@ -662,19 +674,25 @@ func _physics_process(delta: float) -> void:
 	_procesar_cambio_carril(delta)
 
 	# 2. Cálculo de velocidad objetivo y frenado progresivo
-	var en_carril_adelanto := (absf(_desfase_lateral_actual) > 1.8)
+	var saliendo_al_carril := (_estado_carril == EstadoCarril.CAMBIANDO and not _bloqueado_directo_por_jugador())
+	var en_carril_adelanto := (absf(_desfase_lateral_actual) > 1.7) or (saliendo_al_carril and _tiempo_en_estado_carril >= _duracion_cambio_carril * 0.45)
 	var dist_lider_backup := distancia_lider
 	if en_carril_adelanto:
 		distancia_lider = INF
 
 	var velocidad_objetivo := _calcular_velocidad_objetivo()
+	var menor_ray := _obtener_menor_distancia_sensores()
+	var dist_jug_directo := _obtener_distancia_jugador_directa()
+	if saliendo_al_carril and menor_ray > 3.0 and dist_jug_directo > 4.5:
+		var vel_maniobra := lerpf(5.5, velocidad_crucero * 1.12, clampf(_tiempo_en_estado_carril / maxf(_duracion_cambio_carril, 0.6), 0.0, 1.0))
+		velocidad_objetivo = maxf(velocidad_objetivo, vel_maniobra)
 
 	if en_carril_adelanto:
 		distancia_lider = dist_lider_backup
 
-	var menor_ray := _obtener_menor_distancia_sensores()
 	var espacio_frente := minf(distancia_lider, menor_ray)
-	var debe_detenerse := (velocidad_objetivo <= 0.1 or espacio_frente <= distancia_minima)
+	var dist_parada_efectiva := 2.9 if (saliendo_al_carril and dist_jug_directo > 4.5) else distancia_minima
+	var debe_detenerse := (velocidad_objetivo <= 0.1 or espacio_frente <= dist_parada_efectiva)
 
 	if debe_detenerse:
 		# Frenado sólido inmediato: si va a baja velocidad o muy cerca del líder, PARADA TOTAL (0.0)
@@ -777,7 +795,7 @@ func _physics_process(delta: float) -> void:
 			else:
 				path_follow.progress = nuevo_prog
 
-		path_follow.h_offset = _desfase_lateral_actual * float(sentido)
+		path_follow.h_offset = 0.0
 		_actualizar_direccion_y_fisica_path(delta)
 
 	# 3. Adherencia al suelo: en LOD 0 y 1, adaptado; en LOD 2 omitido
@@ -797,19 +815,53 @@ func _physics_process(delta: float) -> void:
 		_actualizar_etiqueta(delta)
 
 
-## Lógica de cambio de carril, sobrepaso y señalización con direccionales
+## Indica si el propio vehículo está detenido directamente por el jugador, semáforo o accidente (no impide adelantar tacos en otro carril libre)
+func _bloqueado_directo_por_jugador() -> bool:
+	if frenar_por_semaforo or _en_choque:
+		return true
+	if _ultimo_col_ray != null and _es_jugador_o_camion_jugador(_ultimo_col_ray):
+		return true
+	if _obtener_distancia_jugador_directa() <= 13.0:
+		return true
+	return false
+
+
+## Lógica de cambio de carril fluido estilo ATS/ETS2 con curva en S y traspaso real de Path3D
 func _procesar_cambio_carril(delta: float) -> void:
 	if not permitir_cambio_carril:
+		_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 1.5)
 		_desfase_lateral_objetivo = 0.0
 		_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
 		return
 
-	# Prohibido iniciar adelantamientos o cambios de carril en curvas, rotondas, cruces o cerca de rotondas
+	# Si el jugador bloquea directamente al vehículo frente a frente (o hay semáforo/choque), mantener fila sin atravesarlo
+	if _bloqueado_directo_por_jugador():
+		_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 2.0)
+		if _estado_carril == EstadoCarril.CARRIL_BASE or _estado_carril == EstadoCarril.PREPARANDO_CAMBIO or (_estado_carril == EstadoCarril.CAMBIANDO and absf(_desfase_lateral_actual) < 1.5):
+			_carril_destino_cambio = null
+			_desfase_lateral_objetivo = 0.0
+			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
+			luces_direccional_izq = false
+			luces_direccional_der = false
+			if absf(_desfase_lateral_actual) < 0.05:
+				_desfase_lateral_actual = 0.0
+				_estado_carril = EstadoCarril.CARRIL_BASE
+			else:
+				_desfase_inicio_cambio = _desfase_lateral_actual
+				_duracion_cambio_carril = 1.6
+				_estado_carril = EstadoCarril.RETORNANDO
+				_tiempo_en_estado_carril = 0.0
+			_cooldown_cambio_carril = maxf(_cooldown_cambio_carril, 3.0)
+			return
+
+	# Prohibido iniciar adelantamientos o cambios de carril en rotondas, cruces o curvas cerradas
 	var cerca_rotonda: bool = false
 	if network_manager != null and network_manager.has_method("_esta_en_zona_rotonda"):
-		cerca_rotonda = bool(network_manager._esta_en_zona_rotonda(global_position, 120.0))
-	if _cruzando_interseccion or cerca_rotonda or absf(angulo_ruedas) > deg_to_rad(4.0):
+		cerca_rotonda = bool(network_manager._esta_en_zona_rotonda(global_position, 48.0))
+	if _cruzando_interseccion or cerca_rotonda or absf(angulo_ruedas) > deg_to_rad(6.5):
 		if _estado_carril == EstadoCarril.CARRIL_BASE or _estado_carril == EstadoCarril.PREPARANDO_CAMBIO:
+			_carril_destino_cambio = null
+			_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 2.0)
 			_desfase_lateral_objetivo = 0.0
 			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
 			luces_direccional_izq = false
@@ -819,65 +871,97 @@ func _procesar_cambio_carril(delta: float) -> void:
 	if _cooldown_cambio_carril > 0.0:
 		_cooldown_cambio_carril -= delta
 
+	var camino_actual: Path3D = null
+	if current_lane != null:
+		camino_actual = current_lane
+	elif path_follow != null:
+		camino_actual = path_follow.get_parent() as Path3D
+
 	match _estado_carril:
 		EstadoCarril.CARRIL_BASE:
+			_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 2.0)
 			_desfase_lateral_objetivo = 0.0
 			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
 
-			# Solo evaluar sobrepaso si hay otro vehículo IA lento delante (nunca esquivar al jugador cambiando de carril)
-			if _cooldown_cambio_carril <= 0.0 and velocidad_actual > 3.0 and not frenar_por_semaforo:
+			# Evaluar adelantamiento tanto en movimiento lento como atrapado en un taco cuando hay carril paralelo despejado
+			if _cooldown_cambio_carril <= 0.0 and not frenar_por_semaforo:
 				var menor_ray := _obtener_menor_distancia_sensores()
-				var hay_jugador_o_bloqueo := (_ultimo_col_ray != null and not (_ultimo_col_ray is VehiculoTraficoIA))
 				var obstaculo := minf(distancia_lider, menor_ray)
-				if not hay_jugador_o_bloqueo and obstaculo < 26.0 and obstaculo > distancia_raycast_corto:
-					# REQUISITO: El adelantamiento ÚNICAMENTE debe ser si tiene otro path cercano en la misma dirección
-					var camino_actual: Path3D = null
-					if current_lane != null:
-						camino_actual = current_lane
-					elif path_follow != null:
-						camino_actual = path_follow.get_parent() as Path3D
-
+				var en_taco := (_tiempo_detenido > 0.8 and obstaculo < 22.0)
+				var quiere_adelantar := (not _bloqueado_directo_por_jugador() and obstaculo < 28.0 and (en_taco or velocidad_actual < velocidad_crucero * 0.88 or obstaculo < 18.0))
+				if quiere_adelantar and camino_actual != null:
 					var dir_fwd := -global_transform.basis.z.normalized()
 					var info_paralelo: Dictionary = {}
 					if network_manager != null and network_manager.has_method("obtener_info_carril_paralelo"):
-						info_paralelo = network_manager.obtener_info_carril_paralelo(camino_actual, global_position, dir_fwd)
+						info_paralelo = network_manager.obtener_info_carril_paralelo(camino_actual, global_position, dir_fwd, self, 0.0)
 
 					if info_paralelo.get("encontrado", false):
 						var d_lat: float = info_paralelo.get("distancia", ancho_carril)
 						var lado: float = info_paralelo.get("lado", -1.0)
+						_carril_destino_cambio = info_paralelo.get("path", null) as Path3D
+						_desfase_inicio_cambio = _desfase_lateral_actual
 						_desfase_lateral_objetivo = d_lat * lado
+						_duracion_cambio_carril = clampf(d_lat / maxf(velocidad_cambio_lateral * 1.6, 1.8), 1.8, 2.8)
 						luces_direccional_izq = (lado < 0.0)
 						luces_direccional_der = (lado > 0.0)
 						_estado_carril = EstadoCarril.PREPARANDO_CAMBIO
 						_tiempo_en_estado_carril = 0.0
 					else:
-						# NO hay vía paralela en la misma dirección: no adelantar, mantenerse 100% centrado en el carril
 						_desfase_lateral_objetivo = 0.0
-						_cooldown_cambio_carril = randf_range(6.0, 12.0)
+						_cooldown_cambio_carril = randf_range(1.2, 2.5)
 
 		EstadoCarril.PREPARANDO_CAMBIO:
 			_tiempo_en_estado_carril += delta
+			_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 2.0)
 			luces_direccional_izq = (_desfase_lateral_objetivo < 0.0)
 			luces_direccional_der = (_desfase_lateral_objetivo > 0.0)
+			if is_instance_valid(_carril_destino_cambio) and network_manager != null and network_manager.has_method("carril_paralelo_despejado"):
+				var off_d := _carril_destino_cambio.curve.get_closest_offset(_carril_destino_cambio.to_local(global_position))
+				if not network_manager.carril_paralelo_despejado(_carril_destino_cambio, off_d, self):
+					_estado_carril = EstadoCarril.CARRIL_BASE
+					_carril_destino_cambio = null
+					luces_direccional_izq = false
+					luces_direccional_der = false
+					_cooldown_cambio_carril = 2.0
+					return
 			if _tiempo_en_estado_carril >= duracion_direccional_previa:
 				_estado_carril = EstadoCarril.CAMBIANDO
 				_tiempo_en_estado_carril = 0.0
 
 		EstadoCarril.CAMBIANDO:
-			_tiempo_en_estado_carril += delta
-			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, _desfase_lateral_objetivo, velocidad_cambio_lateral * delta)
-			if absf(_desfase_lateral_actual - _desfase_lateral_objetivo) < 0.05:
+			var factor_avance_lat := clampf(maxf(velocidad_actual, 2.0) / 4.5, 0.45, 1.15)
+			_tiempo_en_estado_carril += delta * factor_avance_lat
+			var dur: float = maxf(_duracion_cambio_carril, 0.6)
+			var t: float = clampf(_tiempo_en_estado_carril / dur, 0.0, 1.0)
+			var s: float = t * t * (3.0 - 2.0 * t)
+			_desfase_lateral_actual = lerpf(_desfase_inicio_cambio, _desfase_lateral_objetivo, s)
+			var vel_lat: float = (_desfase_lateral_objetivo - _desfase_inicio_cambio) * 6.0 * t * (1.0 - t) * factor_avance_lat / dur
+			_yaw_cambio_carril = clampf(-atan2(vel_lat, maxf(velocidad_actual, 5.5)), -deg_to_rad(15.0), deg_to_rad(15.0))
+
+			if t >= 1.0:
+				_yaw_cambio_carril = 0.0
+				luces_direccional_izq = false
+				luces_direccional_der = false
+				if is_instance_valid(_carril_destino_cambio) and network_manager != null and network_manager.has_method("completar_cambio_carril_a_camino"):
+					if network_manager.completar_cambio_carril_a_camino(self, _carril_destino_cambio):
+						_desfase_lateral_actual = 0.0
+						_desfase_lateral_objetivo = 0.0
+						_carril_destino_cambio = null
+						_estado_carril = EstadoCarril.CARRIL_BASE
+						_tiempo_en_estado_carril = 0.0
+						_cooldown_cambio_carril = randf_range(7.0, 14.0)
+						return
 				_desfase_lateral_actual = _desfase_lateral_objetivo
 				_estado_carril = EstadoCarril.ADELANTANDO
 				_tiempo_en_estado_carril = 0.0
-				luces_direccional_izq = false
-				luces_direccional_der = false
 
 		EstadoCarril.ADELANTANDO:
 			_tiempo_en_estado_carril += delta
-			# Mantenerse en el carril paralelo durante al menos 6s y hasta dejar atrás al líder
-			if _tiempo_en_estado_carril >= 6.0 and distancia_lider > 22.0:
+			_yaw_cambio_carril = move_toward(_yaw_cambio_carril, 0.0, delta * 2.0)
+			if _tiempo_en_estado_carril >= 5.0 and distancia_lider > 22.0:
+				_desfase_inicio_cambio = _desfase_lateral_actual
 				_desfase_lateral_objetivo = 0.0
+				_duracion_cambio_carril = 2.0
 				luces_direccional_der = (_desfase_lateral_actual < 0.0)
 				luces_direccional_izq = (_desfase_lateral_actual > 0.0)
 				_estado_carril = EstadoCarril.RETORNANDO
@@ -885,13 +969,21 @@ func _procesar_cambio_carril(delta: float) -> void:
 
 		EstadoCarril.RETORNANDO:
 			_tiempo_en_estado_carril += delta
-			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, _desfase_lateral_objetivo, velocidad_cambio_lateral * delta)
-			if absf(_desfase_lateral_actual - _desfase_lateral_objetivo) < 0.05:
+			var dur_r: float = maxf(_duracion_cambio_carril, 0.6)
+			var t_r: float = clampf(_tiempo_en_estado_carril / dur_r, 0.0, 1.0)
+			var s_r: float = t_r * t_r * (3.0 - 2.0 * t_r)
+			_desfase_lateral_actual = lerpf(_desfase_inicio_cambio, _desfase_lateral_objetivo, s_r)
+			var vel_lat_r: float = (_desfase_lateral_objetivo - _desfase_inicio_cambio) * 6.0 * t_r * (1.0 - t_r) / dur_r
+			_yaw_cambio_carril = clampf(-atan2(vel_lat_r, maxf(velocidad_actual, 6.0)), -deg_to_rad(14.0), deg_to_rad(14.0))
+
+			if t_r >= 1.0:
 				_desfase_lateral_actual = 0.0
+				_yaw_cambio_carril = 0.0
+				_carril_destino_cambio = null
 				_estado_carril = EstadoCarril.CARRIL_BASE
 				luces_direccional_izq = false
 				luces_direccional_der = false
-				_cooldown_cambio_carril = randf_range(20.0, 40.0)
+				_cooldown_cambio_carril = randf_range(12.0, 22.0)
 
 
 ## Ajuste dinámico de adherencia al suelo (ruedas firmes sobre el asfalto)
@@ -1151,6 +1243,12 @@ func _actualizar_direccion_y_fisica_path(delta: float) -> void:
 				if sentido < 0:
 					dir_chasis = -dir_chasis
 				var target_basis := Basis.looking_at(dir_chasis.normalized(), Vector3.UP)
+				# Aplicar desfase lateral siempre perpendicular a la vía (evita desviarse hacia aceras cuando ROTATION_NONE)
+				var offset_local := path_follow.to_local(path_follow.global_position + (target_basis.x.normalized() * _desfase_lateral_actual))
+				position.x = offset_local.x
+				position.z = offset_local.z
+				if absf(_yaw_cambio_carril) > 0.001:
+					target_basis = target_basis.rotated(Vector3.UP, _yaw_cambio_carril)
 				# Inercia angular pesada y continua de camión (sin saltos ni interferencias de riel)
 				var factor_suave := 1.0 if delta >= 1.0 else clampf(delta * 5.5, 0.0, 1.0)
 				global_transform.basis = global_transform.basis.slerp(target_basis, factor_suave)
@@ -1243,8 +1341,54 @@ func _obtener_menor_distancia_sensores() -> float:
 						menor = d
 						_ultimo_col_ray = col
 
+	var info_jug := _obtener_info_jugador_directa()
+	var dist_jug_dir: float = info_jug.get("dist", INF)
+	if dist_jug_dir < menor:
+		menor = dist_jug_dir
+		_ultimo_col_ray = info_jug.get("obj", null)
+
 	_distancia_ray_cache = menor
-	return menor
+	return _distancia_ray_cache
+
+
+func _obtener_distancia_jugador_directa() -> float:
+	return float(_obtener_info_jugador_directa().get("dist", INF))
+
+
+## Barrera geométrica directa en espacio local contra el jugador (o su vehículo) para impedir que lo atraviesen a corta distancia
+func _obtener_info_jugador_directa() -> Dictionary:
+	if distancia_al_jugador > 35.0 or not is_inside_tree():
+		return {"dist": INF, "obj": null}
+	var jugador_node: Node3D = null
+	if network_manager != null and network_manager.has_method("_find_player"):
+		jugador_node = network_manager._find_player() as Node3D
+	elif get_tree() != null:
+		jugador_node = get_tree().get_first_node_in_group("jugador") as Node3D
+	if not is_instance_valid(jugador_node):
+		return {"dist": INF, "obj": null}
+
+	var objetivos: Array[Node3D] = [jugador_node]
+	var veh_conducido = jugador_node.get("_vehiculo_actual")
+	if veh_conducido is Node3D and is_instance_valid(veh_conducido):
+		objetivos.append(veh_conducido as Node3D)
+
+	var mitad_largo: float = longitud_vehiculo * 0.5
+	var menor_j: float = INF
+	var mejor_obj: Object = null
+	for obj in objetivos:
+		var loc := to_local(obj.global_position)
+		if absf(loc.y) > 3.2:
+			continue
+		var semiancho: float = 2.1 if obj != jugador_node else 1.65
+		if absf(loc.x) > semiancho:
+			continue
+		# Adelante del vehículo es -Z. Cubrir desde la cabina (0.25) hasta 24m delante del parachoques frontal (-mitad_largo)
+		if loc.z <= 0.25 and loc.z >= -(mitad_largo + 24.0):
+			var dist_frontal: float = maxf(-loc.z - mitad_largo, 0.0)
+			if dist_frontal < menor_j:
+				menor_j = dist_frontal
+				mejor_obj = obj
+	return {"dist": menor_j, "obj": mejor_obj}
 
 
 func _es_obstaculo_valido(col: Object) -> bool:

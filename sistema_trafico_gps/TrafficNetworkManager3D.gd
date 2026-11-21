@@ -326,10 +326,9 @@ func _physics_process(delta: float) -> void:
 					if otro_veh.sentido != veh.sentido:
 						continue
 
-					# Si los dos vehículos están en carriles distintos (|h_offset| diff > 1.8m), no se bloquean
-					if is_instance_valid(pf) and is_instance_valid(otro_pf):
-						if absf(pf.h_offset - otro_pf.h_offset) > 1.8:
-							continue
+					# Si los dos vehículos están en carriles distintos (desfase lateral diff > 1.8m), no se bloquean
+					if absf(veh._desfase_lateral_actual - otro_veh._desfase_lateral_actual) > 1.8:
+						continue
 
 					var otro_prog: float = otro["prog"]
 					var dist_adelante: float
@@ -379,33 +378,192 @@ func _physics_process(delta: float) -> void:
 				lider_grupo.distancia_lider = INF
 
 
+## Indica si hay un vehículo detenido/frenando o el jugador bloqueando la vía delante de `veh`
+func hay_vehiculo_detenido_o_bloqueo_adelante(veh: VehiculoTraficoIA, max_dist: float = 55.0) -> bool:
+	if not is_instance_valid(veh):
+		return false
+
+	var dir_veh: Vector3 = -veh.global_transform.basis.z
+	dir_veh.y = 0.0
+	if dir_veh.length_squared() > 0.001:
+		dir_veh = dir_veh.normalized()
+
+	# 1. Revisar si el jugador o su vehículo conducido están bloqueando por delante
+	var player := _find_player()
+	if player != null and is_instance_valid(player):
+		var rel_p: Vector3 = player.global_position - veh.global_position
+		rel_p.y = 0.0
+		var d_p: float = rel_p.length()
+		if d_p > 0.1 and d_p <= max_dist and dir_veh.length_squared() > 0.5:
+			var fwd_p: float = rel_p.dot(dir_veh)
+			var lat_p: float = absf(rel_p.cross(dir_veh).y)
+			if fwd_p > 0.0 and lat_p <= 5.0:
+				return true
+
+	var idx := _pool_vehiculos.find(veh)
+	if idx == -1 or idx >= _pool_path_follows.size():
+		return false
+	var pf := _pool_path_follows[idx]
+	if not is_instance_valid(pf):
+		return false
+	var camino := pf.get_parent() as Path3D
+	if camino == null or camino.curve == null:
+		return false
+
+	var c_len := camino.curve.get_baked_length()
+	var es_cerrado := c_len > 0.0 and camino.curve.sample_baked(0.0).distance_to(camino.curve.sample_baked(c_len)) < 15.0
+	var prog := pf.progress
+
+	for i in range(_pool_vehiculos.size()):
+		var otro := _pool_vehiculos[i] as VehiculoTraficoIA
+		if not is_instance_valid(otro) or otro == veh or not otro.visible:
+			continue
+		var otro_pf := _pool_path_follows[i]
+		if not is_instance_valid(otro_pf) or otro_pf.get_parent() != camino:
+			continue
+		if otro.sentido != veh.sentido:
+			continue
+		if absf(veh._desfase_lateral_actual - otro._desfase_lateral_actual) > 2.2:
+			continue
+
+		var dist_adelante: float
+		if es_cerrado:
+			dist_adelante = fposmod((otro_pf.progress - prog) * float(veh.sentido), c_len)
+		else:
+			dist_adelante = (otro_pf.progress - prog) * float(veh.sentido)
+			if dist_adelante <= 0.0:
+				continue
+
+		if dist_adelante <= max_dist:
+			if otro.velocidad_actual < 4.5 or otro.luces_stop or otro._tiempo_detenido > 0.1 or otro.frenar_por_semaforo or otro._es_jugador_o_camion_jugador(otro._ultimo_col_ray):
+				return true
+
+	return false
+
+
+func _punto_sobre_asfalto(space: PhysicsDirectSpaceState3D, pt: Vector3) -> bool:
+	if space == null:
+		return true
+	var q := PhysicsRayQueryParameters3D.create(pt + Vector3(0.0, 4.0, 0.0), pt - Vector3(0.0, 4.0, 0.0), 1)
+	var hit := space.intersect_ray(q)
+	if hit.is_empty():
+		return false
+	var col_obj: Object = hit["collider"]
+	var col_name: String = str(col_obj.get_parent().name).to_lower() if (col_obj is Node and col_obj.get_parent()) else str(col_obj).to_lower()
+	return col_name.contains("carretera") or col_name.contains("asfalto") or col_name.contains("calle") or col_name.contains("rotonda") or col_name.contains("trocha")
+
+
+func carril_paralelo_despejado(cam: Path3D, offset_p: float, ignorar_veh: VehiculoTraficoIA) -> bool:
+	if not is_instance_valid(cam) or cam.curve == null:
+		return false
+	var c_len := cam.curve.get_baked_length()
+	var es_cerrado := _es_rotonda(cam) or cam.curve.sample_baked(0.0).distance_to(cam.curve.sample_baked(c_len)) < 15.0
+	var pt_ref := cam.to_global(cam.curve.sample_baked(offset_p))
+	var pt_ref_fwd := cam.to_global(cam.curve.sample_baked(minf(offset_p + 4.0, c_len)))
+	var dir_cam := pt_ref_fwd - pt_ref
+	dir_cam.y = 0.0
+	dir_cam = dir_cam.normalized() if dir_cam.length_squared() > 0.001 else Vector3.FORWARD
+
+	# Solo bloquear el carril paralelo si el jugador o su vehículo ocupan físicamente ese corredor o tocan el coche
+	var player := _find_player()
+	if player != null and is_instance_valid(player):
+		var objetivos_pl: Array[Node3D] = [player]
+		var p_veh = player.get("_vehiculo_actual")
+		if p_veh is Node3D and is_instance_valid(p_veh):
+			objetivos_pl.append(p_veh as Node3D)
+		for obj_pl in objetivos_pl:
+			if is_instance_valid(ignorar_veh) and obj_pl.global_position.distance_to(ignorar_veh.global_position) < 5.5:
+				return false
+			var rel_pl := obj_pl.global_position - pt_ref
+			rel_pl.y = 0.0
+			var fwd_pl := rel_pl.dot(dir_cam)
+			var lat_pl := absf(rel_pl.cross(dir_cam).y)
+			if fwd_pl >= -10.0 and fwd_pl <= 38.0 and lat_pl <= 3.6:
+				return false
+
+	for i in range(_pool_vehiculos.size()):
+		var v := _pool_vehiculos[i] as VehiculoTraficoIA
+		var pf := _pool_path_follows[i]
+		if not is_instance_valid(v) or not is_instance_valid(pf) or not v.visible or v == ignorar_veh:
+			continue
+		var en_cam: bool = (pf.get_parent() == cam or v._cruce_camino_destino == cam)
+		var reservando_cam: bool = (v._carril_destino_cambio == cam and (v._estado_carril == VehiculoTraficoIA.EstadoCarril.PREPARANDO_CAMBIO or v._estado_carril == VehiculoTraficoIA.EstadoCarril.CAMBIANDO))
+		if not en_cam and not reservando_cam:
+			continue
+		var v_off: float = pf.progress if pf.get_parent() == cam else cam.curve.get_closest_offset(cam.to_local(v.global_position))
+		var diff_signed: float = v_off - offset_p
+		if es_cerrado and c_len > 0.0:
+			diff_signed = fposmod(diff_signed + c_len * 0.5, c_len) - c_len * 0.5
+		if diff_signed >= -20.0 and diff_signed <= 38.0:
+			return false
+	return true
+
+
+func completar_cambio_carril_a_camino(veh: VehiculoTraficoIA, camino_dest: Path3D) -> bool:
+	if not is_instance_valid(veh) or not is_instance_valid(camino_dest) or camino_dest.curve == null:
+		return false
+	var idx := _pool_vehiculos.find(veh)
+	if idx == -1 or idx >= _pool_path_follows.size():
+		return false
+	var pf := _pool_path_follows[idx]
+	if not is_instance_valid(pf):
+		return false
+
+	var pos_mundo := veh.global_position
+	var rot_mundo := veh.global_transform.basis
+	var nuevo_offset := camino_dest.curve.get_closest_offset(camino_dest.to_local(pos_mundo))
+
+	if pf.get_parent() != camino_dest:
+		pf.reparent(camino_dest, false)
+	_pool_caminos_asignados[idx] = camino_dest
+	pf.h_offset = 0.0
+	pf.progress = nuevo_offset
+	veh.sentido = 1
+	veh.position = Vector3(0.0, veh.position.y, 0.0)
+	veh.global_transform.basis = rot_mundo
+	return true
+
+
 ## Determina si existe un carril paralelo contiguo en la misma dirección hacia donde se puede adelantar
-func obtener_info_carril_paralelo(camino_origen: Path3D, pos_global: Vector3, dir_adelante: Vector3) -> Dictionary:
+func obtener_info_carril_paralelo(camino_origen: Path3D, pos_global: Vector3, dir_adelante: Vector3, ignorar_veh: VehiculoTraficoIA = null, solo_lado: float = 0.0) -> Dictionary:
 	var mejor_candidato: Dictionary = {"encontrado": false}
 	var menor_dist: float = INF
 
+	var mundo := get_world_3d()
+	var space: PhysicsDirectSpaceState3D = mundo.direct_space_state if mundo else null
+
 	for p in all_paths:
-		if not is_instance_valid(p) or p == camino_origen or p.curve == null or not p.is_inside_tree():
+		if not is_instance_valid(p) or p == camino_origen or p.curve == null or not p.is_inside_tree() or _es_rotonda(p):
 			continue
 
 		var loc := p.to_local(pos_global)
 		var offset_p := p.curve.get_closest_offset(loc)
+		var c_len := p.curve.get_baked_length()
+		if c_len - offset_p < 35.0:
+			continue
 		var pt_p := p.to_global(p.curve.sample_baked(offset_p))
 		var d_3d := pos_global.distance_to(pt_p)
 
-		# Un carril paralelo contiguo en la red vial típicamente se encuentra entre 2.2m y 7.0m
-		if d_3d >= 2.0 and d_3d <= 7.0 and d_3d < menor_dist:
-			var c_len := p.curve.get_baked_length()
-			var off_adelante := minf(offset_p + 3.0, c_len)
+		# Un carril paralelo contiguo en la red vial típicamente se encuentra entre 2.5m y 6.8m
+		if d_3d >= 2.5 and d_3d <= 6.8 and d_3d < menor_dist:
+			var off_adelante := minf(offset_p + 4.0, c_len)
 			var pt_adelante := p.to_global(p.curve.sample_baked(off_adelante))
 			var dir_p := (pt_adelante - pt_p).normalized()
 			var dot_val := dir_adelante.dot(dir_p)
 
-			if dot_val > 0.75 and not _hay_vehiculo_cerca_en_camino(p, offset_p, 22.0, null): # Misma dirección y carril paralelo despejado
+			if dot_val > 0.88 and carril_paralelo_despejado(p, offset_p, ignorar_veh):
 				var to_other := (pt_p - pos_global)
 				var cross_y := dir_adelante.cross(to_other).y
 				# En Godot, cross(forward, right).y < 0; si cross_y > 0 está a la izquierda
 				var lado: float = -1.0 if cross_y > 0.0 else 1.0 # -1 izquierda, +1 derecha
+				if solo_lado != 0.0 and signf(lado) != signf(solo_lado):
+					continue
+
+				# Verificar que tanto el punto destino como 18m más adelante pisen asfalto real (nunca acera ni muro)
+				var pt_p_fwd := p.to_global(p.curve.sample_baked(minf(offset_p + 18.0, c_len)))
+				if not _punto_sobre_asfalto(space, pt_p) or not _punto_sobre_asfalto(space, pt_p_fwd):
+					continue
+
 				menor_dist = d_3d
 				mejor_candidato = {
 					"encontrado": true,

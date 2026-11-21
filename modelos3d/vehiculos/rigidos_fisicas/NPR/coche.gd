@@ -352,6 +352,11 @@ func _physics_process(delta: float) -> void:
 		global_rotation.z = lerp_angle(global_rotation.z, _rot_objetivo.z, delta * 20.0)
 		return
 
+	var gv_seg := get_node_or_null("/root/GestorVehiculos")
+	if gv_seg and gv_seg.has_method("asegurar_vehiculo_sobre_mapa"):
+		var prev_seg: Vector3 = get_meta("_pos_segura_mapa", Vector3.ZERO)
+		set_meta("_pos_segura_mapa", gv_seg.asegurar_vehiculo_sobre_mapa(self, prev_seg))
+
 	if not activo:
 		return
 

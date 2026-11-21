@@ -41,6 +41,7 @@ var llantas_motrices: Array[RayCast3D] = []
 # --- Variables de Control y Estado ---
 var _ruedas_todas: Array[RayCast3D] = []
 var _vel_previa: Vector3 = Vector3.ZERO
+var _pos_segura_mapa: Vector3 = Vector3.ZERO
 var _jugador_cam_node: Camera3D = null
 var _jugador_cam_original_parent: Node = null
 var _jugador_cam_original_global_transform: Transform3D = Transform3D()
@@ -106,6 +107,9 @@ func _buscar_ruedas_recursivo(node: Node) -> void:
 		_buscar_ruedas_recursivo(child)
 
 func _physics_process(delta: float) -> void:
+	var gv_seg = get_node_or_null("/root/GestorVehiculos")
+	if gv_seg and gv_seg.has_method("asegurar_vehiculo_sobre_mapa"):
+		_pos_segura_mapa = gv_seg.asegurar_vehiculo_sobre_mapa(self, _pos_segura_mapa)
 	if not activo:
 		return
 	

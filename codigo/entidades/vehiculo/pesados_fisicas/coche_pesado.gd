@@ -81,6 +81,7 @@ var llantas_motrices: Array[RayCast3D] = []
 # --- Variables de Control y Estado ---
 var _ruedas_todas: Array[RayCast3D] = []
 var _vel_previa: Vector3 = Vector3.ZERO
+var _pos_segura_mapa: Vector3 = Vector3.ZERO
 var _jugador_cam_node: Camera3D = null
 var _jugador_cam_original_parent: Node = null
 var _jugador_cam_original_global_transform: Transform3D = Transform3D()
@@ -162,8 +163,11 @@ func _physics_process(delta: float) -> void:
 		_activar_luces(activo)
 		return
 
-	# Failsafe anti-abismo: si el camión cae por debajo del mapa por algún glitch de colisión
-	if global_position.y < -12.0:
+	# Failsafe anti-abismo / anti-traspaso bajo vías sobre suelo estático real
+	var gv_seg = _get_gv()
+	if gv_seg and gv_seg.has_method("asegurar_vehiculo_sobre_mapa"):
+		_pos_segura_mapa = gv_seg.asegurar_vehiculo_sobre_mapa(self, _pos_segura_mapa)
+	elif global_position.y < -12.0:
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
 		global_position.y = 2.0

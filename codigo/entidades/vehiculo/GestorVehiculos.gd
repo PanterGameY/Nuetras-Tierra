@@ -103,25 +103,23 @@ func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salid
 			cam.make_current()
 
 
-func _ajustar_salida_sobre_suelo(jugador: Node3D, vehiculo: Node3D, pos: Vector3) -> Vector3:
-	var mundo := jugador.get_world_3d()
+func _raycast_estatico_vertical(nodo_ref: Node3D, xz: Vector3, y_desde: float, y_hasta: float, excl_extra: Array[RID] = []) -> Dictionary:
+	if not is_instance_valid(nodo_ref) or not nodo_ref.is_inside_tree():
+		return {}
+	var mundo := nodo_ref.get_world_3d()
 	if not mundo or not mundo.direct_space_state:
-		return pos
+		return {}
 	var space := mundo.direct_space_state
-	var excl: Array[RID] = []
-	if jugador is CollisionObject3D:
-		excl.append((jugador as CollisionObject3D).get_rid())
-	if is_instance_valid(vehiculo) and vehiculo is CollisionObject3D:
-		excl.append((vehiculo as CollisionObject3D).get_rid())
-	var ref_y: float = pos.y
-	if is_instance_valid(vehiculo):
-		ref_y = maxf(ref_y, vehiculo.global_position.y)
-	var y_origen: float = ref_y + 10.0
-	var y_fin: float = ref_y - 25.0
+	var excl: Array[RID] = excl_extra.duplicate()
+	if nodo_ref is CollisionObject3D:
+		excl.append((nodo_ref as CollisionObject3D).get_rid())
+	var y_origen: float = y_desde
 	for _i in range(6):
+		if y_origen <= y_hasta:
+			break
 		var q := PhysicsRayQueryParameters3D.create(
-			Vector3(pos.x, y_origen, pos.z),
-			Vector3(pos.x, y_fin, pos.z),
+			Vector3(xz.x, y_origen, xz.z),
+			Vector3(xz.x, y_hasta, xz.z),
 			1,
 			excl
 		)
@@ -136,9 +134,76 @@ func _ajustar_salida_sobre_suelo(jugador: Node3D, vehiculo: Node3D, pos: Vector3
 			continue
 		var norm: Vector3 = res["normal"]
 		if norm.y >= 0.45:
-			var out := pos
-			out.y = (res["position"] as Vector3).y + 0.15
-			return out
+			return res
 		excl.append(res["rid"])
 		y_origen = (res["position"] as Vector3).y - 0.05
+	return {}
+
+
+func _ajustar_salida_sobre_suelo(jugador: Node3D, vehiculo: Node3D, pos: Vector3) -> Vector3:
+	var excl: Array[RID] = []
+	if is_instance_valid(vehiculo) and vehiculo is CollisionObject3D:
+		excl.append((vehiculo as CollisionObject3D).get_rid())
+	var ref_y: float = pos.y
+	if is_instance_valid(vehiculo):
+		ref_y = maxf(ref_y, vehiculo.global_position.y)
+	var res := _raycast_estatico_vertical(jugador, pos, ref_y + 10.0, ref_y - 25.0, excl)
+	if not res.is_empty():
+		var out := pos
+		out.y = (res["position"] as Vector3).y + 0.15
+		return out
 	return pos
+
+
+func _es_via_o_suelo_estatico(col: Object) -> bool:
+	if not (col is StaticBody3D or col is CSGShape3D):
+		return false
+	var nodo := col as Node
+	var nom := nodo.name.to_lower()
+	var nom_p := nodo.get_parent().name.to_lower() if nodo.get_parent() else ""
+	for kw in ["carretera", "acera", "trocha", "asfalto", "calle", "rotonda", "edificio_base", "suelo", "piso", "grid", "terreno", "lote"]:
+		if nom.contains(kw) or nom_p.contains(kw):
+			return true
+	return false
+
+
+## Protege cualquier vehículo jugable contra caída al vacío o traspaso bajo carreteras
+func asegurar_vehiculo_sobre_mapa(vehiculo: RigidBody3D, pos_segura: Vector3) -> Vector3:
+	if not is_instance_valid(vehiculo) or not vehiculo.is_inside_tree():
+		return pos_segura
+
+	var pos := vehiculo.global_position
+	var necesita_chequeo := (pos.y < -1.5) or (vehiculo.linear_velocity.y < -6.0) or (Engine.get_physics_frames() % 10 == 0)
+	if not necesita_chequeo:
+		return pos_segura
+
+	# 1. ¿Hay una carretera/suelo encima del techo del vehículo (+2.2m a +40m)?
+	var res_arriba := _raycast_estatico_vertical(vehiculo, pos, pos.y + 40.0, pos.y + 2.2)
+	var atrapado_bajo_via := (not res_arriba.is_empty()) and _es_via_o_suelo_estatico(res_arriba["collider"])
+
+	# 2. ¿Está cayendo en vacío puro (sin suelo debajo dentro de 35m)?
+	var res_abajo := _raycast_estatico_vertical(vehiculo, pos, pos.y + 0.8, pos.y - 35.0)
+	var en_vacio := res_abajo.is_empty() and pos.y < -0.8
+
+	if atrapado_bajo_via or en_vacio or pos.y < -2.8:
+		vehiculo.linear_velocity = Vector3.ZERO
+		vehiculo.angular_velocity = Vector3.ZERO
+		vehiculo.global_rotation.x = 0.0
+		vehiculo.global_rotation.z = 0.0
+		if not res_arriba.is_empty():
+			vehiculo.global_position.y = (res_arriba["position"] as Vector3).y + 0.75
+			return vehiculo.global_position
+		var res_top := _raycast_estatico_vertical(vehiculo, pos, 90.0, -30.0)
+		if not res_top.is_empty():
+			vehiculo.global_position.y = (res_top["position"] as Vector3).y + 0.75
+			return vehiculo.global_position
+		if pos_segura != Vector3.ZERO:
+			vehiculo.global_position = pos_segura + Vector3(0.0, 0.75, 0.0)
+			return vehiculo.global_position
+		vehiculo.global_position = Vector3(33.8119, 1.35, 783.8547)
+		return vehiculo.global_position
+
+	# Guardar última posición válida cuando tiene suelo cercano debajo y no hay vía encima
+	if not res_abajo.is_empty() and pos.y - (res_abajo["position"] as Vector3).y < 2.2 and pos.y >= -1.5:
+		return pos
+	return pos_segura
