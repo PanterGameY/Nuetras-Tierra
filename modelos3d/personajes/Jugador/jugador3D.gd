@@ -158,6 +158,9 @@ var _mano_izq_base_rot: Vector3 = Vector3.ZERO
 var _mano_der_base_rot: Vector3 = Vector3.ZERO
 var _mano_izq_base_pos: Vector3 = Vector3.ZERO
 var _mano_der_base_pos: Vector3 = Vector3.ZERO
+var _ultima_pos_segura: Vector3 = Vector3.ZERO
+var _tiene_pos_segura: bool = false
+var _spawn_estabilizar_timer: float = 0.0
 
 
 func _recursive_find_by_name(node: Node, target: String) -> Node:
@@ -188,6 +191,7 @@ func _ready():
 	floor_constant_speed = true
 	floor_snap_length = 0.5
 	floor_max_angle = deg_to_rad(65.0)
+	safe_margin = maxf(safe_margin, 0.03)
 	
 	for h in get_children():
 		if h is Node3D and not (h is SpringArm3D or h is CollisionShape3D):
@@ -264,8 +268,12 @@ func _ready():
 	
 	_pos_objetivo = global_position
 	_rot_y_objetivo = rotation.y
+	_spawn_estabilizar_timer = 0.85
+	velocity = Vector3.ZERO
+	_vel_horizontal = Vector3.ZERO
+	set_physics_process(false)
 
-	# Esperar un frame para dar tiempo a que la UI se instancie
+	# Esperar un frame para dar tiempo a que la UI y colisiones del mapa se registren
 	await get_tree().process_frame
 
 	var datos = get_node_or_null("/root/DatosUsuario")
@@ -275,9 +283,17 @@ func _ready():
 			if datos.guardado_player_pos != Vector3.ZERO:
 				global_position = datos.guardado_player_pos
 				rotation.y = datos.guardado_player_rot_y
-				_pos_objetivo = global_position
-				_rot_y_objetivo = rotation.y
 				print("[jugador3D] Cargada posición guardada: ", global_position)
+
+	# Asegurar altura limpia sobre el suelo estático al aparecer/respawnear (evita caer por márgenes de 0mm o lag de carga)
+	velocity = Vector3.ZERO
+	_vel_horizontal = Vector3.ZERO
+	_ajustar_altura_aparicion()
+	_verificar_seguridad_mapa(true)
+	_pos_objetivo = global_position
+	_rot_y_objetivo = rotation.y
+	_spawn_estabilizar_timer = 0.65
+	set_physics_process(true)
 
 	# Instanciar UIPie dinámicamente si no está presente en la escena (solo si somos autoridad local)
 	var ui_node = ui_pie if ui_pie else null
@@ -519,8 +535,7 @@ func _ready():
 		add_child(tienda_ui)
 		tienda_ui.jugador_ref = self
 
-		# Equipar Bloque de Provisiones estilo Minecraft por defecto
-		equipar_item_en_mano("bloque_suministros")
+		# Sin bloque en mano por defecto (solo se equipa si el jugador elige un ítem en el inventario)
 
 	# A pie: forzar primera persona y ocultar modelo 3D
 	_set_primera_persona(true)
@@ -683,6 +698,8 @@ func _physics_process(delta: float) -> void:
 	
 	if _recien_bajado_timer > 0.0:
 		_recien_bajado_timer -= delta
+	if _spawn_estabilizar_timer > 0.0:
+		_spawn_estabilizar_timer = maxf(_spawn_estabilizar_timer - delta, 0.0)
 	
 	_actualizar_boton_interactuar()
 	_procesar_interaccion_vehiculo()
@@ -693,7 +710,16 @@ func _physics_process(delta: float) -> void:
 	_coyote_timer = COYOTE_TIME if suelo else max(_coyote_timer - delta, 0)
 	
 	if _en_aire:
-		velocity += get_gravity() * delta
+		if _spawn_estabilizar_timer > 0.0:
+			# Durante el primer instante tras respawnear, si el mapa aún no registra suelo abajo, no dejar caer al vacío
+			var res_suelo_spawn := _raycast_suelo_estatico(global_position.y + 15.0, global_position.y - 30.0, global_position)
+			if res_suelo_spawn.is_empty():
+				velocity.y = 0.0
+			else:
+				velocity += get_gravity() * delta
+				velocity.y = maxf(velocity.y, -4.5)
+		else:
+			velocity += get_gravity() * delta
 		# Empuje constante "oculto" mientras el jugador gana altura en el aire
 		if velocity.y > 0.1:
 			var fwd_dir = Vector3(-sin(_camara_yaw), 0, -cos(_camara_yaw)).normalized()
@@ -767,6 +793,9 @@ func _physics_process(delta: float) -> void:
 	velocity.y = clampf(velocity.y, -45.0, 15.0)
 	velocity.x = clampf(velocity.x, -25.0, 25.0)
 	velocity.z = clampf(velocity.z, -25.0, 25.0)
+
+	# Protección anti-caída bajo carretera/mapa (traspaso de mallas o vacío)
+	_verificar_seguridad_mapa(false)
 		
 	_anim_loco(idir, run, suelo)
 	
@@ -959,6 +988,7 @@ func _salir_del_vehiculo():
 			
 	if v.has_method("bajar_jugador"): v.bajar_jugador()
 	if _collision_shape: _collision_shape.disabled = false
+	_verificar_seguridad_mapa(true)
 	_recien_bajado_timer = 1.0 # Previene animaciones de caída/salto temporalmente (tiempo de seguridad)
 	_reproducir_anim(ANIM_IDLE)
 
@@ -1468,11 +1498,151 @@ func _guardar_posicion_rapida() -> void:
 					"scene": cur_sc,
 					"nombre": str(_vehiculo_actual.name)
 				}
+		if not _conduciendo and _tiene_pos_segura:
+			if pos.y < -2.5 or _buscar_superficie_via_arriba(pos) > -9000.0:
+				pos = _ultima_pos_segura
 		datos.guardado_player_pos = pos
 		datos.guardado_player_rot_y = rot_y
 		var current_scene_path = get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
 		datos.guardado_player_scene = current_scene_path
 		datos.save_local()
+
+
+func _ajustar_altura_aparicion() -> void:
+	var res := _raycast_suelo_estatico(maxf(global_position.y + 40.0, 60.0), -30.0, global_position)
+	if not res.is_empty():
+		var hit_y: float = (res["position"] as Vector3).y
+		# Si el spawn quedó bajo el suelo o demasiado pegado a una malla sin grosor, elevar con margen limpio
+		if global_position.y < hit_y + 0.18:
+			global_position.y = hit_y + 0.25
+
+
+func _es_colision_via_o_base(col: Object, incluir_terreno: bool = false) -> bool:
+	if not (col is StaticBody3D or col is CSGShape3D):
+		return false
+	var nodo: Node = col as Node
+	var nom: String = nodo.name.to_lower()
+	var nom_p: String = nodo.get_parent().name.to_lower() if nodo.get_parent() else ""
+	for kw in ["carretera", "acera", "trocha", "asfalto", "calle", "rotonda", "edificio_base", "suelo", "piso"]:
+		if nom.contains(kw) or nom_p.contains(kw):
+			return true
+	if incluir_terreno:
+		for kw_t in ["grid", "terreno", "montana", "montaña"]:
+			if nom.contains(kw_t) or nom_p.contains(kw_t):
+				return true
+	return false
+
+
+func _raycast_suelo_estatico(desde_y: float, hasta_y: float, xz: Vector3) -> Dictionary:
+	var mundo := get_world_3d()
+	if not mundo or not mundo.direct_space_state:
+		return {}
+	var space := mundo.direct_space_state
+	var excl: Array[RID] = [get_rid()]
+	var cur_y: float = desde_y
+	for _i in range(6):
+		var q := PhysicsRayQueryParameters3D.create(
+			Vector3(xz.x, cur_y, xz.z),
+			Vector3(xz.x, hasta_y, xz.z),
+			1,
+			excl
+		)
+		var res := space.intersect_ray(q)
+		if res.is_empty():
+			break
+		var hit_col = res["collider"]
+		if hit_col is VehicleBody3D or hit_col is RigidBody3D or hit_col is CharacterBody3D:
+			excl.append(res["rid"])
+			cur_y = (res["position"] as Vector3).y - 0.05
+			continue
+		var norm: Vector3 = res["normal"]
+		if norm.y >= 0.45:
+			return res
+		excl.append(res["rid"])
+		cur_y = (res["position"] as Vector3).y - 0.05
+	return {}
+
+
+func _buscar_superficie_via_arriba(pos: Vector3, incluir_terreno: bool = false) -> float:
+	var y_centro: float = _raycast_via_arriba_en_xz(pos, incluir_terreno)
+	if y_centro > -9000.0:
+		return y_centro
+	# Si cayó por una grieta estrecha entre losas de vía/acera, revisar el perímetro de la cápsula
+	if pos.y < 0.35 or incluir_terreno:
+		for off in [Vector3(0.32, 0.0, 0.0), Vector3(-0.32, 0.0, 0.0), Vector3(0.0, 0.0, 0.32), Vector3(0.0, 0.0, -0.32)]:
+			var y_lado: float = _raycast_via_arriba_en_xz(pos + off, incluir_terreno)
+			if y_lado > -9000.0:
+				return y_lado
+	return -9999.0
+
+
+func _raycast_via_arriba_en_xz(pos: Vector3, incluir_terreno: bool) -> float:
+	var mundo := get_world_3d()
+	if not mundo or not mundo.direct_space_state:
+		return -9999.0
+	var space := mundo.direct_space_state
+	var excl: Array[RID] = [get_rid()]
+	var cur_y: float = pos.y + 40.0
+	var min_y: float = pos.y + 0.35
+	for _i in range(6):
+		if cur_y <= min_y:
+			break
+		var q := PhysicsRayQueryParameters3D.create(
+			Vector3(pos.x, cur_y, pos.z),
+			Vector3(pos.x, min_y, pos.z),
+			1,
+			excl
+		)
+		var res := space.intersect_ray(q)
+		if res.is_empty():
+			break
+		var hit_col = res["collider"]
+		var norm: Vector3 = res["normal"]
+		if norm.y >= 0.45 and _es_colision_via_o_base(hit_col, incluir_terreno):
+			return (res["position"] as Vector3).y
+		excl.append(res["rid"])
+		cur_y = (res["position"] as Vector3).y - 0.05
+	return -9999.0
+
+
+func _verificar_seguridad_mapa(forzar: bool = false) -> void:
+	if _conduciendo:
+		return
+
+	# 1. Caída al vacío o por debajo de la cota del mapa
+	if global_position.y < -2.8:
+		var res := _raycast_suelo_estatico(80.0, -2.5, global_position)
+		if not res.is_empty():
+			global_position.y = (res["position"] as Vector3).y + 0.25
+			velocity = Vector3.ZERO
+			_vel_horizontal = Vector3.ZERO
+			return
+		elif _tiene_pos_segura:
+			global_position = _ultima_pos_segura + Vector3(0.0, 0.25, 0.0)
+			velocity = Vector3.ZERO
+			_vel_horizontal = Vector3.ZERO
+			return
+		else:
+			global_position.y = 1.5
+			velocity.y = 0.0
+			return
+
+	# 2. Jugador atrapado bajo una carretera/acera (o cayendo bajo un terreno de montaña)
+	var en_suelo: bool = is_on_floor()
+	var chequear_arriba: bool = forzar or (_spawn_estabilizar_timer > 0.0) or (global_position.y < 0.35) or (not en_suelo and velocity.y < -1.0) or (Engine.get_physics_frames() % 8 == 0)
+	if chequear_arriba:
+		var y_via: float = _buscar_superficie_via_arriba(global_position, not en_suelo)
+		if y_via > -9000.0:
+			global_position.y = y_via + 0.25
+			velocity = Vector3.ZERO
+			_vel_horizontal = Vector3.ZERO
+			return
+
+	# 3. Registrar última posición segura cuando camina normalmente sobre una superficie válida
+	if en_suelo and global_position.y >= -2.0 and (Engine.get_physics_frames() % 15 == 0 or not _tiene_pos_segura):
+		if _buscar_superficie_via_arriba(global_position) <= -9000.0:
+			_ultima_pos_segura = global_position
+			_tiene_pos_segura = true
 
 func agarrar_caja(caja: Node3D):
 	if not caja:

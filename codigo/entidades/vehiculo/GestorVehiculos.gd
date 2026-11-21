@@ -38,15 +38,20 @@ func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salid
 	if "_vehiculo_actual" in jugador:
 		jugador.set("_vehiculo_actual", null)
 
-	# 3. Posicionar al jugador en el punto de salida
-	if posicion_salida != Vector3.ZERO:
-		jugador.global_position = posicion_salida
-	elif is_instance_valid(vehiculo):
+	# 3. Posicionar al jugador en el punto de salida seguro sobre el suelo estático
+	var destino_salida: Vector3 = posicion_salida
+	if destino_salida == Vector3.ZERO and is_instance_valid(vehiculo):
 		var zona = vehiculo.find_child("ZonaEntrada", true, false)
 		if zona and is_instance_valid(zona):
-			jugador.global_position = zona.global_position - (vehiculo.global_transform.basis.x.normalized() * 0.6)
+			destino_salida = zona.global_position - (vehiculo.global_transform.basis.x.normalized() * 0.6)
 		else:
-			jugador.global_position = vehiculo.global_position - (vehiculo.global_transform.basis.x.normalized() * 2.2)
+			destino_salida = vehiculo.global_position - (vehiculo.global_transform.basis.x.normalized() * 2.2)
+
+	if destino_salida != Vector3.ZERO:
+		destino_salida = _ajustar_salida_sobre_suelo(jugador, vehiculo, destino_salida)
+		if jugador is CharacterBody3D:
+			(jugador as CharacterBody3D).velocity = Vector3.ZERO
+		jugador.global_position = destino_salida
 
 	# 4. Restaurar estado de procesamiento y visibilidad del nodo
 	jugador.show()
@@ -67,6 +72,8 @@ func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salid
 	var col = jugador.find_child("CollisionShape3D", true, false)
 	if col and is_instance_valid(col) and col is CollisionShape3D:
 		col.disabled = false
+	if jugador.has_method("_verificar_seguridad_mapa"):
+		jugador.call("_verificar_seguridad_mapa", true)
 
 	# 7. Reactivar interfaz táctil a pie (UIpie) y sus controles
 	if jugador.has_method("mostrar_interfaz_pie"):
@@ -94,3 +101,44 @@ func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salid
 		var cam = jugador.find_child("Camera3D", true, false)
 		if cam and cam is Camera3D:
 			cam.make_current()
+
+
+func _ajustar_salida_sobre_suelo(jugador: Node3D, vehiculo: Node3D, pos: Vector3) -> Vector3:
+	var mundo := jugador.get_world_3d()
+	if not mundo or not mundo.direct_space_state:
+		return pos
+	var space := mundo.direct_space_state
+	var excl: Array[RID] = []
+	if jugador is CollisionObject3D:
+		excl.append((jugador as CollisionObject3D).get_rid())
+	if is_instance_valid(vehiculo) and vehiculo is CollisionObject3D:
+		excl.append((vehiculo as CollisionObject3D).get_rid())
+	var ref_y: float = pos.y
+	if is_instance_valid(vehiculo):
+		ref_y = maxf(ref_y, vehiculo.global_position.y)
+	var y_origen: float = ref_y + 10.0
+	var y_fin: float = ref_y - 25.0
+	for _i in range(6):
+		var q := PhysicsRayQueryParameters3D.create(
+			Vector3(pos.x, y_origen, pos.z),
+			Vector3(pos.x, y_fin, pos.z),
+			1,
+			excl
+		)
+		var res := space.intersect_ray(q)
+		if res.is_empty():
+			break
+		var hit_col = res["collider"]
+		# Saltar vehículos u otros cuerpos dinámicos para encontrar la vía/suelo real
+		if hit_col is VehicleBody3D or hit_col is RigidBody3D or hit_col is CharacterBody3D:
+			excl.append(res["rid"])
+			y_origen = (res["position"] as Vector3).y - 0.05
+			continue
+		var norm: Vector3 = res["normal"]
+		if norm.y >= 0.45:
+			var out := pos
+			out.y = (res["position"] as Vector3).y + 0.15
+			return out
+		excl.append(res["rid"])
+		y_origen = (res["position"] as Vector3).y - 0.05
+	return pos

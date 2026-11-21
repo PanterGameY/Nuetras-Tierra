@@ -44,6 +44,9 @@ var _pool_path_follows: Array[PathFollow3D] = []
 var _pool_caminos_asignados: Array[Path3D] = []
 var _cached_player: Node3D = null
 var _timer_reciclaje: Timer = null
+var _salidas_rotonda: Dictionary = {}
+var _entradas_rotonda: Dictionary = {}
+var _salidas_calculadas: bool = false
 
 
 func _ready() -> void:
@@ -146,10 +149,10 @@ func _iniciar_pool_trafico() -> void:
 	var player := _find_player()
 	var player_pos := player.global_position if player else Vector3.ZERO
 
-	# Filtrar caminos válidos con longitud significativa
+	# Filtrar caminos válidos con longitud significativa (sin spawnear dentro de rotondas)
 	var caminos_utilizables: Array[Path3D] = []
 	for p in all_paths:
-		if p != null and p.curve != null and p.curve.get_baked_length() > 20.0:
+		if p != null and p.curve != null and p.curve.get_baked_length() > 20.0 and not _es_rotonda(p):
 			caminos_utilizables.append(p)
 
 	if caminos_utilizables.is_empty():
@@ -229,10 +232,14 @@ func _iniciar_pool_trafico() -> void:
 		add_child(_timer_reciclaje)
 
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint() or _pool_vehiculos.is_empty():
 		return
 
+	if not _salidas_calculadas:
+		_inicializar_salidas_rotonda()
+
+	var ahora := Time.get_ticks_msec() * 0.001
 	var player := _find_player()
 	var player_pos: Vector3 = player.global_position if player != null and is_instance_valid(player) else Vector3.ZERO
 	var has_player: bool = player != null and is_instance_valid(player)
@@ -254,6 +261,32 @@ func _physics_process(_delta: float) -> void:
 		var camino: Path3D = pf.get_parent() as Path3D
 		if camino == null or camino.curve == null:
 			continue
+
+		# Salida natural de rotondas hacia carreteras conectadas (nunca fuera de la vía)
+		if _salidas_rotonda.has(camino) and not veh._cruzando_interseccion:
+			var salidas: Array = _salidas_rotonda[camino]
+			if not salidas.is_empty() and ahora >= float(veh.get_meta("rotonda_cd", 0.0)):
+				for s in salidas:
+					if absf(pf.progress - float(s["offset"])) <= 3.5:
+						veh.set_meta("rotonda_cd", ahora + 3.5)
+						if randf() < 0.55:
+							var p_sal: Path3D = s["path"]
+							var off_sal: float = float(s["offset_salida"])
+							var pt_sal: Vector3 = s["pt_salida"]
+							if not _espacio_libre_entrada_rotonda(p_sal, pt_sal, 11.0, veh):
+								break
+							if veh.global_position.distance_to(pt_sal) > 3.5 and veh.has_method("iniciar_cruce_interseccion"):
+								veh.iniciar_cruce_interseccion(p_sal, off_sal, pt_sal)
+							else:
+								finalizar_cruce_camino(veh, p_sal, off_sal)
+							break
+
+		# Los vehículos que están cruzando una intersección ya abandonaron su Path3D previo:
+		# no deben generar bloqueo fantasma sobre quienes vienen detrás en el carril anterior
+		if veh._cruzando_interseccion:
+			veh.distancia_lider = INF
+			continue
+
 		if not por_camino.has(camino):
 			por_camino[camino] = []
 		por_camino[camino].append({"veh": veh, "pf": pf, "prog": pf.progress})
@@ -266,60 +299,76 @@ func _physics_process(_delta: float) -> void:
 		if c_len <= 0.0 or n_veh == 0:
 			continue
 
+		var curva := (camino as Path3D).curve
+		var es_cerrado: bool = curva.sample_baked(0.0).distance_to(curva.sample_baked(c_len)) < 15.0
+
 		if n_veh == 1:
 			lista[0]["veh"].distancia_lider = INF
-			continue
+		else:
+			# Ordenar vehículos por progreso longitudinal
+			lista.sort_custom(func(a, b): return a["prog"] < b["prog"])
 
-		var curva := (camino as Path3D).curve
-		var es_cerrado: bool = curva.sample_baked(0.0).distance_to(curva.sample_baked(c_len)) < 3.0
+			for idx in range(n_veh):
+				var item: Dictionary = lista[idx]
+				var veh: VehiculoTraficoIA = item["veh"]
+				var pf: PathFollow3D = item["pf"]
+				var prog: float = item["prog"]
+				var menor_gap: float = INF
 
-		# Ordenar vehículos por progreso longitudinal
-		lista.sort_custom(func(a, b): return a["prog"] < b["prog"])
+				for other_idx in range(n_veh):
+					if other_idx == idx:
+						continue
+					var otro: Dictionary = lista[other_idx]
+					var otro_veh: VehiculoTraficoIA = otro["veh"]
+					var otro_pf: PathFollow3D = otro["pf"]
 
-		for idx in range(n_veh):
-			var item: Dictionary = lista[idx]
-			var veh: VehiculoTraficoIA = item["veh"]
-			var pf: PathFollow3D = item["pf"]
-			var prog: float = item["prog"]
-			var menor_gap: float = INF
-
-			for other_idx in range(n_veh):
-				if other_idx == idx:
-					continue
-				var otro: Dictionary = lista[other_idx]
-				var otro_veh: VehiculoTraficoIA = otro["veh"]
-				var otro_pf: PathFollow3D = otro["pf"]
-
-				# Ignorar vehículos en sentido contrario
-				if otro_veh.sentido != veh.sentido:
-					continue
-
-				# Si los dos vehículos están en carriles distintos (|h_offset| diff > 1.8m), no se bloquean
-				if is_instance_valid(pf) and is_instance_valid(otro_pf):
-					if absf(pf.h_offset - otro_pf.h_offset) > 1.8:
+					# Ignorar vehículos en sentido contrario
+					if otro_veh.sentido != veh.sentido:
 						continue
 
-				var otro_prog: float = otro["prog"]
-				var dist_adelante: float
-				if es_cerrado:
-					dist_adelante = fposmod((otro_prog - prog) * float(veh.sentido), c_len)
-				else:
-					dist_adelante = (otro_prog - prog) * float(veh.sentido)
-					if dist_adelante <= 0.0:
-						continue
+					# Si los dos vehículos están en carriles distintos (|h_offset| diff > 1.8m), no se bloquean
+					if is_instance_valid(pf) and is_instance_valid(otro_pf):
+						if absf(pf.h_offset - otro_pf.h_offset) > 1.8:
+							continue
 
-				# Solo considerar líder hacia adelante en la dirección del flujo de la vía
-				var max_rango_lider := minf(c_len * 0.45, 60.0) if es_cerrado else 60.0
-				if dist_adelante < max_rango_lider:
-					var mitad_muras: float = (veh.longitud_vehiculo * 0.5 + otro_veh.longitud_vehiculo * 0.5)
-					var gap: float = maxf(dist_adelante - mitad_muras, 0.0)
-					if gap < menor_gap:
-						menor_gap = gap
+					var otro_prog: float = otro["prog"]
+					var dist_adelante: float
+					if es_cerrado:
+						dist_adelante = fposmod((otro_prog - prog) * float(veh.sentido), c_len)
+					else:
+						dist_adelante = (otro_prog - prog) * float(veh.sentido)
+						if dist_adelante <= 0.0:
+							continue
 
-			veh.distancia_lider = menor_gap
+					# Solo considerar líder hacia adelante en la dirección del flujo de la vía
+					var max_rango_lider := minf(c_len * 0.45, 60.0) if es_cerrado else 60.0
+					if dist_adelante < max_rango_lider:
+						var mitad_muras: float = (veh.longitud_vehiculo * 0.5 + otro_veh.longitud_vehiculo * 0.5)
+						var gap: float = maxf(dist_adelante - mitad_muras, 0.0)
+						if gap < menor_gap:
+							menor_gap = gap
 
-		# Desbloqueo prioritario de cabeza de fila en rotondas y bucles cerrados (Anti-Deadlock ATS/ETS2)
-		if n_veh >= 2:
+				veh.distancia_lider = menor_gap
+
+		# Ceda el paso al aproximarse a una rotonda ocupada (prelación de quien ya circula dentro)
+		var info_entrada: Dictionary = _entradas_rotonda.get(camino, {})
+		var lider_cediendo_rotonda: bool = false
+		if not info_entrada.is_empty():
+			var rotonda_dest: Path3D = info_entrada["rotonda"]
+			var pt_ent: Vector3 = info_entrada["pt_entrada"]
+			for item_e in lista:
+				var veh_e: VehiculoTraficoIA = item_e["veh"]
+				if veh_e._cruzando_interseccion or veh_e.sentido < 0:
+					continue
+				var dist_fin: float = c_len - float(item_e["prog"])
+				if dist_fin >= -1.0 and dist_fin <= 9.0:
+					if not _espacio_libre_entrada_rotonda(rotonda_dest, pt_ent, 11.5, veh_e):
+						var hueco_ceda := maxf(dist_fin - 0.2, 0.2)
+						veh_e.distancia_lider = minf(veh_e.distancia_lider, hueco_ceda)
+						lider_cediendo_rotonda = true
+
+		# Desbloqueo prioritario de cabeza de fila solo en vías abiertas (sin invadir rotondas ocupadas)
+		if not es_cerrado and n_veh >= 2 and not lider_cediendo_rotonda:
 			var lider_grupo: VehiculoTraficoIA = lista[n_veh - 1]["veh"]
 			var todos_detenidos := true
 			for item_v in lista:
@@ -352,7 +401,7 @@ func obtener_info_carril_paralelo(camino_origen: Path3D, pos_global: Vector3, di
 			var dir_p := (pt_adelante - pt_p).normalized()
 			var dot_val := dir_adelante.dot(dir_p)
 
-			if dot_val > 0.75: # Misma dirección (paralelo)
+			if dot_val > 0.75 and not _hay_vehiculo_cerca_en_camino(p, offset_p, 22.0, null): # Misma dirección y carril paralelo despejado
 				var to_other := (pt_p - pos_global)
 				var cross_y := dir_adelante.cross(to_other).y
 				# En Godot, cross(forward, right).y < 0; si cross_y > 0 está a la izquierda
@@ -441,7 +490,7 @@ func _reciclar_vehiculo_atascado(veh: VehiculoTraficoIA) -> void:
 
 	var candidatos: Array[Path3D] = []
 	for p in all_paths:
-		if is_instance_valid(p) and p.curve != null and p.curve.get_baked_length() > 20.0:
+		if is_instance_valid(p) and p.curve != null and p.curve.get_baked_length() > 20.0 and not _es_rotonda(p):
 			candidatos.append(p)
 	if candidatos.is_empty():
 		if is_instance_valid(camino_actual):
@@ -497,13 +546,94 @@ func _alinear_vehiculo_a_camino(veh: VehiculoTraficoIA, camino: Path3D, prog: fl
 		veh.global_transform.basis = Basis.looking_at(dir.normalized(), Vector3.UP)
 
 
+func _inicializar_salidas_rotonda() -> void:
+	_salidas_calculadas = true
+	_salidas_rotonda.clear()
+	_entradas_rotonda.clear()
+	for r in all_paths:
+		if not _es_rotonda(r):
+			continue
+		var r_len := r.curve.get_baked_length()
+		var lista_salidas: Array = []
+		for p in all_paths:
+			if not is_instance_valid(p) or p == r or _es_rotonda(p) or p.curve == null or not p.is_inside_tree():
+				continue
+			var p_len := p.curve.get_baked_length()
+			if p_len < 10.0:
+				continue
+			var pt_ini := p.to_global(p.curve.sample_baked(0.0))
+			var off_r := r.curve.get_closest_offset(r.to_local(pt_ini))
+			var pt_r := r.to_global(r.curve.sample_baked(off_r))
+			if pt_ini.distance_to(pt_r) <= 14.0:
+				var saltar_salida := (r.name == "Path3D2" and p.name == "Path3D5") or (r.name == "Path3D8" and p.name == "Path3D4")
+				if not saltar_salida:
+					var dir_p := p.to_global(p.curve.sample_baked(minf(3.0, p_len))) - pt_ini
+					dir_p.y = 0.0
+					var dir_r := r.to_global(r.curve.sample_baked(fposmod(off_r + 3.0, r_len))) - pt_r
+					dir_r.y = 0.0
+					if dir_p.length_squared() > 0.001 and dir_r.length_squared() > 0.001:
+						if dir_r.normalized().dot(dir_p.normalized()) >= 0.30:
+							var off_sal := minf(8.0, p_len * 0.5)
+							var pt_sal := p.to_global(p.curve.sample_baked(off_sal))
+							lista_salidas.append({"path": p, "offset": off_r, "offset_salida": off_sal, "pt_salida": pt_sal})
+
+			# Registrar también entradas hacia la rotonda para Ceda el Paso anticipado
+			if (p.name == "Path3D6" and r.name == "Path3D2") or (p.name == "TrafficLane3D2" and r.name == "Path3D8"):
+				continue
+			var pt_fin_p := p.to_global(p.curve.sample_baked(p_len))
+			var off_ent_r := r.curve.get_closest_offset(r.to_local(pt_fin_p))
+			var pt_ent_r := r.to_global(r.curve.sample_baked(off_ent_r))
+			if pt_fin_p.distance_to(pt_ent_r) <= 22.0:
+				var dir_fin_p := pt_fin_p - p.to_global(p.curve.sample_baked(maxf(p_len - 3.0, 0.0)))
+				dir_fin_p.y = 0.0
+				var dir_ent_r := r.to_global(r.curve.sample_baked(fposmod(off_ent_r + 3.0, r_len))) - pt_ent_r
+				dir_ent_r.y = 0.0
+				if dir_fin_p.length_squared() > 0.001 and dir_ent_r.length_squared() > 0.001:
+					if dir_fin_p.normalized().dot(dir_ent_r.normalized()) >= 0.35:
+						var prev_ent: Dictionary = _entradas_rotonda.get(p, {})
+						var d_ent := pt_fin_p.distance_to(pt_ent_r)
+						if prev_ent.is_empty() or d_ent < float(prev_ent["dist"]):
+							_entradas_rotonda[p] = {"rotonda": r, "pt_entrada": pt_ent_r, "dist": d_ent}
+		if not lista_salidas.is_empty():
+			_salidas_rotonda[r] = lista_salidas
+
+
+func _es_rotonda(cam: Path3D) -> bool:
+	if not is_instance_valid(cam) or cam.curve == null:
+		return false
+	var c_len := cam.curve.get_baked_length()
+	if c_len < 10.0 or c_len >= 400.0:
+		return false
+	var pt_ini := cam.to_global(cam.curve.sample_baked(0.0))
+	var pt_end := cam.to_global(cam.curve.sample_baked(c_len))
+	return pt_ini.distance_to(pt_end) < 15.0
+
+
+func _esta_en_zona_rotonda(pt: Vector3, radio_exclusion: float = 75.0) -> bool:
+	for r in all_paths:
+		if not _es_rotonda(r):
+			continue
+		var off := r.curve.get_closest_offset(r.to_local(pt))
+		var pt_r := r.to_global(r.curve.sample_baked(off))
+		if pt.distance_to(pt_r) < radio_exclusion:
+			return true
+	return false
+
+
 func _buscar_punto_spawn_oculto(caminos: Array[Path3D], player_pos: Vector3, has_player: bool, min_dist_player: float) -> Dictionary:
-	var mejor_camino: Path3D = caminos[0]
+	var caminos_spawn: Array[Path3D] = []
+	for c in caminos:
+		if not _es_rotonda(c):
+			caminos_spawn.append(c)
+	if caminos_spawn.is_empty():
+		caminos_spawn = caminos
+
+	var mejor_camino: Path3D = caminos_spawn[0]
 	var mejor_prog: float = 0.0
 	var mejor_score: float = -1.0
 
-	for _intento in range(18):
-		var cam: Path3D = caminos.pick_random()
+	for _intento in range(28):
+		var cam: Path3D = caminos_spawn.pick_random()
 		if not is_instance_valid(cam) or cam.curve == null:
 			continue
 		var c_len := cam.curve.get_baked_length()
@@ -511,6 +641,10 @@ func _buscar_punto_spawn_oculto(caminos: Array[Path3D], player_pos: Vector3, has
 			continue
 		var prog := randf_range(0.0, maxf(c_len - 10.0, 0.0))
 		var pt := cam.to_global(cam.curve.sample_baked(prog))
+
+		# Nunca generar coches dentro de la rotonda ni en sus entradas/salidas cercanas
+		if _esta_en_zona_rotonda(pt, 75.0):
+			continue
 
 		var dist_p := pt.distance_to(player_pos) if has_player else min_dist_player
 		if has_player and dist_p > despawn_radius * 0.92:
@@ -534,6 +668,48 @@ func _buscar_punto_spawn_oculto(caminos: Array[Path3D], player_pos: Vector3, has
 			mejor_prog = prog
 
 	return {"camino": mejor_camino, "prog": mejor_prog}
+
+
+func _espacio_libre_entrada_rotonda(camino_dest: Path3D, pt_destino: Vector3, radio: float, ignorar_veh: VehiculoTraficoIA) -> bool:
+	for i in range(_pool_vehiculos.size()):
+		var v := _pool_vehiculos[i] as VehiculoTraficoIA
+		var pf := _pool_path_follows[i]
+		if not is_instance_valid(v) or not is_instance_valid(pf) or not v.visible or v == ignorar_veh:
+			continue
+		var esta_en_dest := (pf.get_parent() == camino_dest and not v._cruzando_interseccion) or (v._cruce_camino_destino == camino_dest)
+		if not esta_en_dest:
+			continue
+		var dist := v.global_position.distance_to(pt_destino)
+		if dist < radio:
+			# Si el vehículo ya superó el punto de entrada y se aleja hacia adelante (> 7 m), no bloquea la incorporación
+			var fwd_v := -v.global_transform.basis.z
+			fwd_v.y = 0.0
+			var rel := v.global_position - pt_destino
+			rel.y = 0.0
+			if dist > 7.0 and rel.dot(fwd_v) > 0.0:
+				continue
+			return false
+	return true
+
+
+func _hay_vehiculo_cerca_en_camino(cam: Path3D, prog_objetivo: float, radio: float, ignorar_veh: VehiculoTraficoIA) -> bool:
+	if not is_instance_valid(cam) or cam.curve == null:
+		return false
+	var c_len := cam.curve.get_baked_length()
+	var es_cerrado := _es_rotonda(cam) or cam.curve.sample_baked(0.0).distance_to(cam.curve.sample_baked(c_len)) < 15.0
+	for i in range(_pool_vehiculos.size()):
+		var v := _pool_vehiculos[i] as VehiculoTraficoIA
+		var pf := _pool_path_follows[i]
+		if not is_instance_valid(v) or not is_instance_valid(pf) or not v.visible or v == ignorar_veh:
+			continue
+		if pf.get_parent() != cam:
+			continue
+		var diff := absf(pf.progress - prog_objetivo)
+		if es_cerrado and c_len > 0.0:
+			diff = minf(diff, c_len - diff)
+		if diff < radio:
+			return true
+	return false
 
 
 ## Empalme y traspaso automático de vehículos entre nodos Path3D de la red vial
@@ -562,6 +738,11 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 	var target_offset: float = 0.0
 	var menor_score: float = INF
 
+	# 0. Si ya está en una rotonda, continuar siempre dando la vuelta en SU MISMO anillo (evita saltos entre Path3D8 y Path3D2)
+	if _es_rotonda(camino_actual):
+		pf.progress = fposmod(prog_nuevo, maxf(c_len, 1.0))
+		return true
+
 	# 1. Si es TrafficLane3D con conexiones explícitas
 	var tl := camino_actual as TrafficLane3D
 	if tl != null and not tl.next_lanes.is_empty():
@@ -573,7 +754,7 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 			mejor_camino = candidatos.pick_random()
 			target_offset = maxf(prog_nuevo - c_len, 0.0) if saliendo_por_fin else mejor_camino.curve.get_baked_length()
 
-	# 2. Empalme automático: solo inicios (0.0) de Path3D que estén ADELANTE en la misma dirección (nunca carriles de al lado)
+	# 2. Empalme automático: inicios (0.0) de Path3D adelante, o puntos intermedios de bucles cerrados (rotondas)
 	if mejor_camino == null:
 		var right_salida := Vector3(-dir_salida.z, 0.0, dir_salida.x)
 		for p in all_paths:
@@ -584,6 +765,36 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 				continue
 
 			var pt_ini := p.to_global(p.curve.sample_baked(0.0))
+			var pt_end := p.to_global(p.curve.sample_baked(p_len))
+			var es_bucle_cerrado := pt_ini.distance_to(pt_end) < 15.0
+
+			if es_bucle_cerrado:
+				# Emparejar carril interior (Path3D6) con rotonda pequeña (Path3D8) y exterior con grande (Path3D2)
+				if camino_actual.name == "Path3D6" and p.name == "Path3D2":
+					continue
+				if camino_actual.name == "TrafficLane3D2" and p.name == "Path3D8":
+					continue
+				# Incorporación a rotondas o anillos cerrados en el punto más cercano de la circunferencia
+				var off_cercano := p.curve.get_closest_offset(p.to_local(pt_fin))
+				var pt_cercano := p.to_global(p.curve.sample_baked(off_cercano))
+				var to_cercano := pt_cercano - pt_fin
+				to_cercano.y = 0.0
+				var d_cercano := to_cercano.length()
+				if d_cercano <= 22.0:
+					if d_cercano <= 1.5 or dir_salida.dot(to_cercano / d_cercano) >= 0.0:
+						var pt_fwd_ring := p.to_global(p.curve.sample_baked(fposmod(off_cercano + 3.0, p_len)))
+						var dir_ring := pt_fwd_ring - pt_cercano
+						dir_ring.y = 0.0
+						if dir_ring.length_squared() > 0.001 and dir_salida.dot(dir_ring.normalized()) >= 0.35:
+							var desvio_ring := absf(right_salida.dot(to_cercano))
+							if desvio_ring <= 12.0:
+								var score_ring := d_cercano + desvio_ring * 2.5
+								if score_ring < menor_score:
+									menor_score = score_ring
+									mejor_camino = p
+									target_offset = fposmod(off_cercano + 6.0, p_len)
+				continue
+
 			var to_ini := pt_ini - pt_fin
 			to_ini.y = 0.0
 			var d_ini := to_ini.length()
@@ -615,6 +826,12 @@ func traspasar_vehiculo_siguiente_camino(veh: VehiculoTraficoIA, camino_actual: 
 	if mejor_camino != null and mejor_camino.curve != null:
 		var clamped_off := clampf(target_offset, 0.0, mejor_camino.curve.get_baked_length())
 		var pt_destino := mejor_camino.to_global(mejor_camino.curve.sample_baked(clamped_off))
+		if _es_rotonda(mejor_camino) and not _espacio_libre_entrada_rotonda(mejor_camino, pt_destino, 9.0, veh):
+			# Esperar al borde de entrada sin invadir la rotonda ni reciclar
+			pf.progress = c_len if saliendo_por_fin else 0.0
+			veh.velocidad_actual = 0.0
+			veh.luces_stop = true
+			return true
 		if pt_fin.distance_to(pt_destino) > 3.5 and veh.has_method("iniciar_cruce_interseccion"):
 			veh.iniciar_cruce_interseccion(mejor_camino, clamped_off, pt_destino)
 			return true

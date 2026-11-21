@@ -186,8 +186,44 @@ func _obtener_posiciones_slot(slot_idx: int) -> Dictionary:
 		var marker_v = raiz.get_node_or_null("PuntosSpawn/PuntosVehiculos/SpawnVehiculo" + str(idx_clamped + 1)) as Node3D
 		if marker_v:
 			v_pos = marker_v.global_position
+		p_pos = _ajustar_pos_sobre_suelo(raiz, p_pos, 0.25)
+		v_pos = _ajustar_pos_sobre_suelo(raiz, v_pos, 0.35)
 
 	return {"player_pos": p_pos, "vehicle_pos": v_pos}
+
+
+func _ajustar_pos_sobre_suelo(raiz: Node, pos: Vector3, margen_y: float) -> Vector3:
+	if not (raiz is Node3D):
+		return pos
+	var mundo := (raiz as Node3D).get_world_3d()
+	if not mundo or not mundo.direct_space_state:
+		return pos
+	var space := mundo.direct_space_state
+	var excl: Array[RID] = []
+	var y_origen: float = maxf(pos.y + 25.0, 40.0)
+	for _i in range(6):
+		var q := PhysicsRayQueryParameters3D.create(
+			Vector3(pos.x, y_origen, pos.z),
+			Vector3(pos.x, pos.y - 25.0, pos.z),
+			1,
+			excl
+		)
+		var res := space.intersect_ray(q)
+		if res.is_empty():
+			break
+		var hit_col = res["collider"]
+		if hit_col is VehicleBody3D or hit_col is RigidBody3D or hit_col is CharacterBody3D:
+			excl.append(res["rid"])
+			y_origen = (res["position"] as Vector3).y - 0.05
+			continue
+		var norm: Vector3 = res["normal"]
+		if norm.y >= 0.45:
+			var out := pos
+			out.y = maxf(pos.y, (res["position"] as Vector3).y + margen_y)
+			return out
+		excl.append(res["rid"])
+		y_origen = (res["position"] as Vector3).y - 0.05
+	return pos
 
 func _asignar_y_spawnear_peer(peer_id: int) -> void:
 	if not multiplayer.is_server():

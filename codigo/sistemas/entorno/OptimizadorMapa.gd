@@ -155,11 +155,15 @@ func _aplicar_optimizacion() -> void:
 		malla.visibility_range_end = 0.0
 		contador_estructuras += 1
 
+	# 4. Evitar traspaso en mallas de vías/suelo de grosor cero habilitando backface_collision
+	var contador_colisiones_suelo: int = _asegurar_colision_doble_cara_suelo(raiz_mapa)
+
 	if modo_debug:
 		print("═══════════════════════════════════════════════════════════════")
 		print("[OptimizadorMapa] Optimización aplicada con éxito:")
 		print("  -> Occluder activo: %s" % ("SÍ" if occluder_valido else "NO"))
 		print("  -> Vías y terrenos protegidos: %d" % contador_protegidas)
+		print("  -> Colisiones de suelo reforzadas (doble cara): %d" % contador_colisiones_suelo)
 		print("  -> Árboles y vegetación con LOD (%0.0fm): %d" % [distancia_arboles, contador_arboles])
 		print("  -> Props medianos con LOD (%0.0fm): %d" % [distancia_props_medianos, contador_medianos])
 		print("  -> Props pequeños con LOD (%0.0fm): %d" % [distancia_props_pequenos, contador_pequenos])
@@ -185,6 +189,34 @@ func _es_suelo_o_carretera(n: String, p: String) -> bool:
 		n.contains("agua") or p.contains("agua") or
 		n.contains("rio") or p.contains("rio")
 	)
+
+
+func _es_colision_doble_cara(n: String, p: String) -> bool:
+	return _es_suelo_o_carretera(n, p) or n.contains("grid") or p.contains("grid") or n.contains("edificio_base") or p.contains("edificio_base")
+
+
+func _asegurar_colision_doble_cara_suelo(raiz: Node) -> int:
+	if not raiz:
+		return 0
+	var count: int = 0
+	var pila: Array[Node] = [raiz]
+	while not pila.is_empty():
+		var nodo: Node = pila.pop_back()
+		for hijo in nodo.get_children():
+			pila.append(hijo)
+		if nodo is CollisionShape3D:
+			var cs: CollisionShape3D = nodo as CollisionShape3D
+			if cs.shape is ConcavePolygonShape3D:
+				var conc: ConcavePolygonShape3D = cs.shape as ConcavePolygonShape3D
+				if not conc.backface_collision:
+					var padre: Node = cs.get_parent()
+					var abuelo: Node = padre.get_parent() if padre else null
+					var nom_p: String = padre.name.to_lower() if padre else ""
+					var nom_a: String = abuelo.name.to_lower() if abuelo else ""
+					if _es_colision_doble_cara(nom_p, nom_a):
+						conc.backface_collision = true
+						count += 1
+	return count
 
 
 func _es_vegetacion(n: String, p: String) -> bool:

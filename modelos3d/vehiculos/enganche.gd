@@ -288,8 +288,11 @@ func _activar_joint(cuerpo_a: PhysicsBody3D, cuerpo_b: PhysicsBody3D) -> void:
 	j6.set("angular_limit_x/upper_angle", deg_to_rad(22.0))
 	j6.set("angular_limit_x/softness", 0.5)
 
-	# Yaw (eje Y): Libre para giro de articulación de la tractomula
-	j6.set("angular_limit_y/enabled", false)
+	# Yaw (eje Y): Tope realista de quinta rueda (+-78 grados) para que el tráiler no traspase la cabina
+	j6.set("angular_limit_y/enabled", true)
+	j6.set("angular_limit_y/lower_angle", deg_to_rad(-78.0))
+	j6.set("angular_limit_y/upper_angle", deg_to_rad(78.0))
+	j6.set("angular_limit_y/softness", 0.5)
 
 	# Roll (eje Z): Permitir balanceo y torsión lateral del remolque (+-7 grados) para que el chasis oscile con las irregularidades del camino
 	j6.set("angular_limit_z/enabled", true)

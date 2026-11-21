@@ -114,10 +114,16 @@ var _luces_izq_mesh: Array[MeshInstance3D] = []
 var _luces_der_mesh: Array[MeshInstance3D] = []
 var _timer_parpadeo: float = 0.0
 var _estado_parpadeo: bool = false
+var _cruce_dir_destino: Vector3 = Vector3.FORWARD
+var _cruce_dist_inicial: float = 1.0
+var _tiempo_en_cruce: float = 0.0
+var _timer_direccional_giro: float = 0.0
 
 # ── Sensores y ruedas internos ────────────────────────────────────────────────
 var _sensor_suelo: RayCast3D = null
 var _sensores_frontales: Array[RayCast3D] = []
+var _retroceso_ray: float = 0.0
+var _ultimo_col_ray: Object = null
 var _ruedas_visuales: Array[Node3D] = []
 var _tiene_ruedas_ia: bool = false
 var _nodo_visual_fallback: Node3D = null
@@ -131,6 +137,7 @@ var _tiempo_etiqueta: float = 0.0
 static var _stream_claxon: AudioStream = null
 var _audio_claxon: AudioStreamPlayer3D = null
 var _tiempo_detenido: float = 0.0
+var _cooldown_reintento_arranque: float = 0.0
 var _timer_desesperacion_claxon: float = 0.0
 var _toques_pendientes: int = 0
 var _timer_entre_toques: float = 0.0
@@ -252,13 +259,17 @@ func _setup_sensores() -> void:
 	if rc_largo != null:
 		rc_largo.enabled = false
 
-	# 3. Sensores frontales a la altura exacta del parachoques para detectar jugadores, vehículos y obstáculos
-	var z_morro: float = -longitud_vehiculo * 0.50
+	# 3. Sensores frontales cubriendo todo el ancho y desde el cuarto delantero del chasis para eliminar puntos ciegos pegados al parachoques
+	_retroceso_ray = minf(longitud_vehiculo * 0.25, 1.8)
+	var z_inicio: float = -longitud_vehiculo * 0.50 + _retroceso_ray
+	var alcance_ray: float = distancia_raycast_largo + _retroceso_ray
 	var config_sensores: Array[Dictionary] = [
-		{"name": "RayFrontalCentro", "pos": Vector3(0.0, 0.55, z_morro), "tgt": Vector3(0.0, 0.0, -distancia_raycast_largo)},
-		{"name": "RayFrontalBajo", "pos": Vector3(0.0, 0.40, z_morro), "tgt": Vector3(0.0, 0.0, -distancia_raycast_largo)},
-		{"name": "RayFrontalIzq", "pos": Vector3(-0.95, 0.55, z_morro), "tgt": Vector3(-0.10, 0.0, -distancia_raycast_largo)},
-		{"name": "RayFrontalDer", "pos": Vector3(0.95, 0.55, z_morro), "tgt": Vector3(0.10, 0.0, -distancia_raycast_largo)},
+		{"name": "RayFrontalCentro", "pos": Vector3(0.0, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalMedIzq", "pos": Vector3(-0.48, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalMedDer", "pos": Vector3(0.48, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalBajo", "pos": Vector3(0.0, 0.50, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalIzq", "pos": Vector3(-0.98, 0.70, z_inicio), "tgt": Vector3(-0.10, 0.0, -alcance_ray)},
+		{"name": "RayFrontalDer", "pos": Vector3(0.98, 0.70, z_inicio), "tgt": Vector3(0.10, 0.0, -alcance_ray)},
 	]
 
 	for cfg in config_sensores:
@@ -271,6 +282,7 @@ func _setup_sensores() -> void:
 		ray.position = cfg["pos"]
 		ray.target_position = cfg["tgt"]
 		ray.collision_mask = 7  # Capas 1 (Jugador/Terreno), 2 (Vehículos), 3 (Tráfico IA)
+		ray.hit_from_inside = false
 		ray.enabled = true
 		ray.exclude_parent = true
 		ray.add_exception(self)
@@ -405,8 +417,6 @@ func _procesar_claxon_desesperado(delta: float) -> void:
 
 	# Si el vehículo está detenido (< 0.4 m/s) por trancón, líder o choque:
 	if velocidad_actual < 0.4:
-		_tiempo_detenido += delta
-
 		# Ráfagas rápidas de pitos ("¡Pi-Pi!")
 		if _toques_pendientes > 0:
 			_timer_entre_toques -= delta
@@ -430,8 +440,7 @@ func _procesar_claxon_desesperado(delta: float) -> void:
 				var factor_impaciencia := clampf(1.0 - (_tiempo_detenido / 18.0), 0.35, 1.0)
 				_timer_desesperacion_claxon = randf_range(2.2, 5.2) * factor_impaciencia
 	else:
-		# Al reiniciar la marcha, se reinician los contadores
-		_tiempo_detenido = maxf(_tiempo_detenido - delta * 2.5, 0.0)
+		# Al reiniciar la marcha, se reinician los contadores de claxon
 		_toques_pendientes = 0
 		_timer_desesperacion_claxon = randf_range(3.0, 6.0)
 
@@ -543,18 +552,31 @@ func desactivar() -> void:
 	current_lane = null
 
 
+func _es_jugador_o_camion_jugador(obj: Object) -> bool:
+	if not is_instance_valid(obj) or not (obj is Node):
+		return false
+	var n := obj as Node
+	return (n is CharacterBody3D) or n.is_in_group("jugador") or n.is_in_group("player") or (n.is_in_group("Vehiculo") and not (n is VehiculoTraficoIA))
+
+
 func _on_impacto_colision(body: Node) -> void:
 	if body == self or body is StaticBody3D or body is CSGShape3D or body is GridMap:
 		return
-	if body is CharacterBody3D or body is RigidBody3D or body.is_in_group("jugador") or body.is_in_group("Vehiculo") or body.is_in_group("trafico"):
+	var es_jugador_o_vehiculo := _es_jugador_o_camion_jugador(body)
+	# Entre vehículos IA a baja velocidad o cruzando intersección evitar bloqueos permanentes;
+	# con el jugador o su vehículo frenar SIEMPRE para no atravesarlos
+	if not es_jugador_o_vehiculo and (_cruzando_interseccion or velocidad_actual < 5.0):
+		return
+	if es_jugador_o_vehiculo or body is RigidBody3D or body.is_in_group("trafico"):
 		_registrar_choque(body)
 
 
 func _registrar_choque(body: Node) -> void:
 	if _en_choque:
 		return
+	var vel_impacto := velocidad_actual
 	_en_choque = true
-	_tiempo_choque = randf_range(3.5, 6.0)
+	_tiempo_choque = 2.0 if (body is CharacterBody3D and vel_impacto < 2.5) else randf_range(3.5, 6.0)
 	velocidad_actual = 0.0
 	linear_velocity = Vector3.ZERO
 	luces_stop = true
@@ -571,7 +593,7 @@ func _registrar_choque(body: Node) -> void:
 	# Si colisionamos con el jugador (CharacterBody3D):
 	# Evitar que la física de depenetración lo catapulte a velocidades absurdas.
 	# Le aplicamos un empujón suave y controlado realista de impacto.
-	if body is CharacterBody3D:
+	if body is CharacterBody3D and vel_impacto >= 2.5:
 		var cb := body as CharacterBody3D
 		var dir_push: Vector3 = (cb.global_position - global_position)
 		dir_push.y = 0.0
@@ -662,13 +684,14 @@ func _physics_process(delta: float) -> void:
 			velocidad_actual = move_toward(velocidad_actual, 0.0, frenado * 2.2 * delta)
 		luces_stop = true
 	elif velocidad_objetivo > velocidad_actual:
-		velocidad_actual = move_toward(velocidad_actual, velocidad_objetivo, aceleracion * delta)
+		var tasa_acel := aceleracion * (0.65 if velocidad_actual > 3.0 else 1.0)
+		velocidad_actual = move_toward(velocidad_actual, velocidad_objetivo, tasa_acel * delta)
 		luces_stop = false
 	else:
-		# Desaceleración progresiva suave (estilo crucero adaptativo ATS/ETS2, sin frenazos bruscos)
-		var tasa_frenado := frenado if espacio_frente < 10.0 else 2.6
+		# Desaceleración progresiva suave (sin frenazos bruscos al entrar a curvas)
+		var tasa_frenado := frenado if espacio_frente < 12.0 else 1.4
 		velocidad_actual = move_toward(velocidad_actual, velocidad_objetivo, tasa_frenado * delta)
-		luces_stop = (velocidad_actual > 0.5 and (velocidad_actual - velocidad_objetivo > 2.0 or espacio_frente < 10.0))
+		luces_stop = (velocidad_actual > 0.5 and (velocidad_actual - velocidad_objetivo > 4.0 or espacio_frente < 12.0))
 
 	# Freno absoluto de emergencia y corte total de avance (anti-superposición y anti-deslizamiento)
 	var avance: float = 0.0
@@ -686,22 +709,31 @@ func _physics_process(delta: float) -> void:
 				velocidad_actual = avance / delta
 				luces_stop = true
 
-	# 2.5 Bocina / Claxon de impaciencia cuando el tráfico está detenido
+	# 2.5 Conteo global de detención (independiente de LOD/audio) y bocina de impaciencia
+	if velocidad_actual < 0.35 and not frenar_por_semaforo and not _en_choque:
+		_tiempo_detenido += delta
+		_cooldown_reintento_arranque = maxf(_cooldown_reintento_arranque - delta, 0.0)
+	elif velocidad_actual >= 1.5:
+		_tiempo_detenido = maxf(_tiempo_detenido - delta * 2.5, 0.0)
+		_cooldown_reintento_arranque = 0.0
+
 	_procesar_claxon_desesperado(delta)
 
-	# 2.6 Sistema Anti-Stuck tipo ATS/ETS2 (sin saltos bruscos ni teletransportes hacia otros vehículos)
-	if velocidad_actual < 0.2 and not frenar_por_semaforo and not _en_choque:
-		if _tiempo_detenido > 9.0 and espacio_frente > 7.5:
-			# Si el frente está despejado, reanudar la marcha suavemente
+	# 2.6 Sistema Anti-Stuck tipo ATS/ETS2: nunca reciclar si espera al jugador o está visible cerca (< 75 m)
+	if velocidad_actual < 0.35 and not frenar_por_semaforo and not _en_choque:
+		var bloqueado_por_jugador := _es_jugador_o_camion_jugador(_ultimo_col_ray)
+		var visible_para_jugador := (distancia_al_jugador < 75.0)
+		if _tiempo_detenido > 6.5 and not bloqueado_por_jugador and not visible_para_jugador:
 			_tiempo_detenido = 0.0
+			_cooldown_reintento_arranque = 0.0
+			if network_manager != null and network_manager.has_method("_reciclar_vehiculo_atascado"):
+				network_manager._reciclar_vehiculo_atascado(self)
+		elif _cooldown_reintento_arranque <= 0.0 and _tiempo_detenido > 2.5 and espacio_frente > distancia_minima + 0.5:
+			# Si el frente está despejado, intentar reanudar suavemente sin borrar _tiempo_detenido
+			_cooldown_reintento_arranque = 2.5
 			velocidad_actual = 3.5
 			avance = velocidad_actual * delta
 			luces_stop = false
-		elif _tiempo_detenido > 16.0:
-			# Si lleva más de 16 segundos bloqueado en un trancón cerrado, reciclar limpiamente
-			_tiempo_detenido = 0.0
-			if network_manager != null and network_manager.has_method("_reciclar_vehiculo_atascado"):
-				network_manager._reciclar_vehiculo_atascado(self)
 
 	# MODO 0: Cruce continuo de intersección entre dos Path3D separados
 	if _cruzando_interseccion:
@@ -772,8 +804,11 @@ func _procesar_cambio_carril(delta: float) -> void:
 		_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
 		return
 
-	# Prohibido iniciar adelantamientos o cambios de carril en curvas o rotondas (evita salirse a aceras/pasto)
-	if absf(angulo_ruedas) > deg_to_rad(6.0):
+	# Prohibido iniciar adelantamientos o cambios de carril en curvas, rotondas, cruces o cerca de rotondas
+	var cerca_rotonda: bool = false
+	if network_manager != null and network_manager.has_method("_esta_en_zona_rotonda"):
+		cerca_rotonda = bool(network_manager._esta_en_zona_rotonda(global_position, 120.0))
+	if _cruzando_interseccion or cerca_rotonda or absf(angulo_ruedas) > deg_to_rad(4.0):
 		if _estado_carril == EstadoCarril.CARRIL_BASE or _estado_carril == EstadoCarril.PREPARANDO_CAMBIO:
 			_desfase_lateral_objetivo = 0.0
 			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
@@ -789,11 +824,12 @@ func _procesar_cambio_carril(delta: float) -> void:
 			_desfase_lateral_objetivo = 0.0
 			_desfase_lateral_actual = move_toward(_desfase_lateral_actual, 0.0, velocidad_cambio_lateral * delta)
 
-			# Solo evaluar sobrepaso si tenemos cooldown listo y líder lento delante
+			# Solo evaluar sobrepaso si hay otro vehículo IA lento delante (nunca esquivar al jugador cambiando de carril)
 			if _cooldown_cambio_carril <= 0.0 and velocidad_actual > 3.0 and not frenar_por_semaforo:
 				var menor_ray := _obtener_menor_distancia_sensores()
+				var hay_jugador_o_bloqueo := (_ultimo_col_ray != null and not (_ultimo_col_ray is VehiculoTraficoIA))
 				var obstaculo := minf(distancia_lider, menor_ray)
-				if obstaculo < 26.0 and obstaculo > distancia_raycast_corto:
+				if not hay_jugador_o_bloqueo and obstaculo < 26.0 and obstaculo > distancia_raycast_corto:
 					# REQUISITO: El adelantamiento ÚNICAMENTE debe ser si tiene otro path cercano en la misma dirección
 					var camino_actual: Path3D = null
 					if current_lane != null:
@@ -897,6 +933,47 @@ func iniciar_cruce_interseccion(camino_dest: Path3D, offset_dest: float, punto_d
 	_cruce_camino_destino = camino_dest
 	_cruce_offset_destino = offset_dest
 	_cruce_destino_pos = punto_dest
+	_cruce_dist_inicial = maxf(global_position.distance_to(punto_dest), 1.0)
+	_tiempo_en_cruce = 0.0
+
+	# Calcular tangente final de destino para curvar suavemente y activar direccionales
+	_cruce_dir_destino = (punto_dest - global_position)
+	_cruce_dir_destino.y = 0.0
+	if is_instance_valid(camino_dest) and camino_dest.curve != null:
+		var c_len := camino_dest.curve.get_baked_length()
+		var off_fwd := minf(offset_dest + 3.0, c_len)
+		if off_fwd <= offset_dest + 0.2:
+			off_fwd = maxf(offset_dest - 3.0, 0.0)
+		var pt_a := camino_dest.to_global(camino_dest.curve.sample_baked(offset_dest))
+		var pt_b := camino_dest.to_global(camino_dest.curve.sample_baked(off_fwd))
+		var d_tan := (pt_b - pt_a) if off_fwd > offset_dest else (pt_a - pt_b)
+		d_tan.y = 0.0
+		if d_tan.length_squared() > 0.001:
+			_cruce_dir_destino = d_tan.normalized()
+	elif _cruce_dir_destino.length_squared() > 0.001:
+		_cruce_dir_destino = _cruce_dir_destino.normalized()
+
+	var fwd := -global_transform.basis.z
+	fwd.y = 0.0
+	if fwd.length_squared() > 0.001 and _cruce_dir_destino.length_squared() > 0.001:
+		var ang := fwd.normalized().signed_angle_to(_cruce_dir_destino, Vector3.UP)
+		if ang > deg_to_rad(5.0):
+			luces_direccional_izq = true
+			luces_direccional_der = false
+			_timer_direccional_giro = 2.4
+		elif ang < -deg_to_rad(5.0):
+			luces_direccional_der = true
+			luces_direccional_izq = false
+			_timer_direccional_giro = 2.4
+		elif network_manager != null and network_manager.has_method("_es_rotonda"):
+			if network_manager._es_rotonda(camino_dest):
+				luces_direccional_izq = true
+				luces_direccional_der = false
+				_timer_direccional_giro = 2.0
+			else:
+				luces_direccional_der = true
+				luces_direccional_izq = false
+				_timer_direccional_giro = 2.0
 
 
 func _procesar_cruce_interseccion(avance: float, delta: float) -> void:
@@ -904,12 +981,15 @@ func _procesar_cruce_interseccion(avance: float, delta: float) -> void:
 		_cruzando_interseccion = false
 		return
 
+	_tiempo_en_cruce += delta
 	var pos_actual := global_position
 	var dir := _cruce_destino_pos - pos_actual
 	dir.y = 0.0
 	var dist_restante := dir.length()
+	var dir_n := dir / dist_restante if dist_restante > 0.001 else _cruce_dir_destino
 
-	if dist_restante <= maxf(avance, 1.5):
+	var rebaso_destino := (_tiempo_en_cruce > 0.25 and dist_restante < 6.5 and _cruce_dir_destino.length_squared() > 0.001 and dir_n.dot(_cruce_dir_destino) < 0.0)
+	if dist_restante <= maxf(avance + 0.5, 2.2) or rebaso_destino or _tiempo_en_cruce > 4.5:
 		_cruzando_interseccion = false
 		var dest := _cruce_camino_destino
 		var off := _cruce_offset_destino
@@ -918,17 +998,21 @@ func _procesar_cruce_interseccion(avance: float, delta: float) -> void:
 			network_manager.finalizar_cruce_camino(self, dest, off)
 		return
 
-	var dir_n := dir / dist_restante
-	var target_basis := Basis.looking_at(dir_n, Vector3.UP)
-	global_transform.basis = global_transform.basis.slerp(target_basis, clampf(delta * 5.5, 0.0, 1.0))
+	var t_blend := clampf(1.0 - (dist_restante / _cruce_dist_inicial), 0.0, 1.0)
+	var has_tan := _cruce_dir_destino.length_squared() > 0.001
+	var dir_visual := dir_n.slerp(_cruce_dir_destino, t_blend * 0.70).normalized() if has_tan else dir_n
+	# El desplazamiento siempre converge hacia _cruce_destino_pos (evita orbitar tangencialmente alrededor del punto)
+	var dir_mov := dir_n if (dist_restante <= 4.5 or not has_tan) else dir_n.slerp(_cruce_dir_destino, t_blend * 0.28).normalized()
+	var target_basis := Basis.looking_at(dir_visual, Vector3.UP)
+	global_transform.basis = global_transform.basis.slerp(target_basis, clampf(delta * 4.5, 0.0, 1.0))
 
 	var fwd_chasis := -global_transform.basis.z
 	fwd_chasis.y = 0.0
 	if fwd_chasis.length_squared() > 0.001:
-		var angle_diff := fwd_chasis.normalized().signed_angle_to(dir_n, Vector3.UP)
+		var angle_diff := fwd_chasis.normalized().signed_angle_to(dir_visual, Vector3.UP)
 		angulo_ruedas = lerpf(angulo_ruedas, clampf(angle_diff * 1.4, -deg_to_rad(32.0), deg_to_rad(32.0)), clampf(delta * 8.0, 0.0, 1.0))
 
-	global_position = pos_actual + dir_n * avance
+	global_position = pos_actual + dir_mov * avance
 	linear_velocity = -global_transform.basis.z * velocidad_actual
 
 
@@ -1086,7 +1170,8 @@ func _actualizar_direccion_y_fisica_path(delta: float) -> void:
 					var fwd_chasis := -global_transform.basis.z
 					fwd_chasis.y = 0.0
 					var angle_diff := fwd_chasis.normalized().signed_angle_to(dir_look.normalized(), Vector3.UP)
-					angulo_ruedas = clampf(angle_diff * 1.6, -deg_to_rad(35.0), deg_to_rad(35.0))
+					var objetivo_ang := clampf(angle_diff * 1.35, -deg_to_rad(32.0), deg_to_rad(32.0))
+					angulo_ruedas = lerpf(angulo_ruedas, objetivo_ang, clampf(delta * 6.5, 0.0, 1.0))
 			else:
 				var dir_fwd := -global_transform.basis.z
 				if dir_fwd.length_squared() > 0.01:
@@ -1111,11 +1196,12 @@ func _obtener_menor_distancia_sensores() -> float:
 		return _distancia_ray_cache
 
 	_ultimo_frame_ray = frame_actual
+	_ultimo_col_ray = null
 	var menor := INF
 
-	# En curvas y rotondas cerradas, usar solo rayos centrales y filtrar vehículos en carriles adyacentes/opuestos
+	# En LOD 0 usar siempre los 6 sensores frontales (incluidas curvas y rotondas) orientados hacia el giro real
 	var en_curva := absf(angulo_ruedas) > deg_to_rad(4.0)
-	var cant_rayos: int = 1 if _lod_level == 1 else (2 if en_curva else _sensores_frontales.size())
+	var cant_rayos: int = 3 if _lod_level == 1 else _sensores_frontales.size()
 	var fwd_propio := -global_transform.basis.z
 	fwd_propio.y = 0.0
 	if fwd_propio.length_squared() > 0.001:
@@ -1126,24 +1212,36 @@ func _obtener_menor_distancia_sensores() -> float:
 			break
 		var ray: RayCast3D = _sensores_frontales[i]
 		if is_instance_valid(ray) and ray.enabled:
+			# Inclinar el abanico de sensores en el sentido del giro para detectar jugador/obstáculos dentro de la curva
+			ray.rotation.y = angulo_ruedas * 0.65 if en_curva else 0.0
 			ray.force_raycast_update()
 			if ray.is_colliding():
 				var col = ray.get_collider()
 				if _es_obstaculo_valido(col):
-					var d := ray.global_position.distance_to(ray.get_collision_point())
-					if en_curva and d > 12.0:
+					var d := maxf(ray.global_position.distance_to(ray.get_collision_point()) - _retroceso_ray, 0.0)
+					if en_curva and d > 24.0:
 						continue
-					# Ignorar otro tráfico que circule en sentido contrario o en otro carril paralelo durante curvas
+					# En rotonda: quien ya va dentro tiene prelación y no frena por vehículos esperando en vías de entrada
 					if col is VehiculoTraficoIA and col is Node3D:
+						var col_veh := col as VehiculoTraficoIA
+						if path_follow != null and network_manager != null and network_manager.has_method("_es_rotonda"):
+							var mi_cam := path_follow.get_parent() as Path3D
+							if mi_cam != null and network_manager._es_rotonda(mi_cam) and not _cruzando_interseccion:
+								var otro_cam := col_veh.path_follow.get_parent() as Path3D if col_veh.path_follow != null else null
+								if otro_cam != mi_cam and not network_manager._es_rotonda(otro_cam):
+									# Ignorar vehículos fuera del anillo o recién asomando en entrada si no están en nuestro camino inmediato
+									if not col_veh._cruzando_interseccion or d > 9.0:
+										continue
 						var col_node := col as Node3D
 						var fwd_otro := -col_node.global_transform.basis.z
 						fwd_otro.y = 0.0
 						if fwd_otro.length_squared() > 0.001:
 							var alinea := fwd_propio.dot(fwd_otro.normalized())
-							if en_curva and alinea < 0.35 and d > 5.0:
+							if en_curva and alinea < 0.10 and d > 8.0:
 								continue
 					if d < menor:
 						menor = d
+						_ultimo_col_ray = col
 
 	_distancia_ray_cache = menor
 	return menor
@@ -1180,11 +1278,12 @@ func _calcular_velocidad_objetivo() -> float:
 		if limite_ms > 0.0:
 			objetivo = minf(objetivo, limite_ms)
 
-	# 0. Reducción natural de velocidad en rotondas y curvas cerradas (solo en giros marcados)
+	# 0. Reducción natural y progresiva de velocidad en rotondas y curvas cerradas
 	var angulo_curva := absf(angulo_ruedas)
-	if angulo_curva > deg_to_rad(12.0):
-		var factor_curva := clampf(1.0 - (angulo_curva - deg_to_rad(12.0)) / deg_to_rad(24.0), 0.55, 1.0)
-		var vel_curva := maxf(velocidad_crucero * factor_curva, 7.0)
+	if angulo_curva > deg_to_rad(15.0):
+		var t_curva := clampf((angulo_curva - deg_to_rad(15.0)) / deg_to_rad(25.0), 0.0, 1.0)
+		var factor_curva := lerpf(1.0, 0.70, smoothstep(0.0, 1.0, t_curva))
+		var vel_curva := maxf(objetivo * factor_curva, 9.5)
 		objetivo = minf(objetivo, vel_curva)
 
 	# 1. Distancia de líder sobre la curva calculada por TrafficNetworkManager3D / GestorTrafico
@@ -1253,6 +1352,12 @@ func _actualizar_suspension_fallback(delta: float) -> void:
 
 
 func _actualizar_luces(delta: float) -> void:
+	if _timer_direccional_giro > 0.0:
+		_timer_direccional_giro -= delta
+		if _timer_direccional_giro <= 0.0 and not _en_choque and _estado_carril == EstadoCarril.CARRIL_BASE:
+			luces_direccional_izq = false
+			luces_direccional_der = false
+
 	# Parpadeo de direccionales a 1.5 Hz
 	if luces_direccional_izq or luces_direccional_der:
 		_timer_parpadeo += delta
