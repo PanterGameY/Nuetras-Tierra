@@ -20,6 +20,7 @@ var refresh_token: String = ""
 var user_id: String = ""
 var user_email: String = ""
 var user_provider: String = ""
+var user_discord_id: String = ""
 var user_metadata: Dictionary = {}
 
 var _pkce_verifier: String = ""
@@ -136,6 +137,7 @@ func cerrar_sesion() -> void:
 	user_id = ""
 	user_email = ""
 	user_provider = ""
+	user_discord_id = ""
 	user_metadata = {}
 	if FileAccess.file_exists(SESSION_PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(SESSION_PATH))
@@ -244,6 +246,10 @@ func _manejar_http_callback_local(cli: StreamPeerTCP, req_str: String) -> void:
 		auth_error.emit("No se recibió el código de autorización de Supabase.")
 
 func _intercambiar_codigo_pkce(code: String) -> void:
+	# Dar un breve respiro en Android al volver del navegador para que la red esté lista
+	if OS.has_feature("android") and get_tree():
+		await get_tree().create_timer(0.25).timeout
+
 	var url := "%s/auth/v1/token?grant_type=pkce" % SUPABASE_URL
 	var headers := [
 		"apikey: " + SUPABASE_KEY,
@@ -254,10 +260,25 @@ func _intercambiar_codigo_pkce(code: String) -> void:
 		"code_verifier": _pkce_verifier
 	})
 
+	_enviar_pkce_con_reintentos(url, headers, body, 1)
+
+func _enviar_pkce_con_reintentos(url: String, headers: Array, body: String, intento: int) -> void:
 	var http := HTTPRequest.new()
+	http.use_threads = true
+	http.timeout = 15.0
 	add_child(http)
-	http.request_completed.connect(func(_res: int, status: int, _hdrs: PackedStringArray, resp_body: PackedByteArray):
+	http.request_completed.connect(func(res: int, status: int, _hdrs: PackedStringArray, resp_body: PackedByteArray):
 		http.queue_free()
+		if res != HTTPRequest.RESULT_SUCCESS and intento < 3:
+			push_warning("[SupabaseManager] Reintentando PKCE tras fallo de transporte (res=%d, intento=%d)" % [res, intento])
+			if get_tree():
+				await get_tree().create_timer(0.6).timeout
+			_enviar_pkce_con_reintentos(url, headers, body, intento + 1)
+			return
+		if res != HTTPRequest.RESULT_SUCCESS:
+			push_warning("[SupabaseManager] Error de transporte PKCE (res=%d)" % res)
+			auth_error.emit("Error de red al intercambiar token PKCE (res=%d)." % res)
+			return
 		var txt := resp_body.get_string_from_utf8()
 		var json = JSON.parse_string(txt)
 		if status >= 200 and status < 300 and json is Dictionary and json.has("access_token"):
@@ -273,7 +294,14 @@ func _intercambiar_codigo_pkce(code: String) -> void:
 	var err := http.request(url, headers, HTTPClient.METHOD_POST, body)
 	if err != OK:
 		http.queue_free()
-		auth_error.emit("Error de red al intercambiar token PKCE.")
+		if intento < 3:
+			push_warning("[SupabaseManager] Reintentando http.request PKCE (err=%d, intento=%d)" % [err, intento])
+			if get_tree():
+				await get_tree().create_timer(0.6).timeout
+			_enviar_pkce_con_reintentos(url, headers, body, intento + 1)
+			return
+		push_warning("[SupabaseManager] Fallo http.request PKCE (err=%d)" % err)
+		auth_error.emit("Error de red al intercambiar token PKCE (err=%d)." % err)
 
 func _obtener_usuario_actual() -> void:
 	var url := "%s/auth/v1/user" % SUPABASE_URL
@@ -320,11 +348,14 @@ func _aplicar_datos_usuario(usr: Dictionary) -> void:
 
 	var discord_handle := ""
 	if user_provider == "discord":
+		user_discord_id = str(user_metadata.get("provider_id", user_metadata.get("sub", "")))
 		var claims = user_metadata.get("custom_claims", {})
 		if claims is Dictionary:
 			discord_handle = str(claims.get("global_name", claims.get("username", "")))
 		if discord_handle.is_empty():
 			discord_handle = str(user_metadata.get("preferred_username", user_metadata.get("name", user_metadata.get("full_name", ""))))
+	else:
+		user_discord_id = ""
 
 	var avatar := str(user_metadata.get("avatar_url", user_metadata.get("picture", "")))
 	if not avatar.is_empty():
@@ -435,6 +466,8 @@ func guardar_perfil(campos: Dictionary = {}) -> void:
 				"c3": bool(du.licencia_c3)
 			}
 		}
+	if not user_discord_id.is_empty():
+		payload["discord_id"] = user_discord_id
 	payload["actualizado_en"] = Time.get_datetime_string_from_system(true)
 
 	var url := "%s/rest/v1/perfiles?id=eq.%s" % [SUPABASE_URL, user_id.uri_encode()]
@@ -590,7 +623,10 @@ func _extraer_parametro_url(url_o_ruta: String, clave: String) -> String:
 	var idx_h := url_o_ruta.find("#")
 	var query := ""
 	if idx_q != -1:
-		query = url_o_ruta.substr(idx_q + 1)
+		if idx_h > idx_q:
+			query = url_o_ruta.substr(idx_q + 1, idx_h - idx_q - 1)
+		else:
+			query = url_o_ruta.substr(idx_q + 1)
 	elif idx_h != -1:
 		query = url_o_ruta.substr(idx_h + 1)
 	if query.is_empty():
