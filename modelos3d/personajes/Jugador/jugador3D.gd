@@ -291,6 +291,16 @@ func _ready():
 			if datos.guardado_player_pos != Vector3.ZERO:
 				global_position = datos.guardado_player_pos
 				rotation.y = datos.guardado_player_rot_y
+				# Evitar aparecer incrustado dentro de la cabina de un vehículo restaurado
+				var gv_spawn := get_node_or_null("/root/GestorVehiculos")
+				if gv_spawn and gv_spawn.has_method("calcular_punto_salida_seguro"):
+					for v_jug in get_tree().get_nodes_in_group("vehiculo_jugador"):
+						if v_jug is Node3D and is_instance_valid(v_jug):
+							var vj := v_jug as Node3D
+							var d_xz := Vector2(global_position.x - vj.global_position.x, global_position.z - vj.global_position.z).length()
+							if d_xz < 1.35 and absf(global_position.y - vj.global_position.y) < 2.2:
+								global_position = gv_spawn.call("calcular_punto_salida_seguro", self, vj)
+								break
 				print("[jugador3D] Cargada posición guardada: ", global_position)
 
 	# Asegurar altura limpia sobre el suelo estático al aparecer/respawnear (evita caer por márgenes de 0mm o lag de carga)
@@ -1504,33 +1514,47 @@ func actualizar_transform_remoto(pos: Vector3, rot_y: float, vel: Vector3, anim:
 		_anim_actual = anim
 		_conduciendo = cond
 
-func _guardar_posicion_rapida() -> void:
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST or what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_PREDELETE:
+		if is_inside_tree() and (not multiplayer.has_multiplayer_peer() or is_multiplayer_authority()):
+			_guardar_posicion_rapida(true)
+
+
+func _guardar_posicion_rapida(forzar_disco: bool = false) -> void:
 	if _es_modo_prueba():
 		return
 	var datos = get_node_or_null("/root/DatosUsuario")
 	if datos:
+		var gv := get_node_or_null("/root/GestorVehiculos")
 		var pos = global_position
 		var rot_y = rotation.y
-		if _conduciendo and _vehiculo_actual:
-			pos = _vehiculo_actual.global_position
+		if _conduciendo and is_instance_valid(_vehiculo_actual):
+			if gv and gv.has_method("guardar_ubicacion_vehiculo"):
+				gv.call("guardar_ubicacion_vehiculo", _vehiculo_actual, false)
+			if gv and gv.has_method("calcular_punto_salida_seguro"):
+				pos = gv.call("calcular_punto_salida_seguro", self, _vehiculo_actual)
+			else:
+				pos = _vehiculo_actual.global_position - (_vehiculo_actual.global_transform.basis.x.normalized() * 2.4)
 			rot_y = _vehiculo_actual.rotation.y
-			var clave_v := str(_vehiculo_actual.scene_file_path) if _vehiculo_actual.scene_file_path != "" else str(_vehiculo_actual.name)
-			if typeof(datos.vehiculos_posiciones) == TYPE_DICTIONARY and clave_v != "":
-				var cur_sc := get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
-				datos.vehiculos_posiciones[clave_v] = {
-					"pos": _vehiculo_actual.global_position,
-					"rot": _vehiculo_actual.global_rotation,
-					"scene": cur_sc,
-					"nombre": str(_vehiculo_actual.name)
-				}
+		if gv and gv.has_method("guardar_ubicacion_vehiculo") and get_tree():
+			for v_nodo in get_tree().get_nodes_in_group("vehiculo_jugador"):
+				if v_nodo is Node3D and is_instance_valid(v_nodo):
+					gv.call("guardar_ubicacion_vehiculo", v_nodo, false)
+			for t_nodo in get_tree().get_nodes_in_group("remolque"):
+				if t_nodo is Node3D and is_instance_valid(t_nodo):
+					gv.call("guardar_ubicacion_vehiculo", t_nodo, false)
 		if not _conduciendo and _tiene_pos_segura:
 			if pos.y < -2.5 or _buscar_superficie_via_arriba(pos) > -9000.0:
 				pos = _ultima_pos_segura
 		datos.guardado_player_pos = pos
 		datos.guardado_player_rot_y = rot_y
-		var current_scene_path = get_tree().current_scene.scene_file_path if get_tree() and get_tree().current_scene else ""
+		var current_scene_path = ""
+		if gv and gv.has_method("_obtener_ruta_escena_actual"):
+			current_scene_path = gv.call("_obtener_ruta_escena_actual", self)
+		if current_scene_path == "" and get_tree() and get_tree().current_scene:
+			current_scene_path = get_tree().current_scene.scene_file_path
 		datos.guardado_player_scene = current_scene_path
-		datos.save_local()
+		datos.save_local(forzar_disco)
 
 
 func _ajustar_altura_aparicion() -> void:

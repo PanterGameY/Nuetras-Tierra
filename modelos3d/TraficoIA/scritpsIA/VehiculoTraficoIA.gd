@@ -269,8 +269,11 @@ func _setup_sensores() -> void:
 	var alcance_ray: float = distancia_raycast_largo + _retroceso_ray
 	var config_sensores: Array[Dictionary] = [
 		{"name": "RayFrontalCentro", "pos": Vector3(0.0, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalAlto", "pos": Vector3(0.0, 1.65, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
 		{"name": "RayFrontalMedIzq", "pos": Vector3(-0.48, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
 		{"name": "RayFrontalMedDer", "pos": Vector3(0.48, 0.70, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
+		{"name": "RayFrontalAltoIzq", "pos": Vector3(-0.88, 1.60, z_inicio), "tgt": Vector3(-0.08, 0.0, -alcance_ray)},
+		{"name": "RayFrontalAltoDer", "pos": Vector3(0.88, 1.60, z_inicio), "tgt": Vector3(0.08, 0.0, -alcance_ray)},
 		{"name": "RayFrontalBajo", "pos": Vector3(0.0, 0.50, z_inicio), "tgt": Vector3(0.0, 0.0, -alcance_ray)},
 		{"name": "RayFrontalIzq", "pos": Vector3(-0.98, 0.70, z_inicio), "tgt": Vector3(-0.10, 0.0, -alcance_ray)},
 		{"name": "RayFrontalDer", "pos": Vector3(0.98, 0.70, z_inicio), "tgt": Vector3(0.10, 0.0, -alcance_ray)},
@@ -568,7 +571,7 @@ func _es_jugador_o_camion_jugador(obj: Object) -> bool:
 	if not is_instance_valid(obj) or not (obj is Node):
 		return false
 	var n := obj as Node
-	return (n is CharacterBody3D) or n.is_in_group("jugador") or n.is_in_group("player") or (n.is_in_group("Vehiculo") and not (n is VehiculoTraficoIA))
+	return (n is CharacterBody3D) or n.is_in_group("jugador") or n.is_in_group("player") or n.is_in_group("remolque") or n.is_in_group("trailers") or (n.is_in_group("Vehiculo") and not (n is VehiculoTraficoIA))
 
 
 func _on_impacto_colision(body: Node) -> void:
@@ -692,17 +695,20 @@ func _physics_process(delta: float) -> void:
 
 	var espacio_frente := minf(distancia_lider, menor_ray)
 	var dist_parada_efectiva := 2.9 if (saliendo_al_carril and dist_jug_directo > 4.5) else distancia_minima
-	var debe_detenerse := (velocidad_objetivo <= 0.1 or espacio_frente <= dist_parada_efectiva)
+	# Histéresis de arranque: si ya está detenido, esperar margen extra antes de reiniciar marcha
+	var margen_rearranque := 0.75 if velocidad_actual < 0.1 else 0.0
+	var debe_detenerse := (velocidad_objetivo <= 0.15 or espacio_frente <= dist_parada_efectiva + margen_rearranque)
 
 	if debe_detenerse:
-		# Frenado sólido inmediato: si va a baja velocidad o muy cerca del líder, PARADA TOTAL (0.0)
-		if velocidad_actual < 1.4 or espacio_frente <= distancia_minima * 0.75:
+		# Frenado suave y firme: parada total sólo al quedar muy lento o pegado al obstáculo
+		if velocidad_actual < 0.20 or espacio_frente <= HOLGURA_ABSOLUTA + 0.30:
 			velocidad_actual = 0.0
 		else:
-			velocidad_actual = move_toward(velocidad_actual, 0.0, frenado * 2.2 * delta)
+			velocidad_actual = move_toward(velocidad_actual, 0.0, frenado * 1.8 * delta)
 		luces_stop = true
 	elif velocidad_objetivo > velocidad_actual:
-		var tasa_acel := aceleracion * (0.65 if velocidad_actual > 3.0 else 1.0)
+		var factor_arranque := lerpf(0.35, 0.90, clampf(velocidad_actual / 4.5, 0.0, 1.0))
+		var tasa_acel := aceleracion * factor_arranque
 		velocidad_actual = move_toward(velocidad_actual, velocidad_objetivo, tasa_acel * delta)
 		luces_stop = false
 	else:
@@ -746,10 +752,10 @@ func _physics_process(delta: float) -> void:
 			_cooldown_reintento_arranque = 0.0
 			if network_manager != null and network_manager.has_method("_reciclar_vehiculo_atascado"):
 				network_manager._reciclar_vehiculo_atascado(self)
-		elif _cooldown_reintento_arranque <= 0.0 and _tiempo_detenido > 2.5 and espacio_frente > distancia_minima + 0.5:
-			# Si el frente está despejado, intentar reanudar suavemente sin borrar _tiempo_detenido
+		elif _cooldown_reintento_arranque <= 0.0 and _tiempo_detenido > 2.5 and espacio_frente > dist_parada_efectiva + 0.85 and velocidad_objetivo > 0.25:
+			# Si el frente está despejado, reanudar progresivamente desde cero sin salto brusco
 			_cooldown_reintento_arranque = 2.5
-			velocidad_actual = 3.5
+			velocidad_actual = move_toward(velocidad_actual, minf(velocidad_objetivo, 1.5), aceleracion * 0.35 * delta)
 			avance = velocidad_actual * delta
 			luces_stop = false
 
@@ -1355,39 +1361,54 @@ func _obtener_distancia_jugador_directa() -> float:
 	return float(_obtener_info_jugador_directa().get("dist", INF))
 
 
-## Barrera geométrica directa en espacio local contra el jugador (o su vehículo) para impedir que lo atraviesen a corta distancia
+## Barrera geométrica directa en espacio local contra el jugador, su vehículo y remolques para impedir traspasos
 func _obtener_info_jugador_directa() -> Dictionary:
-	if distancia_al_jugador > 35.0 or not is_inside_tree():
+	if not is_inside_tree():
 		return {"dist": INF, "obj": null}
-	var jugador_node: Node3D = null
-	if network_manager != null and network_manager.has_method("_find_player"):
-		jugador_node = network_manager._find_player() as Node3D
-	elif get_tree() != null:
-		jugador_node = get_tree().get_first_node_in_group("jugador") as Node3D
-	if not is_instance_valid(jugador_node):
-		return {"dist": INF, "obj": null}
-
-	var objetivos: Array[Node3D] = [jugador_node]
-	var veh_conducido = jugador_node.get("_vehiculo_actual")
-	if veh_conducido is Node3D and is_instance_valid(veh_conducido):
-		objetivos.append(veh_conducido as Node3D)
-
 	var mitad_largo: float = longitud_vehiculo * 0.5
 	var menor_j: float = INF
 	var mejor_obj: Object = null
-	for obj in objetivos:
-		var loc := to_local(obj.global_position)
-		if absf(loc.y) > 3.2:
-			continue
-		var semiancho: float = 2.1 if obj != jugador_node else 1.65
-		if absf(loc.x) > semiancho:
-			continue
-		# Adelante del vehículo es -Z. Cubrir desde la cabina (0.25) hasta 24m delante del parachoques frontal (-mitad_largo)
-		if loc.z <= 0.25 and loc.z >= -(mitad_largo + 24.0):
-			var dist_frontal: float = maxf(-loc.z - mitad_largo, 0.0)
-			if dist_frontal < menor_j:
-				menor_j = dist_frontal
-				mejor_obj = obj
+
+	var jugador_node: Node3D = null
+	if distancia_al_jugador <= 40.0:
+		if network_manager != null and network_manager.has_method("_find_player"):
+			jugador_node = network_manager._find_player() as Node3D
+		elif get_tree() != null:
+			jugador_node = get_tree().get_first_node_in_group("jugador") as Node3D
+		if is_instance_valid(jugador_node):
+			var loc_j := to_local(jugador_node.global_position)
+			if absf(loc_j.y) <= 3.2 and absf(loc_j.x) <= 1.65 and loc_j.z <= 0.25 and loc_j.z >= -(mitad_largo + 24.0):
+				var dist_j: float = maxf(-loc_j.z - mitad_largo, 0.0)
+				if dist_j < menor_j:
+					menor_j = dist_j
+					mejor_obj = jugador_node
+			var veh_conducido = jugador_node.get("_vehiculo_actual")
+			if veh_conducido is Node3D and is_instance_valid(veh_conducido):
+				var vc := veh_conducido as Node3D
+				for z_s in [-2.8, 0.0, 2.8]:
+					var loc_v := to_local(vc.to_global(Vector3(0.0, 1.0, z_s)))
+					if absf(loc_v.y) <= 3.2 and absf(loc_v.x) <= 1.75 and loc_v.z <= 0.25 and loc_v.z >= -(mitad_largo + 24.0):
+						var dist_v: float = maxf(-loc_v.z - mitad_largo, 0.0)
+						if dist_v < menor_j:
+							menor_j = dist_v
+							mejor_obj = vc
+
+	if get_tree() != null:
+		for tr_node in get_tree().get_nodes_in_group("remolque"):
+			if not (tr_node is Node3D) or not is_instance_valid(tr_node):
+				continue
+			var tr := tr_node as Node3D
+			if not tr.is_inside_tree() or tr.global_position.distance_squared_to(global_position) > 1444.0:
+				continue
+			for z_t in [-6.0, -3.5, -1.0, 1.5, 4.0, 6.2]:
+				for x_t in [-1.15, 1.15]:
+					var loc_t := to_local(tr.to_global(Vector3(x_t, 1.2, z_t)))
+					if absf(loc_t.y) <= 3.6 and absf(loc_t.x) <= 1.65 and loc_t.z <= 0.25 and loc_t.z >= -(mitad_largo + 24.0):
+						var dist_t: float = maxf(-loc_t.z - mitad_largo, 0.0)
+						if dist_t < menor_j:
+							menor_j = dist_t
+							mejor_obj = tr
+
 	return {"dist": menor_j, "obj": mejor_obj}
 
 
@@ -1402,7 +1423,7 @@ func _es_obstaculo_valido(col: Object) -> bool:
 	# Frenar por vehículos, jugadores, peatones o tráfico
 	if col is RigidBody3D or col is CharacterBody3D or col is VehiculoTraficoIA:
 		return true
-	if col is Node and (col.is_in_group("Vehiculo") or col.is_in_group("jugador") or col.is_in_group("player") or col.is_in_group("trafico")):
+	if col is Node and (col.is_in_group("Vehiculo") or col.is_in_group("jugador") or col.is_in_group("player") or col.is_in_group("trafico") or col.is_in_group("remolque") or col.is_in_group("trailers")):
 		return true
 	return false
 
@@ -1457,7 +1478,8 @@ func _velocidad_segura(hueco: float) -> float:
 	var ratio := clampf(espacio / rango, 0.0, 1.0)
 	var vel_max := velocidad_crucero * multiplicador_velocidad
 	var ratio_suave := smoothstep(0.0, 1.0, ratio)
-	return maxf(vel_max * ratio_suave, 3.5 if hueco > distancia_minima * 1.4 else 0.0)
+	var piso_creep := 1.2 * smoothstep(distancia_minima * 1.05, distancia_minima * 1.6, hueco)
+	return maxf(vel_max * ratio_suave, piso_creep)
 
 
 func _girar_ruedas_fallback(delta: float) -> void:

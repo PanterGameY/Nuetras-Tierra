@@ -90,6 +90,10 @@ func _ready() -> void:
 	_activar_luces(false)
 	_conectar_deteccion()
 	add_to_group("vehiculo")
+	add_to_group("vehiculo_jugador")
+	var gv_ini := get_node_or_null("/root/GestorVehiculos")
+	if gv_ini and gv_ini.has_method("restaurar_ubicacion_vehiculo"):
+		gv_ini.call("restaurar_ubicacion_vehiculo", self)
 	freeze = false
 	can_sleep = false
 
@@ -216,6 +220,8 @@ func bajar_jugador() -> void:
 			posicion_salida.y = global_position.y + salida_offset_vertical
 
 		GestorVehiculos.bajar_jugador_de_vehiculo(jugador_ref, self, posicion_salida)
+		if GestorVehiculos.has_method("guardar_ubicacion_vehiculo"):
+			GestorVehiculos.guardar_ubicacion_vehiculo(self)
 		jugador_ref = null
 
 	_alternar_sistemas(false)

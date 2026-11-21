@@ -143,6 +143,10 @@ func _ready() -> void:
 
 	freeze = false
 	can_sleep = false
+	add_to_group("vehiculo_jugador")
+	var gv_ini = _get_gv()
+	if gv_ini and gv_ini.has_method("restaurar_ubicacion_vehiculo"):
+		gv_ini.call("restaurar_ubicacion_vehiculo", self)
 	_alternar_sistemas(false)
 	_activar_luces(activo)
 	_conectar_deteccion()
@@ -317,6 +321,8 @@ func subir_jugador(p_jugador: Node3D) -> void:
 	var gv = _get_gv()
 	if gv and gv.has_method("subir_jugador_a_vehiculo"):
 		gv.subir_jugador_a_vehiculo(p_jugador, self)
+	if gv and gv.has_method("guardar_ubicacion_vehiculo"):
+		gv.guardar_ubicacion_vehiculo(self)
 	
 	freeze = false
 	linear_velocity = Vector3.ZERO
@@ -392,6 +398,8 @@ func bajar_jugador() -> void:
 		var gv = _get_gv()
 		if gv and gv.has_method("bajar_jugador_de_vehiculo"):
 			gv.bajar_jugador_de_vehiculo(jugador_ref, self, posicion_salida)
+		if gv and gv.has_method("guardar_ubicacion_vehiculo"):
+			gv.guardar_ubicacion_vehiculo(self)
 		jugador_ref = null
 
 	if ui_vehiculo:

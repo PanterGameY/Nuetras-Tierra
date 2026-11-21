@@ -207,3 +207,101 @@ func asegurar_vehiculo_sobre_mapa(vehiculo: RigidBody3D, pos_segura: Vector3) ->
 	if not res_abajo.is_empty() and pos.y - (res_abajo["position"] as Vector3).y < 2.2 and pos.y >= -1.5:
 		return pos
 	return pos_segura
+
+
+func _obtener_ruta_escena_actual(nodo: Node = null) -> String:
+	var tree := nodo.get_tree() if is_instance_valid(nodo) and nodo.is_inside_tree() else get_tree()
+	if is_instance_valid(nodo) and tree and tree.root:
+		var anc: Node = nodo
+		while anc and anc.get_parent() != tree.root:
+			anc = anc.get_parent()
+		if anc and anc.scene_file_path != "":
+			return anc.scene_file_path
+	if tree and tree.current_scene and tree.current_scene.scene_file_path != "":
+		return tree.current_scene.scene_file_path
+	return ""
+
+
+func _es_escena_prueba_persistencia(nodo: Node = null) -> bool:
+	var sp := _obtener_ruta_escena_actual(nodo).to_lower()
+	if sp == "":
+		return false
+	return ("academia_licencias" in sp) or ("/pruebas/" in sp)
+
+
+func clave_ubicacion_vehiculo(vehiculo: Node3D) -> String:
+	if not is_instance_valid(vehiculo):
+		return ""
+	var ruta := str(vehiculo.scene_file_path)
+	if ruta == "":
+		return str(vehiculo.name)
+	if vehiculo.is_in_group("remolque") or vehiculo.is_in_group("trailers"):
+		return "%s::%s" % [ruta, str(vehiculo.name)]
+	return ruta
+
+
+func guardar_ubicacion_vehiculo(vehiculo: Node3D, escribir_disco: bool = true) -> void:
+	if not is_instance_valid(vehiculo) or not vehiculo.is_inside_tree():
+		return
+	if _es_escena_prueba_persistencia(vehiculo):
+		return
+	var datos := get_node_or_null("/root/DatosUsuario")
+	if not datos or typeof(datos.vehiculos_posiciones) != TYPE_DICTIONARY:
+		return
+	var clave := clave_ubicacion_vehiculo(vehiculo)
+	if clave == "":
+		return
+	var cur_sc := _obtener_ruta_escena_actual(vehiculo)
+	datos.vehiculos_posiciones[clave] = {
+		"pos": vehiculo.global_position,
+		"rot": vehiculo.global_rotation,
+		"scene": cur_sc,
+		"nombre": str(vehiculo.name)
+	}
+	if escribir_disco:
+		datos.save_local(true)
+
+
+func restaurar_ubicacion_vehiculo(vehiculo: Node3D) -> bool:
+	if not is_instance_valid(vehiculo) or not vehiculo.is_inside_tree():
+		return false
+	if _es_escena_prueba_persistencia(vehiculo):
+		return false
+	var datos := get_node_or_null("/root/DatosUsuario")
+	if not datos or typeof(datos.vehiculos_posiciones) != TYPE_DICTIONARY:
+		return false
+	var clave := clave_ubicacion_vehiculo(vehiculo)
+	if clave == "" or not datos.vehiculos_posiciones.has(clave):
+		return false
+	var entry = datos.vehiculos_posiciones[clave]
+	if typeof(entry) != TYPE_DICTIONARY:
+		return false
+	var cur_sc := _obtener_ruta_escena_actual(vehiculo)
+	var entry_nombre := str(entry.get("nombre", ""))
+	if str(entry.get("scene", "")) != cur_sc:
+		return false
+	if entry_nombre != "" and entry_nombre != str(vehiculo.name):
+		return false
+	if not (entry.get("pos") is Vector3):
+		return false
+	vehiculo.global_position = entry["pos"]
+	if entry.get("rot") is Vector3:
+		vehiculo.global_rotation = entry["rot"]
+	if vehiculo is RigidBody3D:
+		(vehiculo as RigidBody3D).linear_velocity = Vector3.ZERO
+		(vehiculo as RigidBody3D).angular_velocity = Vector3.ZERO
+	return true
+
+
+func calcular_punto_salida_seguro(jugador: Node3D, vehiculo: Node3D) -> Vector3:
+	if not is_instance_valid(vehiculo):
+		return jugador.global_position if is_instance_valid(jugador) else Vector3.ZERO
+	var zona := vehiculo.find_child("ZonaEntrada", true, false) as Area3D
+	var destino: Vector3
+	if zona and is_instance_valid(zona):
+		destino = zona.global_position - (vehiculo.global_transform.basis.x.normalized() * 0.7)
+		destino.y = zona.global_position.y + 0.1
+	else:
+		destino = vehiculo.global_position - (vehiculo.global_transform.basis.x.normalized() * 2.4)
+		destino.y = vehiculo.global_position.y + 0.2
+	return _ajustar_salida_sobre_suelo(jugador, vehiculo, destino)

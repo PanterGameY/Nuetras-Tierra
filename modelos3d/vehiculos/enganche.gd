@@ -213,7 +213,8 @@ func _conectar_a(otro_enganche: Node, es_restauracion: bool = false) -> void:
 	if "enganche_remoto" in otro_enganche:
 		otro_enganche.enganche_remoto = self
 
-	cuerpo_propio.add_collision_exception_with(cuerpo_remolque)
+	# Nota: No deshabilitamos la colisión física entre cabezote y remolque tras acoplar;
+	# así la caja del tráiler nunca atraviesa la cabina/camarote al girar o dar reversa.
 	# Seguridad anti-separación: si por reconexión o carga de partida hay distancia entre el remolque y la quinta rueda,
 	# alineamos suavemente el kingpin al marker del camión antes de activar el joint para evitar explosiones de físicas.
 	var pos_marker = marker.global_position if marker else global_position
@@ -288,10 +289,10 @@ func _activar_joint(cuerpo_a: PhysicsBody3D, cuerpo_b: PhysicsBody3D) -> void:
 	j6.set("angular_limit_x/upper_angle", deg_to_rad(22.0))
 	j6.set("angular_limit_x/softness", 0.5)
 
-	# Yaw (eje Y): Tope realista de quinta rueda (+-78 grados) para que el tráiler no traspase la cabina
+	# Yaw (eje Y): Tope realista de quinta rueda (+-50 grados) para que el tráiler no traspase la cabina ni exostos
 	j6.set("angular_limit_y/enabled", true)
-	j6.set("angular_limit_y/lower_angle", deg_to_rad(-78.0))
-	j6.set("angular_limit_y/upper_angle", deg_to_rad(78.0))
+	j6.set("angular_limit_y/lower_angle", deg_to_rad(-50.0))
+	j6.set("angular_limit_y/upper_angle", deg_to_rad(50.0))
 	j6.set("angular_limit_y/softness", 0.5)
 
 	# Roll (eje Z): Permitir balanceo y torsión lateral del remolque (+-7 grados) para que el chasis oscile con las irregularidades del camino
@@ -901,28 +902,12 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not conectado and not es_remolque:
-		var cuerpo_propio := _buscar_cuerpo(self)
-		if cuerpo_propio:
-			var mejor_cuerpo: PhysicsBody3D = null
-			var mejor_dist: float = 4.5
-			for n_rem in get_tree().get_nodes_in_group("enganche_remolque"):
-				if not is_instance_valid(n_rem) or not (n_rem is Node3D):
-					continue
-				var d := global_position.distance_to((n_rem as Node3D).global_position)
-				if d < mejor_dist:
-					var cr := _buscar_cuerpo(n_rem)
-					if cr:
-						mejor_dist = d
-						mejor_cuerpo = cr
-			if mejor_cuerpo != _excepcion_aprox_cuerpo:
-				if is_instance_valid(_excepcion_aprox_cuerpo):
-					cuerpo_propio.remove_collision_exception_with(_excepcion_aprox_cuerpo)
-					_excepcion_aprox_cuerpo.remove_collision_exception_with(cuerpo_propio)
-				_excepcion_aprox_cuerpo = mejor_cuerpo
-				if is_instance_valid(_excepcion_aprox_cuerpo):
-					cuerpo_propio.add_collision_exception_with(_excepcion_aprox_cuerpo)
-					_excepcion_aprox_cuerpo.add_collision_exception_with(cuerpo_propio)
+	if is_instance_valid(_excepcion_aprox_cuerpo):
+		var cp_limpiar := _buscar_cuerpo(self)
+		if cp_limpiar:
+			cp_limpiar.remove_collision_exception_with(_excepcion_aprox_cuerpo)
+			_excepcion_aprox_cuerpo.remove_collision_exception_with(cp_limpiar)
+		_excepcion_aprox_cuerpo = null
 
 	if conectado and not es_remolque:
 		var cuerpo_propio := _buscar_cuerpo(self)

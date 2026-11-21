@@ -120,6 +120,11 @@ func _ready() -> void:
 	else:
 		print("[Patas] AVISO: No se encontró ningún nodo de Patas en ", name)
 
+	if not _tiene_reconexion_activa():
+		var gv_ini := get_node_or_null("/root/GestorVehiculos")
+		if gv_ini and gv_ini.has_method("restaurar_ubicacion_vehiculo"):
+			gv_ini.call("restaurar_ubicacion_vehiculo", self)
+
 	if auto_snap_on_ready:
 		call_deferred("_snap_to_ground")
 	else:
@@ -312,6 +317,9 @@ func desenganchado_de(camion: RigidBody3D) -> void:
 	_cuerpo_camion = null
 	_snap_done = false
 	_bajar_patas()
+	var gv := get_node_or_null("/root/GestorVehiculos")
+	if gv and gv.has_method("guardar_ubicacion_vehiculo"):
+		gv.call("guardar_ubicacion_vehiculo", self)
 	call_deferred("_snap_to_ground")
 
 func _subir_patas() -> void:
@@ -375,26 +383,37 @@ func _gather_collision_objects(node: Node, out_array: Array) -> void:
 			out_array.append(c)
 		_gather_collision_objects(c, out_array)
 
+func _tiene_reconexion_activa() -> bool:
+	var datos = get_node_or_null("/root/DatosUsuario")
+	if not datos:
+		return false
+	var mi_ruta = _get_mi_ruta_escena()
+	if typeof(datos.remolques_activos) == TYPE_DICTIONARY:
+		for t_key in datos.remolques_activos:
+			var entry = datos.remolques_activos[t_key] as Dictionary
+			if not entry:
+				continue
+			var t_name := str(entry.get("trailer_name", ""))
+			if t_name != "" and t_name == str(name):
+				return true
+			if t_name == "" and mi_ruta != "" and str(entry.get("trailer_scene", "")) == mi_ruta:
+				return true
+	if typeof(datos.vehiculos_posiciones) == TYPE_DICTIONARY and datos.vehiculos_posiciones.has(str(name)):
+		var v_data = datos.vehiculos_posiciones[str(name)] as Dictionary
+		if v_data.get("enganchado_a", "") != "":
+			return true
+	return false
+
+
 func _snap_to_ground() -> void:
 	if _snap_done or esta_enganchado():
 		return
 
 	# Seguridad anti-desenganche (BUG-009): Si los datos guardados indican que este remolque
 	# estaba acoplado a un camión, NO alterar la altura Y del kingpin para no quebrar el joint físico!
-	var datos = get_node_or_null("/root/DatosUsuario")
-	if datos:
-		var mi_ruta = _get_mi_ruta_escena()
-		if typeof(datos.remolques_activos) == TYPE_DICTIONARY:
-			for t_key in datos.remolques_activos:
-				var entry = datos.remolques_activos[t_key] as Dictionary
-				if entry and (entry.get("trailer_name", "") == str(name) or (mi_ruta != "" and entry.get("trailer_scene", "") == mi_ruta)):
-					_snap_done = true
-					return
-		if typeof(datos.vehiculos_posiciones) == TYPE_DICTIONARY and datos.vehiculos_posiciones.has(str(name)):
-			var v_data = datos.vehiculos_posiciones[str(name)] as Dictionary
-			if v_data.get("enganchado_a", "") != "":
-				_snap_done = true
-				return
+	if _tiene_reconexion_activa():
+		_snap_done = true
+		return
 
 	_snap_done = true
 
@@ -463,6 +482,9 @@ func _reconectar_si_activo() -> void:
 	for truck_key in remolques:
 		var entry = remolques[truck_key] as Dictionary
 		if not entry:
+			continue
+		var entry_t_name := str(entry.get("trailer_name", ""))
+		if entry_t_name != "" and entry_t_name != str(name):
 			continue
 		if entry.get("trailer_scene", "") != mi_ruta:
 			continue
