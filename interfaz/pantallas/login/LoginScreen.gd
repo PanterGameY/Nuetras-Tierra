@@ -354,12 +354,10 @@ func _on_supabase_auth_exito(usuario: Dictionary) -> void:
 	_mostrar_secuencia_verificacion(final_name, str(usuario.get("provider", "")))
 
 func _mostrar_secuencia_verificacion(nombre_pj: String, provider: String) -> void:
-	# Precargar en segundo plano la pantalla de carga y el convoy mientras se analiza la cuenta
+	# Precargar en segundo plano la pantalla de carga y el menú principal mientras se analiza la cuenta
 	for ruta_pre in [
 		"res://interfaz/sistema/escena_carga.tscn",
-		"res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn",
-		"res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
-		"res://modelos3d/Trailers y remolques/Carpado/carpado.tscn"
+		"res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn"
 	]:
 		if ResourceLoader.exists(ruta_pre):
 			var st := ResourceLoader.load_threaded_get_status(ruta_pre)

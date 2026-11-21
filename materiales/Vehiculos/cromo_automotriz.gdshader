@@ -33,6 +33,11 @@ group_uniforms Clima;
 // Nivel de lluvia / humedad ambiental transmitido por el controlador de clima
 uniform float nivel_lluvia : hint_range(0.0, 1.0, 0.01) = 0.0;
 
+group_uniforms Reflejo_Entorno;
+uniform bool activar_reflejo_entorno = true;
+uniform sampler2D env_map : source_color, filter_linear_mipmap, repeat_enable;
+uniform float intensidad_reflejo : hint_range(0.0, 1.5, 0.05) = 0.85;
+
 
 float hash21(vec2 p) {
 	p = fract(p * vec2(123.34, 456.21));
@@ -68,8 +73,29 @@ void fragment() {
 		albedo_final = mix(albedo_final, albedo_final * 0.88, gota * nivel_lluvia * 0.25);
 	}
 
+	// 4. Reflejo panorámico 360° en espacio de mundo (reemplaza el cielo básico plano)
+	float met_final = metalico;
+	float rough_final = clamp(micro_rugosidad, 0.02, 1.0);
+	vec3 emis_final = vec3(0.0);
+	if (activar_reflejo_entorno) {
+		vec3 view_dir_w = normalize((INV_VIEW_MATRIX * vec4(-v, 0.0)).xyz);
+		vec3 norm_w = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		vec3 refl_w = reflect(view_dir_w, norm_w);
+		float u_env = fract(atan(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
+		float v_env = 0.5 - asin(clamp(refl_w.y, -1.0, 1.0)) / 3.14159265;
+		vec3 env_col = textureLod(env_map, vec2(u_env, v_env), micro_rugosidad * 3.0).rgb;
+		float refl_wgt = clamp(intensidad_reflejo, 0.0, 1.2);
+		vec3 chrome_env = env_col * mix(color_cromo.rgb, tinte_borde.rgb, fresnel * fuerza_fresnel);
+		albedo_final = mix(albedo_final, chrome_env, 0.85);
+		emis_final = chrome_env * (0.48 + 0.32 * fresnel) * refl_wgt;
+		// Evita que el cielo plano del WorldEnvironment tape la textura panorámica del cromo
+		met_final = mix(metalico, 0.22, clamp(refl_wgt, 0.0, 1.0));
+		rough_final = max(rough_final, 0.16);
+	}
+
 	ALBEDO = albedo_final;
-	METALLIC = metalico;
-	ROUGHNESS = clamp(micro_rugosidad, 0.02, 1.0);
+	EMISSION = emis_final;
+	METALLIC = met_final;
+	ROUGHNESS = rough_final;
 	SPECULAR = especular;
 }

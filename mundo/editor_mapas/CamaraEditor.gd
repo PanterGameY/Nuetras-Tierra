@@ -14,7 +14,7 @@ signal modo_cenital_cambiado(es_cenital: bool)
 @export var angulo_yaw: float = -45.0  # Rotación horizontal en grados
 @export var angulo_pitch: float = -40.0 # Rotación vertical en grados (-89 a +15)
 @export var velocidad_paneo: float = 1.0
-@export var suavizado: float = 11.0
+@export var suavizado: float = 14.5
 
 var es_cenital: bool = false
 var _pitch_guardado: float = -40.0
@@ -34,6 +34,8 @@ var _pos_toque_unipersonal_inicial: Vector2 = Vector2.ZERO
 var _centro_toques_anterior: Vector2 = Vector2.ZERO
 var _objetivo_inicial: Vector3 = Vector3.ZERO
 var arrastre_camara_habilitado: bool = false
+var _vel_inercia_pan: Vector3 = Vector3.ZERO
+var _vel_inercia_yaw: float = 0.0
 
 func _ready() -> void:
 	_construir_jerarquia_camara()
@@ -71,7 +73,23 @@ func _process(delta: float) -> void:
 	if not activa or not is_visible_in_tree():
 		return
 	_procesar_teclado_pc(delta)
+	_aplicar_inercia_tactil(delta)
 	_actualizar_transformaciones(false, delta)
+
+
+func _aplicar_inercia_tactil(delta: float) -> void:
+	if not _toques_activos.is_empty():
+		return
+	if _vel_inercia_pan.length_squared() > 0.0001:
+		objetivo += _vel_inercia_pan * delta
+		_vel_inercia_pan *= exp(-8.5 * delta)
+	else:
+		_vel_inercia_pan = Vector3.ZERO
+	if absf(_vel_inercia_yaw) > 0.05:
+		rotar_orbita(_vel_inercia_yaw * delta)
+		_vel_inercia_yaw *= exp(-9.0 * delta)
+	else:
+		_vel_inercia_yaw = 0.0
 
 func _procesar_teclado_pc(delta: float) -> void:
 	# Navegación estilo aplicación 3D: WASD + Q/E (subir/bajar o rotar) + Shift para acelerar
@@ -205,14 +223,25 @@ func proyectar_rayo_direccion(screen_pos: Vector2) -> Vector3:
 
 # ── GESTOS TÁCTILES MÓVILES (PINCH TO ZOOM / TWIST / DRAG) ───────────
 
+func _obtener_puntos_ordenados() -> Array[Vector2]:
+	var keys := _toques_activos.keys()
+	keys.sort()
+	var res: Array[Vector2] = []
+	for k in keys:
+		res.append(_toques_activos[k] as Vector2)
+	return res
+
+
 func manejar_evento_pantalla(event: InputEvent) -> bool:
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			_vel_inercia_pan = Vector3.ZERO
+			_vel_inercia_yaw = 0.0
 			if _toques_activos.size() >= 2:
 				_toques_activos.clear()
 			_toques_activos[event.index] = event.position
 			if _toques_activos.size() == 2:
-				var puntos = _toques_activos.values()
+				var puntos := _obtener_puntos_ordenados()
 				_distancia_toques_inicial = puntos[0].distance_to(puntos[1])
 				_distancia_camara_inicial = distancia_actual
 				_angulo_toques_inicial = puntos[0].angle_to_point(puntos[1])
@@ -240,8 +269,8 @@ func manejar_evento_pantalla(event: InputEvent) -> bool:
 			
 		# Dos dedos: Pinch to zoom + Paneo 3D + Rotación simultánea
 		if _toques_activos.size() == 2:
-			var puntos = _toques_activos.values()
-			var dist_actual = puntos[0].distance_to(puntos[1])
+			var puntos := _obtener_puntos_ordenados()
+			var dist_actual: float = puntos[0].distance_to(puntos[1])
 			var centro_actual: Vector2 = (puntos[0] + puntos[1]) * 0.5
 			var delta_centro: Vector2 = centro_actual - _centro_toques_anterior
 			_centro_toques_anterior = centro_actual
@@ -249,15 +278,20 @@ func manejar_evento_pantalla(event: InputEvent) -> bool:
 				var right_t: Vector3 = _camara.global_transform.basis.x.normalized()
 				var up_t: Vector3 = _camara.global_transform.basis.y.normalized()
 				var esc_t: float = maxf(0.015, distancia_actual * 0.0016)
-				objetivo += (-right_t * delta_centro.x + up_t * delta_centro.y) * esc_t
+				var mov_pan := (-right_t * delta_centro.x + up_t * delta_centro.y) * esc_t
+				objetivo += mov_pan
+				_vel_inercia_pan = _vel_inercia_pan.lerp(mov_pan * 18.0, 0.45)
 			if _distancia_toques_inicial > 5.0 and dist_actual > 5.0:
-				var ratio = _distancia_toques_inicial / dist_actual
+				var ratio: float = _distancia_toques_inicial / dist_actual
 				distancia_actual = clamp(_distancia_camara_inicial * ratio, distancia_minima, distancia_maxima)
-				
-				# Giro con dos dedos
-				var angulo_actual = puntos[0].angle_to_point(puntos[1])
-				var delta_angulo = rad_to_deg(angulo_actual - _angulo_toques_inicial)
-				angulo_yaw = _yaw_inicial - delta_angulo
+
+				# Giro natural con dos dedos (sin inversión y sin saltos en +-180°)
+				var angulo_actual: float = puntos[0].angle_to_point(puntos[1])
+				var delta_angulo: float = rad_to_deg(angle_difference(_angulo_toques_inicial, angulo_actual))
+				var nuevo_yaw: float = wrapf(_yaw_inicial + delta_angulo, -180.0, 180.0)
+				var dif_yaw: float = rad_to_deg(angle_difference(deg_to_rad(angulo_yaw), deg_to_rad(nuevo_yaw)))
+				_vel_inercia_yaw = lerpf(_vel_inercia_yaw, dif_yaw * 16.0, 0.4)
+				angulo_yaw = nuevo_yaw
 			return true
 			
 		# Un dedo en modo navegación de cámara

@@ -42,6 +42,11 @@ uniform sampler2D dirt_noise_tex : source_color, filter_linear_mipmap, repeat_en
 uniform sampler2D mud_noise_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D wet_noise_tex : source_color, filter_linear_mipmap, repeat_enable;
 
+group_uniforms Reflejo_Entorno;
+uniform bool activar_reflejo_entorno = false;
+uniform sampler2D env_map : source_color, filter_linear_mipmap, repeat_enable;
+uniform float intensidad_reflejo : hint_range(0.0, 1.0, 0.05) = 0.28;
+
 // --- Colores de suciedad ---
 group_uniforms Suciedad_Colores;
 uniform vec4 dust_color : source_color = vec4(0.62, 0.54, 0.42, 1.0);
@@ -164,7 +169,25 @@ void fragment() {
 	vec3 mud_final_color = mix(mud_color.rgb, mud_streak_color.rgb, clamp(mud_streaks * 2.0, 0.0, 1.0));
 	vec3 with_mud = mix(with_dust, mud_final_color, mud_mask);
 	vec3 wet_darkened = with_mud * (1.0 - wet_mask * 0.25);
+
+	// Reflejo panorámico 360° en la laca automotriz (atenuado en zonas sucias/barro)
+	vec3 emis_cc = vec3(0.0);
+	if (activar_reflejo_entorno) {
+		vec3 view_dir_w = normalize((INV_VIEW_MATRIX * vec4(-n_view, 0.0)).xyz);
+		vec3 norm_w = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
+		vec3 refl_w = reflect(view_dir_w, norm_w);
+		float u_env = fract(atan(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
+		float v_env = 0.5 - asin(clamp(refl_w.y, -1.0, 1.0)) / 3.14159265;
+		vec3 env_col = textureLod(env_map, vec2(u_env, v_env), clearcoat_roughness_val * 5.0).rgb;
+		float fresnel_cc = pow(1.0 - clamp(dot(NORMAL, n_view), 0.0, 1.0), 2.5);
+		float clean_factor = clearcoat * (1.0 - mud_mask) * (1.0 - dust_mask * 0.85);
+		float refl_mix = clamp((0.18 + 0.82 * fresnel_cc) * intensidad_reflejo * clean_factor, 0.0, 0.65);
+		wet_darkened = mix(wet_darkened, env_col * (0.45 + 0.55 * wet_darkened), refl_mix);
+		emis_cc = env_col * (0.12 + 0.24 * fresnel_cc) * clean_factor * intensidad_reflejo;
+	}
+
 	ALBEDO = wet_darkened;
+	EMISSION = emis_cc;
 
 	// 7. Parámetros PBR
 	float m_dust = mix(metallic, 0.0, dust_mask);

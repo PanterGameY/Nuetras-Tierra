@@ -374,6 +374,8 @@ static func _registrar_modelos_integrados() -> void:
 				sec = "03_Industrial_Logistica"; sub = "Fabricas_Plantas"
 			"bodega_industrial":
 				sec = "03_Industrial_Logistica"; sub = "Bodegas_Almacenaje"
+			"zona_carga", "zona_descarga", "zona_alquiler_trailer":
+				sec = "05_Zonas_Logistica"; sub = "Checkpoints_Logistica"
 			"hospital":
 				sec = "04_Servicios_Publicos"; sub = "Salud"
 			"estacion_bomberos":

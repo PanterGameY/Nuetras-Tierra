@@ -1,8 +1,15 @@
-[gd_resource type="StandardMaterial3D" format=3]
+[gd_resource type="ShaderMaterial" format=3]
 
-[ext_resource type="Texture2D" path="res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/textures/negro.png" id="1_h1810"]
+[ext_resource type="Shader" path="res://materiales/Vehiculos/neumatico_realista.gdshader" id="1_tire"]
 
 [resource]
-albedo_color = Color(0.07, 0.075, 0.08, 1)
-albedo_texture = ExtResource("1_h1810")
-roughness = 0.88
+render_priority = 0
+shader = ExtResource("1_tire")
+shader_parameter/color_flanco = Color(0.085, 0.09, 0.098, 1)
+shader_parameter/color_banda = Color(0.125, 0.13, 0.138, 1)
+shader_parameter/rugosidad_flanco = 0.62
+shader_parameter/rugosidad_banda = 0.86
+shader_parameter/especular_caucho = 0.32
+shader_parameter/escala_grano = 140.0
+shader_parameter/fuerza_grano = 0.08
+shader_parameter/fuerza_normal_grano = 0.045

@@ -1137,6 +1137,7 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 				"com": _seccion_biblioteca_activa = "02_Comercial"
 				"ind": _seccion_biblioteca_activa = "03_Industrial_Logistica"
 				"inst": _seccion_biblioteca_activa = "04_Servicios_Publicos"
+				"zonas": _seccion_biblioteca_activa = "05_Zonas_Logistica"
 				"hist": _seccion_biblioteca_activa = "todos"
 			_construir_vista_ciudad()
 		"vegetacion":
@@ -2354,10 +2355,11 @@ func _construir_vista_ciudad() -> void:
 	_box_prop_contenido.add_child(grid_filtros)
 
 	var secciones_ciudad := [
-		{"id": "01_Residencial", "nom": "🏠 Residencial"},
-		{"id": "02_Comercial", "nom": "🏪 Comercial"},
-		{"id": "03_Industrial_Logistica", "nom": "🏭 Industrial"},
-		{"id": "04_Servicios_Publicos", "nom": "🏛️ Servicios"}
+		{"id": "01_Residencial", "nom": "🏠 Residencial", "sub": "res"},
+		{"id": "02_Comercial", "nom": "🏪 Comercial", "sub": "com"},
+		{"id": "03_Industrial_Logistica", "nom": "🏭 Industrial", "sub": "ind"},
+		{"id": "04_Servicios_Publicos", "nom": "🏛️ Servicios", "sub": "inst"},
+		{"id": "05_Zonas_Logistica", "nom": "📍 Zonas/Puntos", "sub": "zonas"}
 	]
 	for s_info in secciones_ciudad:
 		var btn_s := Button.new()
@@ -2368,11 +2370,13 @@ func _construir_vista_ciudad() -> void:
 		if _fuente_ui:
 			btn_s.add_theme_font_override("font", _fuente_ui)
 		var sid_sec: String = s_info["id"]
+		var sub_sec: String = s_info["sub"]
 		var es_act := (_seccion_biblioteca_activa == sid_sec)
 		_estilar_boton(btn_s, Color(0.18, 0.14, 0.07, 0.94) if es_act else COLOR_PANEL_SEC, COLOR_AMARILLO_SEL if es_act else COLOR_BORDE, 10.0, 2 if es_act else 1)
 		btn_s.pressed.connect(func():
+			_subherramienta_activa = sub_sec
 			_seccion_biblioteca_activa = sid_sec
-			_actualizar_panel_contextual("ciudad", _subherramienta_activa)
+			_actualizar_panel_contextual("ciudad", sub_sec)
 		)
 		grid_filtros.add_child(btn_s)
 
@@ -3728,6 +3732,7 @@ func _refrescar_grid_herramientas(cat_id: String) -> void:
 				{"id": "inst", "nombre": "Público", "ico": "cat_ciudad"},
 				{"id": "hist", "nombre": "Patrimonio", "ico": "cat_ciudad"},
 				{"id": "ind", "nombre": "Industria", "ico": "cat_ciudad"},
+				{"id": "zonas", "nombre": "Zonas", "ico": "cat_ciudad"},
 				{"id": "auto_casas", "nombre": "Auto-Casas", "ico": "cat_ciudad"},
 				{"id": "zonificar", "nombre": "Zonificar", "ico": "act_grid"},
 				{"id": "rotar", "nombre": "Rotar", "ico": "act_rotar"},

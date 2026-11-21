@@ -15,6 +15,31 @@ enum Categoria {
 
 static func obtener_catalogo() -> Array[Dictionary]:
 	return [
+		# ZONAS Y CHECKPOINTS LOGÍSTICOS (No son edificaciones, son áreas funcionales)
+		{
+			"id": "zona_carga",
+			"nombre": "Punto de Carga",
+			"categoria": Categoria.INDUSTRIAL,
+			"icono": "📦",
+			"tamano": Vector3(6.0, 0.3, 10.0),
+			"desc": "Zona/checkpoint donde los vehículos recogen mercancía."
+		},
+		{
+			"id": "zona_descarga",
+			"nombre": "Punto de Descarga",
+			"categoria": Categoria.INDUSTRIAL,
+			"icono": "🏁",
+			"tamano": Vector3(6.0, 0.3, 10.0),
+			"desc": "Zona/checkpoint donde los vehículos entregan mercancía."
+		},
+		{
+			"id": "zona_alquiler_trailer",
+			"nombre": "Alquiler de Tráiler",
+			"categoria": Categoria.INDUSTRIAL,
+			"icono": "🚛",
+			"tamano": Vector3(5.0, 0.3, 14.0),
+			"desc": "Zona/checkpoint para alquilar y desplegar un tráiler en la bahía."
+		},
 		# RESIDENCIAL
 		{
 			"id": "casa_suburbana",
@@ -246,6 +271,8 @@ static func crear_instancia_objeto(id_modelo: String) -> Node3D:
 			_construir_rascacielos(nodo_raiz)
 		"bodega_industrial":
 			_construir_bodega_industrial(nodo_raiz)
+		"zona_carga", "zona_descarga", "zona_alquiler_trailer":
+			_construir_zona_checkpoint(nodo_raiz, id_modelo)
 		"hospital":
 			_construir_hospital(nodo_raiz)
 		"estacion_bomberos":
@@ -280,6 +307,131 @@ static func crear_instancia_objeto(id_modelo: String) -> Node3D:
 			_construir_casa_suburbana(nodo_raiz)
 			
 	return nodo_raiz
+
+static func _construir_zona_checkpoint(padre: StaticBody3D, id_modelo: String) -> void:
+	var ancho: float = 6.0
+	var largo: float = 10.0
+	var titulo: String = "PUNTO DE CARGA"
+	var col_zona := Color(0.86, 0.68, 0.34, 0.88) # Ámbar suave sobrio
+
+	if id_modelo == "zona_descarga":
+		titulo = "PUNTO DE DESCARGA"
+		col_zona = Color(0.76, 0.82, 0.86, 0.88) # Acero claro sobrio
+	elif id_modelo == "zona_alquiler_trailer":
+		ancho = 5.0
+		largo = 14.0
+		titulo = "ALQUILER TRÁILER"
+		col_zona = Color(0.82, 0.78, 0.68, 0.88) # Gris cálido sobrio
+
+	var mat_neon := StandardMaterial3D.new()
+	mat_neon.albedo_color = col_zona
+	mat_neon.emission_enabled = true
+	mat_neon.emission = Color(col_zona.r, col_zona.g, col_zona.b)
+	mat_neon.emission_energy_multiplier = 0.35
+	mat_neon.roughness = 0.45
+
+	var mat_poste := StandardMaterial3D.new()
+	mat_poste.albedo_color = Color(0.14, 0.16, 0.19)
+	mat_poste.roughness = 0.55
+	var hw: float = ancho * 0.5
+	var hl: float = largo * 0.5
+	var grosor: float = 0.22
+	var alto_franja: float = 0.05
+
+	# Marco perimetral en el suelo (sin piso sólido para no obstruir ruedas)
+	for side_z in [-hl, hl]:
+		var m_f := MeshInstance3D.new()
+		var b_f := BoxMesh.new()
+		b_f.size = Vector3(ancho + grosor, alto_franja, grosor)
+		m_f.mesh = b_f
+		m_f.material_override = mat_neon
+		m_f.position = Vector3(0.0, alto_franja * 0.5, side_z)
+		padre.add_child(m_f)
+
+	for side_x in [-hw, hw]:
+		var m_l := MeshInstance3D.new()
+		var b_l := BoxMesh.new()
+		b_l.size = Vector3(grosor, alto_franja, largo)
+		m_l.mesh = b_l
+		m_l.material_override = mat_neon
+		m_l.position = Vector3(side_x, alto_franja * 0.5, 0.0)
+		padre.add_child(m_l)
+
+	# 4 bolardos bajos en esquinas
+	for sx in [-hw, hw]:
+		for sz in [-hl, hl]:
+			var post := MeshInstance3D.new()
+			var cyl := CylinderMesh.new()
+			cyl.top_radius = 0.12
+			cyl.bottom_radius = 0.14
+			cyl.height = 0.75
+			post.mesh = cyl
+			post.material_override = mat_poste
+			post.position = Vector3(sx, 0.375, sz)
+			padre.add_child(post)
+
+			var cap := MeshInstance3D.new()
+			var cap_m := CylinderMesh.new()
+			cap_m.top_radius = 0.13
+			cap_m.bottom_radius = 0.13
+			cap_m.height = 0.14
+			cap.mesh = cap_m
+			cap.material_override = mat_neon
+			cap.position = Vector3(sx, 0.78, sz)
+			padre.add_child(cap)
+
+	# Flecha direccional de entrada/orientación en el centro (-Z = frente)
+	var flecha := MeshInstance3D.new()
+	var f_box := BoxMesh.new()
+	f_box.size = Vector3(0.45, alto_franja, 2.2)
+	flecha.mesh = f_box
+	flecha.material_override = mat_neon
+	flecha.position = Vector3(0.0, alto_franja * 0.5, -0.4)
+	padre.add_child(flecha)
+
+	# Etiqueta 3D flotante visible en el editor y en juego
+	var lbl := Label3D.new()
+	lbl.text = titulo
+	lbl.font_size = 72
+	lbl.pixel_size = 0.012
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.modulate = Color(col_zona.r, col_zona.g, col_zona.b, 1.0)
+	lbl.outline_size = 10
+	lbl.position = Vector3(0.0, 2.4, 0.0)
+	padre.add_child(lbl)
+
+	# Colisión plana mínima solo para selección con raycast en el editor (no frena camiones)
+	var col_sel := CollisionShape3D.new()
+	var box_sel := BoxShape3D.new()
+	box_sel.size = Vector3(ancho, 0.04, largo)
+	col_sel.shape = box_sel
+	col_sel.position = Vector3(0.0, 0.02, 0.0)
+	padre.add_child(col_sel)
+
+	# Nodo funcional de logística o alquiler
+	if id_modelo == "zona_alquiler_trailer":
+		var script_alq = preload("res://mundo/editor_mapas/ZonaAlquilerTrailer.gd")
+		var alquiler: Node3D = script_alq.new()
+		alquiler.name = "ZonaAlquilerTrailer"
+		padre.add_child(alquiler)
+	else:
+		var script_pcd = preload("res://codigo/sistemas/logistica/PuntoCargaDescarga.gd")
+		var punto: Marker3D = script_pcd.new()
+		punto.name = "PuntoCargaDescarga"
+		punto.set("nombre_punto", titulo.capitalize())
+		punto.set("tipo_punto", 0 if id_modelo == "zona_carga" else 1)
+		punto.set("forma_zona", 1)
+		punto.set("ancho", ancho - 0.5)
+		punto.set("largo", largo - 0.5)
+		punto.set("generar_area_deteccion", true)
+		padre.add_child(punto)
+
+		var script_carga_ui = preload("res://mundo/editor_mapas/ZonaCargaInteractiva.gd")
+		var zona_ui: Node3D = script_carga_ui.new()
+		zona_ui.name = "ZonaCargaInteractiva"
+		zona_ui.set("es_descarga", id_modelo == "zona_descarga")
+		padre.add_child(zona_ui)
+
 
 # ── CONSTRUCTORES PROCEDURALES DE ALTA FIDELIDAD ─────────────────────
 

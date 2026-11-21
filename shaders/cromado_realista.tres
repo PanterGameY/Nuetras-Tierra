@@ -1,6 +1,7 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://dkhc83mr6q8vj"]
 
 [ext_resource type="Shader" uid="uid://bgqc6avsml74g" path="res://materiales/Vehiculos/cromo_automotriz.gdshader" id="1_cromo"]
+[ext_resource type="Texture2D" uid="uid://0ufq3cunspp6" path="res://materiales/Vehiculos/reflejo_entorno_360.png" id="2_env"]
 
 [resource]
 render_priority = 0
@@ -15,3 +16,6 @@ shader_parameter/activar_micro_pulido = true
 shader_parameter/escala_micro_pulido = 120.0
 shader_parameter/fuerza_micro_pulido = 0.012
 shader_parameter/nivel_lluvia = 0.0
+shader_parameter/activar_reflejo_entorno = true
+shader_parameter/env_map = ExtResource("2_env")
+shader_parameter/intensidad_reflejo = 0.85

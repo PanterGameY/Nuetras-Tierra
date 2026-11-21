@@ -1,6 +1,7 @@
 [gd_resource type="ShaderMaterial" format=3 uid="uid://dole6u8fc7iko"]
 
 [ext_resource type="Shader" uid="uid://cbpnwivjhgyeq" path="res://materiales/Vehiculos/Carroceria.gdshader" id="1_s3a1b"]
+[ext_resource type="Texture2D" uid="uid://0ufq3cunspp6" path="res://materiales/Vehiculos/reflejo_entorno_360.png" id="2_env"]
 
 [sub_resource type="FastNoiseLite" id="FastNoiseLite_s3a1b"]
 seed = -7
@@ -26,21 +27,24 @@ noise = SubResource("FastNoiseLite_c2ll1")
 render_priority = 0
 shader = ExtResource("1_s3a1b")
 shader_parameter/base_color = Color(1, 0.94655716, 0, 1)
-shader_parameter/metallic = 0.85999998077728
-shader_parameter/roughness = 0.18999999575312
-shader_parameter/specular_strength = 0.6
-shader_parameter/activar_escamas = true
+shader_parameter/metallic = 0.38999999128272
+shader_parameter/roughness = 0.15
+shader_parameter/specular_strength = 0.72
+shader_parameter/activar_escamas = false
 shader_parameter/escala_escamas = 240.0
-shader_parameter/brillo_escamas = 0.3
+shader_parameter/brillo_escamas = 0.0
 shader_parameter/clearcoat = 1.0
-shader_parameter/clearcoat_roughness_val = 0.06999999843536
-shader_parameter/activar_piel_naranja = true
+shader_parameter/clearcoat_roughness_val = 0.03
+shader_parameter/activar_piel_naranja = false
 shader_parameter/escala_piel_naranja = 65.0
-shader_parameter/fuerza_piel_naranja = 0.008
-shader_parameter/nivel_lluvia = 0.11999999731776
+shader_parameter/fuerza_piel_naranja = 0.0
+shader_parameter/nivel_lluvia = 0.0
 shader_parameter/dirt_noise_tex = SubResource("NoiseTexture2D_uvkmh")
 shader_parameter/mud_noise_tex = SubResource("NoiseTexture2D_ii1n8")
 shader_parameter/wet_noise_tex = SubResource("NoiseTexture2D_7q0ep")
+shader_parameter/activar_reflejo_entorno = true
+shader_parameter/env_map = ExtResource("2_env")
+shader_parameter/intensidad_reflejo = 0.34
 shader_parameter/dust_color = Color(0.62, 0.54, 0.42, 1)
 shader_parameter/mud_color = Color(0.28, 0.2, 0.12, 1)
 shader_parameter/mud_streak_color = Color(0.18, 0.13, 0.08, 1)

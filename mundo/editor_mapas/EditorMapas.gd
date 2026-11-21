@@ -1398,7 +1398,7 @@ func _aplicar_gesto_camara_movil(delta_drag: Vector2) -> void:
 		"mover":
 			camara_editor.panear_por_arrastre(delta_drag)
 		"orbitar":
-			camara_editor.rotar_orbita(-delta_drag.x * 0.30)
+			camara_editor.rotar_orbita(delta_drag.x * 0.32)
 			camara_editor.inclinar_pitch(-delta_drag.y * 0.25)
 		"zoom":
 			var factor: float = clampf(1.0 + delta_drag.y * 0.005, 0.85, 1.18)

@@ -447,6 +447,17 @@ func _actualizar_linea_ruta_hud(cel_ui: Node) -> void:
 			if lp and lp is PackedVector3Array:
 				path_3d = lp
 
+	if path_3d.is_empty() and get_tree() and get_tree().root.has_meta("destino_gps_mapa"):
+		var dest_meta = get_tree().root.get_meta("destino_gps_mapa")
+		if dest_meta is Dictionary and dest_meta.has("pos") and is_instance_valid(vehiculo):
+			var p_dest: Vector3 = dest_meta["pos"]
+			path_3d = PackedVector3Array([vehiculo.global_position + Vector3(0, 1.0, 0), p_dest + Vector3(0, 1.0, 0)])
+			_actualizar_etiqueta_destino_gps(dest_meta, vehiculo.global_position.distance_to(p_dest))
+	elif _panel_gps:
+		var lbl_dest := _panel_gps.get_node_or_null("LblDestinoGPS") as Label
+		if lbl_dest:
+			lbl_dest.visible = false
+
 	if path_3d.size() < 2:
 		_linea_gps_hud.clear_points()
 		return
@@ -458,6 +469,26 @@ func _actualizar_linea_ruta_hud(cel_ui: Node) -> void:
 			points_2d.append(p2d)
 			
 	_linea_gps_hud.points = PackedVector2Array(points_2d)
+
+
+func _actualizar_etiqueta_destino_gps(dest_meta: Dictionary, dist_m: float) -> void:
+	if not _panel_gps:
+		return
+	var lbl := _panel_gps.get_node_or_null("LblDestinoGPS") as Label
+	if not lbl:
+		lbl = Label.new()
+		lbl.name = "LblDestinoGPS"
+		lbl.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+		lbl.offset_top = -26.0
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color", Color(0.95, 0.78, 0.32, 1.0))
+		lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+		lbl.add_theme_constant_override("outline_size", 4)
+		_panel_gps.add_child(lbl)
+	lbl.visible = true
+	var dist_txt := ("%.1f km" % (dist_m / 1000.0)) if dist_m >= 1000.0 else ("%d m" % int(round(dist_m)))
+	lbl.text = "🏁 %s · %s" % [str(dest_meta.get("nombre", "Descarga")), dist_txt]
 
 func _actualizar_velocimetro() -> void:
 	var vel_kmh: float = vehiculo.linear_velocity.length() * 3.6
