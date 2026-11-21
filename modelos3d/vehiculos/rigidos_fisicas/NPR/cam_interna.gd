@@ -448,11 +448,14 @@ func compute_local_state(delta: float) -> Dictionary:
 	# 4. Rotación dinámica base
 	var rot_final: Vector3 = _calcular_rotacion(delta, inv_basis)
 
-	# 5. FOV dinámico + Enfoque al mirar espejos laterales
+	# 5. FOV dinámico + Enfoque solo al mirar espejos laterales (se libera al asomarse por la ventana)
 	var kmh: float = coche.linear_velocity.length() * 3.6
 	var target_fov: float = fov_base + clampf(kmh * fov_velocidad_factor, 0.0, maxf(fov_max - fov_base, 0.0))
 	if enfoque_espejos_activado:
-		var factor_enfoque: float = clampf((absf(rot_y) - angulo_inicio_enfoque) / 45.0, 0.0, 1.0)
+		var abs_yaw: float = absf(rot_y)
+		var ramp_in: float = clampf((abs_yaw - angulo_inicio_enfoque) / 18.0, 0.0, 1.0)
+		var ramp_out: float = 1.0 - clampf((abs_yaw - angulo_asomarse) / 15.0, 0.0, 1.0)
+		var factor_enfoque: float = ramp_in * ramp_out
 		target_fov -= factor_enfoque * zoom_enfoque_espejos_deg
 	target_fov = clampf(target_fov, 40.0, fov_max)
 

@@ -23,32 +23,41 @@ uniform float outline_alpha : hint_range(0.0, 1.0) = 1.0;
 uniform vec4  outline_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
 
 void fragment() {
-	// 1. Centrar y rotar coordenadas UV alrededor del centro (0.5, 0.5)
-	vec2 uvc = UV - vec2(0.5);
+	// 1. Centrar y rotar coordenadas UV con corrección de aspecto para evitar distorsión
+	vec2 tex_size = 1.0 / max(TEXTURE_PIXEL_SIZE, vec2(0.00001));
+	float max_dim = max(tex_size.x, tex_size.y);
+	vec2 aspect = tex_size / max_dim;
+	vec2 uvc = (UV - vec2(0.5)) * aspect;
 	float sa = sin(rotacion);
 	float ca = cos(rotacion);
-	vec2 rot_uv = vec2(ca * uvc.x + sa * uvc.y, -sa * uvc.x + ca * uvc.y) + vec2(0.5);
+	vec2 rot_uv = vec2(ca * uvc.x + sa * uvc.y, -sa * uvc.x + ca * uvc.y) / aspect + vec2(0.5);
 
-	// 2. Prevenir repetición en las esquinas al rotar
-	if (rot_uv.x < 0.0 || rot_uv.x > 1.0 || rot_uv.y < 0.0 || rot_uv.y > 1.0) {
+	// 2. Prevenir repetición o estiramiento en los bordes al rotar
+	if (rot_uv.x <= 0.004 || rot_uv.x >= 0.996 || rot_uv.y <= 0.004 || rot_uv.y >= 0.996) {
 		COLOR = vec4(0.0);
 	} else {
-		// Vector de desplazamiento en píxeles basado en TEXTURE_PIXEL_SIZE
+		// Vector de desplazamiento uniforme en píxeles
 		vec2 px = TEXTURE_PIXEL_SIZE * borde_grosor;
 
-		// Muestreo central
+		// Muestreo central y 8 vecinos con máscara de borde limpio (sin clamp)
+		vec2 uv0 = rot_uv + vec2(-px.x, 0.0);
+		vec2 uv1 = rot_uv + vec2( px.x, 0.0);
+		vec2 uv2 = rot_uv + vec2(0.0, -px.y);
+		vec2 uv3 = rot_uv + vec2(0.0,  px.y);
+		vec2 uv4 = rot_uv + vec2(-px.x * 0.7071, -px.y * 0.7071);
+		vec2 uv5 = rot_uv + vec2( px.x * 0.7071, -px.y * 0.7071);
+		vec2 uv6 = rot_uv + vec2(-px.x * 0.7071,  px.y * 0.7071);
+		vec2 uv7 = rot_uv + vec2( px.x * 0.7071,  px.y * 0.7071);
+
 		float a_center = texture(TEXTURE, rot_uv).a;
-
-		// Muestreos en cruz y diagonales (8 vecinos)
-		float a0 = texture(TEXTURE, rot_uv + vec2(-px.x, 0.0)).a;
-		float a1 = texture(TEXTURE, rot_uv + vec2( px.x, 0.0)).a;
-		float a2 = texture(TEXTURE, rot_uv + vec2(0.0, -px.y)).a;
-		float a3 = texture(TEXTURE, rot_uv + vec2(0.0,  px.y)).a;
-
-		float a4 = texture(TEXTURE, rot_uv + vec2(-px.x * 0.7071, -px.y * 0.7071)).a;
-		float a5 = texture(TEXTURE, rot_uv + vec2( px.x * 0.7071, -px.y * 0.7071)).a;
-		float a6 = texture(TEXTURE, rot_uv + vec2(-px.x * 0.7071,  px.y * 0.7071)).a;
-		float a7 = texture(TEXTURE, rot_uv + vec2( px.x * 0.7071,  px.y * 0.7071)).a;
+		float a0 = (uv0.x > 0.004 && uv0.x < 0.996 && uv0.y > 0.004 && uv0.y < 0.996) ? texture(TEXTURE, uv0).a : 0.0;
+		float a1 = (uv1.x > 0.004 && uv1.x < 0.996 && uv1.y > 0.004 && uv1.y < 0.996) ? texture(TEXTURE, uv1).a : 0.0;
+		float a2 = (uv2.x > 0.004 && uv2.x < 0.996 && uv2.y > 0.004 && uv2.y < 0.996) ? texture(TEXTURE, uv2).a : 0.0;
+		float a3 = (uv3.x > 0.004 && uv3.x < 0.996 && uv3.y > 0.004 && uv3.y < 0.996) ? texture(TEXTURE, uv3).a : 0.0;
+		float a4 = (uv4.x > 0.004 && uv4.x < 0.996 && uv4.y > 0.004 && uv4.y < 0.996) ? texture(TEXTURE, uv4).a : 0.0;
+		float a5 = (uv5.x > 0.004 && uv5.x < 0.996 && uv5.y > 0.004 && uv5.y < 0.996) ? texture(TEXTURE, uv5).a : 0.0;
+		float a6 = (uv6.x > 0.004 && uv6.x < 0.996 && uv6.y > 0.004 && uv6.y < 0.996) ? texture(TEXTURE, uv6).a : 0.0;
+		float a7 = (uv7.x > 0.004 && uv7.x < 0.996 && uv7.y > 0.004 && uv7.y < 0.996) ? texture(TEXTURE, uv7).a : 0.0;
 
 		float max_a = max(a_center, max(max(max(a0, a1), max(a2, a3)), max(max(a4, a5), max(a6, a7))));
 		float min_a = min(a_center, min(min(min(a0, a1), min(a2, a3)), min(min(a4, a5), min(a6, a7))));
