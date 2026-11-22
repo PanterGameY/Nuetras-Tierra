@@ -218,7 +218,8 @@ func _physics_process(_delta: float) -> void:
 	if _caminos.is_empty() or _pool.is_empty():
 		return
 
-	_actualizar_jugador()
+	if (Engine.get_physics_frames() % 5) == 0 or not _jugador_valido:
+		_actualizar_jugador()
 	if _activos.is_empty():
 		return
 

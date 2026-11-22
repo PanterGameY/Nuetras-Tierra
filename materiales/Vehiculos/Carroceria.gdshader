@@ -71,6 +71,25 @@ float hash3D(vec3 p) {
 	return fract(p.x * p.y * p.z);
 }
 
+float fast_atan2(float y, float x) {
+	float ax = abs(x) + 1e-6;
+	float ay = abs(y);
+	float mn = min(ax, ay);
+	float mx = max(ax, ay);
+	float a = mn / mx;
+	float s = a * a;
+	float r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+	if (ay > ax) { r = 1.57079637 - r; }
+	if (x < 0.0) { r = 3.14159274 - r; }
+	return (y < 0.0) ? -r : r;
+}
+
+float fast_asin(float x) {
+	float ax = clamp(abs(x), 0.0, 1.0);
+	float r = 1.57079637 - sqrt(1.0 - ax) * (1.5707288 + ax * (-0.2121144 + ax * 0.0742610));
+	return (x < 0.0) ? -r : r;
+}
+
 void vertex() {
 	v_height = VERTEX.y;
 	v_local_pos = VERTEX;
@@ -176,8 +195,8 @@ void fragment() {
 		vec3 view_dir_w = normalize((INV_VIEW_MATRIX * vec4(-n_view, 0.0)).xyz);
 		vec3 norm_w = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 		vec3 refl_w = reflect(view_dir_w, norm_w);
-		float u_env = fract(atan(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
-		float v_env = 0.5 - asin(clamp(refl_w.y, -1.0, 1.0)) / 3.14159265;
+		float u_env = fract(fast_atan2(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
+		float v_env = 0.5 - fast_asin(refl_w.y) / 3.14159265;
 		vec3 env_col = textureLod(env_map, vec2(u_env, v_env), clearcoat_roughness_val * 5.0).rgb;
 		float fresnel_cc = pow(1.0 - clamp(dot(NORMAL, n_view), 0.0, 1.0), 2.5);
 		float clean_factor = clearcoat * (1.0 - mud_mask) * (1.0 - dust_mask * 0.85);

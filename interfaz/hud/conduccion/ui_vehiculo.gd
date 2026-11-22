@@ -126,6 +126,9 @@ var _tween_toast: Tween = null
 @onready var _icono_veh_gps: Label          = find_child("IconoVehiculo", true, false) as Label
 var _linea_gps_hud: Line2D                  = null
 var _cel_ui_ref: Node                       = null
+var _gps_vp_timer: float                    = 0.0
+var _gps_line_cache: Node                   = null
+var _gps_line_retry_timer: float            = 0.0
 
 # ════════════════════════════════════════════════════════════════════
 #  INICIALIZACIÓN
@@ -389,6 +392,11 @@ func _configurar_gps_hud_inicial() -> void:
 
 	if _gps_viewport:
 		_gps_viewport.msaa_3d = Viewport.MSAA_DISABLED
+		_gps_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+		if _panel_gps:
+			var vc := _panel_gps.get_node_or_null("ViewportContainer")
+			if vc is TextureRect:
+				(vc as TextureRect).texture = _gps_viewport.get_texture()
 
 	if _panel_gps:
 		var overlay = _panel_gps.get_node_or_null("Overlay")
@@ -405,12 +413,17 @@ func _configurar_gps_hud_inicial() -> void:
 			overlay.move_child(_linea_gps_hud, 0)
 
 func _actualizar_gps_hud(delta: float) -> void:
-	if not _gps_camera or not vehiculo or not is_instance_valid(vehiculo):
+	if not self.visible or not _gps_visible or not _gps_camera or not vehiculo or not is_instance_valid(vehiculo):
 		return
 		
 	# Vincular el SubViewport del CanvasLayer al World3D de la escena principal
-	if _gps_viewport and not _gps_viewport.world_3d and vehiculo.get_world_3d():
-		_gps_viewport.world_3d = vehiculo.get_world_3d()
+	if _gps_viewport:
+		if not _gps_viewport.world_3d and vehiculo.get_world_3d():
+			_gps_viewport.world_3d = vehiculo.get_world_3d()
+		_gps_vp_timer += delta
+		if _gps_vp_timer >= 0.12:
+			_gps_vp_timer = 0.0
+			_gps_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		
 	# Sincronización con CelularUI (Ruta Waze)
 	if not is_instance_valid(_cel_ui_ref):
@@ -426,6 +439,7 @@ func _actualizar_gps_hud(delta: float) -> void:
 		var rot_deg = deg_to_rad(-vehiculo.rotation_degrees.y)
 		_icono_veh_gps.rotation = rot_deg
 
+	_gps_line_retry_timer = maxf(_gps_line_retry_timer - delta, 0.0)
 	_actualizar_linea_ruta_hud(_cel_ui_ref)
 
 func _actualizar_linea_ruta_hud(cel_ui: Node) -> void:
@@ -439,10 +453,13 @@ func _actualizar_linea_ruta_hud(cel_ui: Node) -> void:
 			path_3d = route_val
 			
 	if path_3d.is_empty():
-		var gps_line_node = vehiculo.find_child("GPSRutaLinea", true, false)
-		if not gps_line_node and get_tree() and get_tree().current_scene:
-			gps_line_node = get_tree().current_scene.find_child("GPSRutaLinea", true, false)
-		if gps_line_node and gps_line_node.get("active") == true:
+		if not is_instance_valid(_gps_line_cache) and _gps_line_retry_timer <= 0.0:
+			_gps_line_retry_timer = 1.5
+			_gps_line_cache = vehiculo.find_child("GPSRutaLinea", true, false)
+			if not _gps_line_cache and get_tree() and get_tree().current_scene:
+				_gps_line_cache = get_tree().current_scene.find_child("GPSRutaLinea", true, false)
+		var gps_line_node = _gps_line_cache
+		if is_instance_valid(gps_line_node) and gps_line_node.get("active") == true:
 			var lp = gps_line_node.get("last_path")
 			if lp and lp is PackedVector3Array:
 				path_3d = lp
@@ -708,8 +725,7 @@ func _on_boton_salir() -> void:
 		vehiculo.bajar_jugador()
 	elif jugador and jugador.has_method("salir_del_vehiculo"):
 		jugador.salir_del_vehiculo()
-
-	if is_instance_valid(jugador):
+	elif is_instance_valid(jugador):
 		if _get_gv() and _get_gv().has_method("bajar_jugador_de_vehiculo"): _get_gv().bajar_jugador_de_vehiculo(jugador, vehiculo)
 
 	visible = false
@@ -1074,7 +1090,8 @@ func _on_toggle_gps_pressed() -> void:
 	if _panel_gps:
 		_panel_gps.visible = _gps_visible
 	if _gps_viewport:
-		_gps_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if _gps_visible else SubViewport.UPDATE_DISABLED
+		_gps_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE if _gps_visible else SubViewport.UPDATE_DISABLED
+		_gps_vp_timer = 0.0
 	if boton_toggle_gps:
 		boton_toggle_gps.text = "MAPA" if _gps_visible else "+ MAPA"
 

@@ -487,7 +487,8 @@ func _on_body_entered(body: Node3D) -> void:
 			body.notificar_vehiculo_cerca(self)
 
 func _on_body_exited(body: Node3D) -> void:
-	if body == jugador_ref and not activo:
+	var es_jugador_local: bool = body == jugador_ref or (body != null and body.is_in_group("jugador") and (not body.has_method("es_autoridad_local") or bool(body.es_autoridad_local())))
+	if es_jugador_local and not activo:
 		jugador_cerca = false
 		jugador_ref = null
 		if is_instance_valid(icono_entrada) and icono_entrada.has_method("ocultar"):
