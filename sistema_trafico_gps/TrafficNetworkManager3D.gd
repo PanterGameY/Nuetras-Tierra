@@ -47,17 +47,9 @@ var _timer_reciclaje: Timer = null
 var _salidas_rotonda: Dictionary = {}
 var _entradas_rotonda: Dictionary = {}
 var _salidas_calculadas: bool = false
-var _es_movil: bool = false
 
 
 func _ready() -> void:
-	_es_movil = OS.has_feature("android") or OS.has_feature("ios") or OS.has_feature("mobile")
-	if _es_movil:
-		var ram_mb: int = int(float(OS.get_memory_info().get("physical", 0)) / 1048576.0)
-		var es_ram_baja: bool = ram_mb > 0 and ram_mb <= 3900
-		max_ai_vehicles = mini(max_ai_vehicles, 10 if es_ram_baja else 16)
-		spawn_radius = minf(spawn_radius, 140.0 if es_ram_baja else 175.0)
-		despawn_radius = minf(despawn_radius, 190.0 if es_ram_baja else 240.0)
 	add_to_group("traffic_network_manager")
 	if Engine.is_editor_hint():
 		return
@@ -242,8 +234,6 @@ func _iniciar_pool_trafico() -> void:
 
 func _physics_process(delta: float) -> void:
 	if Engine.is_editor_hint() or _pool_vehiculos.is_empty():
-		return
-	if _es_movil and (Engine.get_physics_frames() & 1) != 0:
 		return
 
 	if not _salidas_calculadas:

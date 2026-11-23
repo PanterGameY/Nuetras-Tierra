@@ -141,7 +141,6 @@ var _zona_camara_activa = false
 var _zoom_guardado = 3.5
 var _conduciendo = false
 var _recien_bajado_timer: float = 0.0
-var _recien_subido_timer: float = 0.0
 var _autosave_timer: float = 0.0
 const AUTOSAVE_INTERVAL: float = 15.0
 var _vehiculo_actual: Node3D
@@ -713,16 +712,14 @@ func _physics_process(delta: float) -> void:
 			anim_player.play(_anim_actual)
 		return
 	if _conduciendo:
-		if _recien_subido_timer > 0.0:
-			_recien_subido_timer = maxf(_recien_subido_timer - delta, 0.0)
 		if _vehiculo_actual:
 			var gv := get_node_or_null("/root/GestorVehiculos")
 			if gv and gv.has_method("asegurar_vehiculo_sobre_mapa") and _vehiculo_actual is RigidBody3D:
 				var prev_seg_v: Vector3 = _vehiculo_actual.get_meta("_pos_segura_mapa", Vector3.ZERO)
 				_vehiculo_actual.set_meta("_pos_segura_mapa", gv.asegurar_vehiculo_sobre_mapa(_vehiculo_actual, prev_seg_v))
 			_manterner_en_vehiculo(_vehiculo_actual)
-			# Cooldown tras subir para evitar que la misma pulsación de F que sube al jugador lo baje en el mismo frame
-			if _recien_subido_timer <= 0.0 and (Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("interactuar")):
+			# Cambiado para salir usando la tecla ESC (ui_cancel) o el boton interactuar para evitar conflictos con S (freno)
+			if Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("interactuar"):
 				_salir_del_vehiculo()
 		return
 	
@@ -991,12 +988,7 @@ func _set_primera_persona(v):
 		_vigneta_layer.hide()
 
 func _subir_al_vehiculo(v):
-	if not is_instance_valid(v):
-		return
-	if _conduciendo and _vehiculo_actual == v:
-		return
 	_conduciendo = true
-	_recien_subido_timer = 0.35
 	_vehiculo_actual = v
 	_asiento_cache = v.find_child("AsientoConductor", true, false)
 	velocity = Vector3.ZERO
@@ -1026,13 +1018,10 @@ func _salir_del_vehiculo():
 		item_en_mano_ctrl.visible = true
 		if is_instance_valid(cam_activa):
 			item_en_mano_ctrl.vincular_jugador(self, cam_activa)
-
-	var gestionado_por_gv: bool = has_meta("_bajando_de_vehiculo") and get_meta("_bajando_de_vehiculo") == true
-	if v.has_method("bajar_jugador") and not gestionado_por_gv:
-		v.bajar_jugador()
-	if not gestionado_por_gv:
-		if _collision_shape: _collision_shape.disabled = false
-		_verificar_seguridad_mapa(true)
+			
+	if v.has_method("bajar_jugador"): v.bajar_jugador()
+	if _collision_shape: _collision_shape.disabled = false
+	_verificar_seguridad_mapa(true)
 	_recien_bajado_timer = 1.0 # Previene animaciones de caída/salto temporalmente (tiempo de seguridad)
 	_reproducir_anim(ANIM_IDLE)
 
@@ -1200,50 +1189,33 @@ func _on_document_write_failed(error) -> void:
 	if datos and datos.has_method("save_local"):
 		datos.save_local()
 
-func _obtener_vehiculo_cercano() -> Node3D:
-	if is_instance_valid(_vehiculo_cerca) and _vehiculo_cerca.get("activo") != true:
-		return _vehiculo_cerca
-	for v in get_tree().get_nodes_in_group("vehiculo"):
-		if not is_instance_valid(v) or v.get("activo") == true:
-			continue
-		if v.get("jugador_cerca") == true:
-			var zona := v.find_child("ZonaEntrada", true, false) as Node3D
-			var ref_pos: Vector3 = zona.global_position if is_instance_valid(zona) else (v as Node3D).global_position
-			var d_xz := Vector2(ref_pos.x - global_position.x, ref_pos.z - global_position.z).length()
-			if d_xz <= 3.8 and absf(ref_pos.y - global_position.y) <= 3.5:
-				_vehiculo_cerca = v
-				return v
-	for ico in get_tree().get_nodes_in_group("icono_entrada_vehiculo"):
-		if is_instance_valid(ico) and ico.get("_activo") == true:
-			var veh: Variant = ico.get("vehiculo")
-			if is_instance_valid(veh) and veh is Node3D and veh.get("activo") != true:
-				_vehiculo_cerca = veh
-				return veh
-	return null
-
 func _procesar_interaccion_vehiculo():
-	if _conduciendo or _recien_bajado_timer > 0.75:
-		return
-	if _accion_just_pressed(["interactuar"]): # Cambiado a la acción definida en project.godot
-		var veh := _obtener_vehiculo_cercano()
-		if veh:
-			_subir_al_vehiculo(veh)
+	if _vehiculo_cerca and not _conduciendo:
+		if _accion_just_pressed(["interactuar"]): # Cambiado a la acción definida en project.godot
+			_subir_al_vehiculo(_vehiculo_cerca)
 
 func puede_interactuar() -> bool:
 	if _conduciendo:
 		return false
-	return _obtener_vehiculo_cercano() != null
+	if is_instance_valid(_vehiculo_cerca):
+		return true
+	for v in get_tree().get_nodes_in_group("vehiculo"):
+		if v and v.get("jugador_cerca") == true:
+			_vehiculo_cerca = v
+			return true
+	return false
 
 func interactuar_contextual() -> void:
 	if _conduciendo:
-		if _recien_subido_timer <= 0.0:
-			_salir_del_vehiculo()
+		_salir_del_vehiculo()
 		return
-	if _recien_bajado_timer > 0.75:
-		return
-	var veh := _obtener_vehiculo_cercano()
-	if veh:
-		_subir_al_vehiculo(veh)
+	if not is_instance_valid(_vehiculo_cerca):
+		for v in get_tree().get_nodes_in_group("vehiculo"):
+			if v and v.get("jugador_cerca") == true:
+				_vehiculo_cerca = v
+				break
+	if is_instance_valid(_vehiculo_cerca):
+		_subir_al_vehiculo(_vehiculo_cerca)
 
 func ejecutar_salto_tactil(fuerza_v: float, impulso_h: Vector3 = Vector3.ZERO) -> void:
 	if _conduciendo:
@@ -1316,10 +1288,8 @@ func _on_boton_entrar_pressed():
 
 func _on_zona_entrada_body_entered(b, veh = null):
 	# Handler flexible: puede recibir (body) o (body, veh) cuando se conecta con bind
-	# Si recibimos el vehículo por bind, ignorar otros cuerpos (IA, remolques, ruedas)
+	# Si recibimos el vehículo por bind, úsalo directamente (no dependemos de grupos)
 	if veh != null and veh is Node:
-		if b != self:
-			return
 		if debug_interaction:
 			print("_on_zona_entrada_body_entered: bound veh ->", veh.get_path())
 		_vehiculo_cerca = veh
@@ -1330,8 +1300,6 @@ func _on_zona_entrada_body_entered(b, veh = null):
 
 func _on_zona_entrada_body_exited(b, veh = null):
 	if veh != null and veh is Node:
-		if b != self:
-			return
 		if _vehiculo_cerca == veh:
 			_vehiculo_cerca = null
 		return

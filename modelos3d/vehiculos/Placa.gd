@@ -89,8 +89,8 @@ func _inicializar_viewport() -> void:
 	var vp := get_node_or_null("ViewportText") as SubViewport
 	if vp:
 		vp.transparent_bg = true
-		vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ONCE
-		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 ## Formatea automáticamente textos como "LMN234" a formato oficial "LMN • 234"
 func _formatear_texto_colombiano(input: String) -> String:
@@ -140,10 +140,10 @@ func _update_labels() -> void:
 				lbl_num.add_theme_color_override("font_color", Color(0.08, 0.08, 0.08, 1.0))
 			
 			var len_text := plate_text.length()
-			var target_size := 150
+			var target_size := 300
 			if len_text > 9:
-				target_size = int(150.0 * (9.0 / float(len_text)))
-			lbl_num.add_theme_font_size_override("font_size", clamp(target_size, 75, 150))
+				target_size = int(300.0 * (9.0 / float(len_text)))
+			lbl_num.add_theme_font_size_override("font_size", clamp(target_size, 150, 300))
 				
 		var lbl_city := vp.get_node_or_null("ControlRoot/LabelCiudad") as Label
 		if lbl_city:
@@ -160,9 +160,7 @@ func _update_labels() -> void:
 			else:
 				lbl_city.add_theme_color_override("font_color", Color(0.08, 0.08, 0.08, 1.0))
 				
-			lbl_city.add_theme_font_size_override("font_size", 40)
-
-		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+			lbl_city.add_theme_font_size_override("font_size", 80)
 				
 	_update_shader()
 
@@ -182,8 +180,8 @@ func _update_shader() -> void:
 
 	var vp := get_node_or_null("ViewportText") as SubViewport
 	if vp:
-		vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ONCE
-		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		vp.render_target_clear_mode = SubViewport.CLEAR_MODE_ALWAYS
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		var tex := vp.get_texture()
 		if tex:
 			mat.set_shader_parameter("texto_texture", tex)

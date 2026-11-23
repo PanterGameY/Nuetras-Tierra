@@ -290,7 +290,7 @@ func _setup_sensores() -> void:
 		ray.target_position = cfg["tgt"]
 		ray.collision_mask = 7  # Capas 1 (Jugador/Terreno), 2 (Vehículos), 3 (Tráfico IA)
 		ray.hit_from_inside = true
-		ray.enabled = false
+		ray.enabled = true
 		ray.exclude_parent = true
 		ray.add_exception(self)
 		_sensores_frontales.append(ray)
@@ -305,7 +305,7 @@ func _setup_sensores() -> void:
 	_sensor_suelo.position = Vector3(0.0, 1.8, 0.0)
 	_sensor_suelo.target_position = Vector3(0.0, -12.0, 0.0)
 	_sensor_suelo.collision_mask = 1  # Capa 1: Solo suelo y carretera estática
-	_sensor_suelo.enabled = false
+	_sensor_suelo.enabled = true
 	_sensor_suelo.exclude_parent = true
 	_sensor_suelo.add_exception(self)
 
@@ -997,10 +997,9 @@ func _actualizar_contacto_suelo(delta: float) -> void:
 	if _sensor_suelo == null or not is_instance_valid(_sensor_suelo):
 		return
 
-	# Optimización LOD: en distancia lejana (LOD 2, >85m) no raycastear suelo; en LOD 1 cada 3 frames
+	# Optimización LOD: Si estamos a distancia lejana (LOD 2, >85m),
+	# el asfalto sigue la curva horneada; en LOD 0 y LOD 1 se mantiene adaptado suavemente
 	if _lod_level >= 2 and delta < 1.0:
-		return
-	if _lod_level == 1 and delta < 1.0 and (Engine.get_physics_frames() + get_instance_id()) % 3 != 0:
 		return
 
 	_sensor_suelo.force_raycast_update()
@@ -1296,26 +1295,17 @@ func _obtener_menor_distancia_sensores() -> float:
 	if _ultimo_frame_ray == frame_actual:
 		return _distancia_ray_cache
 
-	# En LOD 2 (>85m), ahorrar raycasts por completo
-	if _lod_level >= 2:
-		_distancia_ray_cache = INF
-		_ultimo_col_ray = null
-		return INF
-
-	# En LOD 1 (35m - 85m), actualizar solo cada 4 frames con 2 sensores principales
-	if _lod_level == 1 and (frame_actual + get_instance_id()) % 4 != 0:
-		return _distancia_ray_cache
-
-	# En LOD 0 fuera de zona cercana (>18m), alternar por instancia cada 2 frames
-	if _lod_level == 0 and distancia_al_jugador > 18.0 and ((frame_actual + get_instance_id()) & 1) != 0:
+	# En LOD 1 (35m - 85m), actualizar solo cada 3er frame para alto rendimiento
+	if _lod_level == 1 and (frame_actual + get_instance_id()) % 3 != 0:
 		return _distancia_ray_cache
 
 	_ultimo_frame_ray = frame_actual
 	_ultimo_col_ray = null
 	var menor := INF
 
+	# En LOD 0 usar siempre los 6 sensores frontales (incluidas curvas y rotondas) orientados hacia el giro real
 	var en_curva := absf(angulo_ruedas) > deg_to_rad(4.0)
-	var cant_rayos: int = 2 if _lod_level == 1 else _sensores_frontales.size()
+	var cant_rayos: int = 3 if _lod_level == 1 else _sensores_frontales.size()
 	var fwd_propio := -global_transform.basis.z
 	fwd_propio.y = 0.0
 	if fwd_propio.length_squared() > 0.001:
@@ -1325,7 +1315,7 @@ func _obtener_menor_distancia_sensores() -> float:
 		if i >= _sensores_frontales.size():
 			break
 		var ray: RayCast3D = _sensores_frontales[i]
-		if is_instance_valid(ray):
+		if is_instance_valid(ray) and ray.enabled:
 			# Inclinar el abanico de sensores en el sentido del giro para detectar jugador/obstáculos dentro de la curva
 			ray.rotation.y = angulo_ruedas * 0.65 if en_curva else 0.0
 			ray.force_raycast_update()
@@ -1403,12 +1393,12 @@ func _obtener_info_jugador_directa() -> Dictionary:
 							menor_j = dist_v
 							mejor_obj = vc
 
-	if get_tree() != null and _lod_level <= 1 and distancia_al_jugador <= 75.0:
+	if get_tree() != null:
 		for tr_node in get_tree().get_nodes_in_group("remolque"):
 			if not (tr_node is Node3D) or not is_instance_valid(tr_node):
 				continue
 			var tr := tr_node as Node3D
-			if not tr.is_inside_tree() or tr.global_position.distance_squared_to(global_position) > 1024.0:
+			if not tr.is_inside_tree() or tr.global_position.distance_squared_to(global_position) > 1444.0:
 				continue
 			for z_t in [-6.0, -3.5, -1.0, 1.5, 4.0, 6.2]:
 				for x_t in [-1.15, 1.15]:

@@ -45,25 +45,6 @@ float hash21(vec2 p) {
 	return fract(p.x * p.y);
 }
 
-float fast_atan2(float y, float x) {
-	float ax = abs(x) + 1e-6;
-	float ay = abs(y);
-	float mn = min(ax, ay);
-	float mx = max(ax, ay);
-	float a = mn / mx;
-	float s = a * a;
-	float r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
-	if (ay > ax) { r = 1.57079637 - r; }
-	if (x < 0.0) { r = 3.14159274 - r; }
-	return (y < 0.0) ? -r : r;
-}
-
-float fast_asin(float x) {
-	float ax = clamp(abs(x), 0.0, 1.0);
-	float r = 1.57079637 - sqrt(1.0 - ax) * (1.5707288 + ax * (-0.2121144 + ax * 0.0742610));
-	return (x < 0.0) ? -r : r;
-}
-
 void fragment() {
 	vec3 n = NORMAL;
 	vec3 v = VIEW;
@@ -100,8 +81,8 @@ void fragment() {
 		vec3 view_dir_w = normalize((INV_VIEW_MATRIX * vec4(-v, 0.0)).xyz);
 		vec3 norm_w = normalize((INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 		vec3 refl_w = reflect(view_dir_w, norm_w);
-		float u_env = fract(fast_atan2(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
-		float v_env = 0.5 - fast_asin(refl_w.y) / 3.14159265;
+		float u_env = fract(atan(refl_w.z, refl_w.x) / 6.2831853 + 0.5);
+		float v_env = 0.5 - asin(clamp(refl_w.y, -1.0, 1.0)) / 3.14159265;
 		vec3 env_col = textureLod(env_map, vec2(u_env, v_env), micro_rugosidad * 3.0).rgb;
 		float refl_wgt = clamp(intensidad_reflejo, 0.0, 1.2);
 		vec3 chrome_env = env_col * mix(color_cromo.rgb, tinte_borde.rgb, fresnel * fuerza_fresnel);
