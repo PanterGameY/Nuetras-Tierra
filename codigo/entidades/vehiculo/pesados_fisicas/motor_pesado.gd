@@ -299,6 +299,13 @@ func _crear_humo_aceleracion() -> void:
 	if not _humo_aceleracion:
 		_humo_aceleracion = get_node_or_null("HumoAceleracion")
 
+	if not is_instance_valid(_humo_aceleracion) and humo_aceleracion_habilitado:
+		var script_humo = preload("res://codigo/entidades/vehiculo/pesados_fisicas/humo_escape_pesado.gd")
+		var humo_inst: Node3D = script_humo.new()
+		humo_inst.name = "HumoAceleracion"
+		add_child(humo_inst)
+		_humo_aceleracion = humo_inst
+
 	if not is_instance_valid(_humo_aceleracion):
 		return
 
@@ -411,8 +418,8 @@ func _physics_process(delta: float) -> void:
 	# Respuesta progresiva del acelerador diésel
 	var ritmo_subida = 2.8
 	var ritmo_bajada = 4.2
-	if not encendido:
-		gas_suavizado = move_toward(gas_suavizado, 0.0, delta * 6.0)
+	if not encendido or pedal_raw <= 0.02:
+		gas_suavizado = move_toward(gas_suavizado, 0.0, delta * 8.0)
 	elif pedal_raw > gas_suavizado:
 		gas_suavizado = move_toward(gas_suavizado, pedal_raw, delta * ritmo_subida)
 	else:
@@ -474,12 +481,13 @@ func _physics_process(delta: float) -> void:
 	freno_motor_activo = false
 	auto_hold_activo = false
 
-	# Auto-Hold inteligente: evita que el camión ruede hacia atrás en subida cuando está en D
-	# o hacia adelante cuando está en R mientras se suelta el freno o se inicia la marcha.
-	if auto_hold_pendiente and encendido and not en_neutro and not freno_mano:
-		if en_drive and speed_ms < -0.15 and gas_suavizado < 0.15:
+	# Auto-Hold inteligente solo en pendientes pronunciadas casi detenido; en llano o rodando por inercia
+	# permite cambiar entre R y D manteniendo la dirección de marcha hasta pisar el acelerador.
+	var inclinacion_abs := absf((-car_basis.z).dot(Vector3.UP))
+	if auto_hold_pendiente and encendido and not en_neutro and not freno_mano and inclinacion_abs > 0.08:
+		if en_drive and speed_ms < -0.15 and speed_ms > -0.85 and gas_suavizado < 0.15:
 			auto_hold_activo = true
-		elif en_reversa and speed_ms > 0.15 and gas_suavizado < 0.15:
+		elif en_reversa and speed_ms > 0.15 and speed_ms < 0.85 and gas_suavizado < 0.15:
 			auto_hold_activo = true
 
 	if encendido and not en_neutro and not freno_mano:
@@ -504,19 +512,20 @@ func _physics_process(delta: float) -> void:
 			var t_arr = clampf(speed_abs_kmh / 10.0, 0.0, 1.0)
 			acople_arranque = lerpf(acople_arranque_min, 1.0, t_arr)
 
-		if en_reversa:
-			var mult_rev: float = 1.45
-			var factor_vel_rev: float = clampf((22.0 - speed_rev_kmh) / 6.0, 0.0, 1.0) if speed_rev_kmh > 16.0 else 1.0
-			fuerza_ruedas = -fuerza_aceleracion_pesado * mult_rev * gas_suavizado * factor_par_rpm * factor_carga * factor_vel_rev * acople_arranque
-		elif en_drive:
-			var mult_marcha: float = MULT_MARCHAS[_current_gear]
-			var fuerza_base: float = fuerza_aceleracion_pesado * gas_suavizado * mult_marcha * factor_par_rpm * factor_carga * factor_pendiente
+		if pedal_raw > 0.02:
+			if en_reversa:
+				var mult_rev: float = 1.45
+				var factor_vel_rev: float = clampf((22.0 - speed_rev_kmh) / 6.0, 0.0, 1.0) if speed_rev_kmh > 16.0 else 1.0
+				fuerza_ruedas = -fuerza_aceleracion_pesado * mult_rev * gas_suavizado * factor_par_rpm * factor_carga * factor_vel_rev * acople_arranque
+			elif en_drive:
+				var mult_marcha: float = MULT_MARCHAS[_current_gear]
+				var fuerza_base: float = fuerza_aceleracion_pesado * gas_suavizado * mult_marcha * factor_par_rpm * factor_carga * factor_pendiente
 
-			if _current_gear == 9 and speed_fwd_kmh > velocidad_maxima_kmh - 8.0:
-				var factor_tope = clampf((velocidad_maxima_kmh - speed_fwd_kmh) / 8.0, 0.0, 1.0)
-				fuerza_base *= factor_tope
+				if _current_gear == 9 and speed_fwd_kmh > velocidad_maxima_kmh - 8.0:
+					var factor_tope = clampf((velocidad_maxima_kmh - speed_fwd_kmh) / 8.0, 0.0, 1.0)
+					fuerza_base *= factor_tope
 
-			fuerza_ruedas = fuerza_base * _factor_embrague * acople_arranque
+				fuerza_ruedas = fuerza_base * _factor_embrague * acople_arranque
 
 		if motor_danado:
 			var factor_potencia = clampf(1.0 - reduccion_potencia_dano, 0.15, 1.0)

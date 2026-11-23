@@ -153,6 +153,10 @@ func set_marcha_enum(nueva: Marcha) -> void:
 		if velocidad_actual_kmh > velocidad_segura_cambio:
 			return # Bloqueado por velocidad
 	
+	if nueva != marcha_actual:
+		_gas_target = 0.0
+		_gas_teclado = 0.0
+		gas = 0.0
 	marcha_actual = nueva
 	marcha = MARCHAS_DISPLAY[nueva]
 

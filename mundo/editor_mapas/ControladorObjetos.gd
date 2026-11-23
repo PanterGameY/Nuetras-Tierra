@@ -589,13 +589,17 @@ func colocar_objeto(pos_mundo: Vector3) -> Node3D:
 	nuevo_obj.global_position = xf_snap["pos"]
 	nuevo_obj.rotation_degrees.y = float(xf_snap["rot_y"])
 	nuevo_obj.set_meta("es_objeto_ciudad", true)
-	if id_objeto_seleccionado == "garaje_camiones" or str(nuevo_obj.get_meta("id_modelo", "")) == "garaje_camiones":
+	var id_col: String = str(nuevo_obj.get_meta("id_modelo", id_objeto_seleccionado))
+	if id_col == "garaje_camiones":
 		_nivelar_terreno_para_garaje(nuevo_obj)
-	elif id_objeto_seleccionado == "casa_modular" or nuevo_obj.get_meta("es_casa_modular", false):
+	elif id_col in ["zona_carga", "zona_descarga", "zona_alquiler_trailer"]:
+		_nivelar_terreno_para_zona(nuevo_obj, id_col)
+	elif id_col == "casa_modular" or nuevo_obj.get_meta("es_casa_modular", false):
 		_agregar_base_concreto_casa(nuevo_obj)
 	nuevo_obj.set_meta("radio_huella", _obtener_radio_huella(nuevo_obj))
 	
 	_objetos_en_escena.append(nuevo_obj)
+	_aplicar_visibilidad_nodo(nuevo_obj)
 	objeto_colocado.emit(nuevo_obj)
 	lista_objetos_actualizada.emit(_objetos_en_escena.size())
 	return nuevo_obj
@@ -619,6 +623,8 @@ func reemplazar_objeto_en_sitio(obj_antiguo: Node3D, nuevo_id: String) -> Node3D
 	nuevo_obj.set_meta("es_objeto_ciudad", true)
 	if nuevo_id in ["garaje_camiones", "garaje_doble", "garaje_terminal", "garaje_moderno"]:
 		_nivelar_terreno_para_garaje(nuevo_obj)
+	elif nuevo_id in ["zona_carga", "zona_descarga", "zona_alquiler_trailer"]:
+		_nivelar_terreno_para_zona(nuevo_obj, nuevo_id)
 	nuevo_obj.set_meta("radio_huella", _obtener_radio_huella(nuevo_obj))
 	_objetos_en_escena.append(nuevo_obj)
 	if era_sel:
@@ -837,6 +843,65 @@ func _nivelar_terreno_para_garaje(obj: Node3D) -> void:
 			z += step
 		x += step
 	t_data.update_maps(Terrain3DRegion.TYPE_HEIGHT, false, true)
+
+func _nivelar_terreno_para_zona(obj: Node3D, id_zona: String) -> void:
+	if not is_instance_valid(obj) or not controlador_terreno:
+		return
+	var hw: float = 3.8
+	var hl: float = 8.0 if id_zona == "zona_alquiler_trailer" else 6.0
+	var max_h := obj.global_position.y
+	if controlador_terreno.has_method("obtener_altura"):
+		var xf := obj.global_transform
+		for off_v in [Vector3(-hw, 0, -hl), Vector3(hw, 0, -hl), Vector3(-hw, 0, hl), Vector3(hw, 0, hl), Vector3.ZERO]:
+			var p_w: Vector3 = xf * (off_v as Vector3)
+			var h := float(controlador_terreno.obtener_altura(p_w))
+			if h > max_h:
+				max_h = h
+		obj.global_position.y = max_h + 0.04
+
+	var terrain = controlador_terreno.get("terrain")
+	if not terrain or not is_instance_valid(terrain) or not terrain.data:
+		return
+	var t_data = terrain.data
+	var step: float = terrain.vertex_spacing if terrain.vertex_spacing > 0.0 else 1.0
+	var xf_inv := obj.global_transform.affine_inverse()
+	var centro := obj.global_position
+	var radio_b: float = maxf(hw, hl) + 2.5
+	var min_x := centro.x - radio_b
+	var max_x := centro.x + radio_b
+	var min_z := centro.z - radio_b
+	var max_z := centro.z + radio_b
+	var h_target := obj.global_position.y - 0.03
+	var x := floorf(min_x / step) * step
+	while x <= max_x:
+		var z := floorf(min_z / step) * step
+		while z <= max_z:
+			var p_loc := xf_inv * Vector3(x, centro.y, z)
+			if absf(p_loc.x) <= hw and absf(p_loc.z) <= hl:
+				t_data.set_height(Vector3(x, 0.0, z), h_target)
+			z += step
+		x += step
+	t_data.update_maps(Terrain3DRegion.TYPE_HEIGHT, false, true)
+
+var distancia_visibilidad: float = 550.0
+
+func aplicar_distancia_visibilidad(dist: float) -> void:
+	distancia_visibilidad = clampf(dist, 120.0, 2200.0)
+	for obj in _objetos_en_escena:
+		if is_instance_valid(obj):
+			_aplicar_visibilidad_nodo(obj)
+
+func _aplicar_visibilidad_nodo(raiz: Node) -> void:
+	var pila: Array[Node] = [raiz]
+	while not pila.is_empty():
+		var cur: Node = pila.pop_back()
+		for ch in cur.get_children():
+			pila.append(ch)
+		if cur is GeometryInstance3D:
+			var gi := cur as GeometryInstance3D
+			gi.visibility_range_end = distancia_visibilidad
+			gi.visibility_range_end_margin = 20.0
+			gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
 
 func _obtener_radio_huella(obj: Node3D) -> float:
 	if not is_instance_valid(obj):

@@ -14,6 +14,11 @@ extends RigidBody3D
 @export var torque_antiroll: float = 18000.0
 @export var amort_antiroll: float = 5000.0
 
+@export_group("Física en el Aire (Saltos)")
+@export var gravedad_extra_aire_subida: float = 3.5
+@export var gravedad_extra_aire_caida: float = 5.5
+@export var torque_cabeceo_aire: float = 700.0
+
 # --- Referencias a Componentes Internos ---
 var motor: Node3D = null
 var spring_arm: SpringArm3D = null
@@ -42,9 +47,14 @@ var llantas_motrices: Array[RayCast3D] = []
 var _ruedas_todas: Array[RayCast3D] = []
 var _vel_previa: Vector3 = Vector3.ZERO
 var _pos_segura_mapa: Vector3 = Vector3.ZERO
+const SonidoChoqueScript = preload("res://codigo/entidades/vehiculo/sonido_choque_vehiculo.gd")
+
 var _jugador_cam_node: Camera3D = null
 var _jugador_cam_original_parent: Node = null
 var _jugador_cam_original_global_transform: Transform3D = Transform3D()
+var _sonido_choque: Node3D = null
+var _tiempo_en_aire: float = 0.0
+var _factor_apoyo_suave: float = 1.0
 var salida_offset_vertical: float = 0.5
 var salida_offset_lateral: float = 1.6
 
@@ -96,6 +106,11 @@ func _ready() -> void:
 		gv_ini.call("restaurar_ubicacion_vehiculo", self)
 	freeze = false
 	can_sleep = false
+	continuous_cd = true
+	_sonido_choque = SonidoChoqueScript.new()
+	_sonido_choque.name = "SonidoChoqueVehiculo"
+	add_child(_sonido_choque)
+	_sonido_choque.configurar(self)
 
 
 func _buscar_ruedas_recursivo(node: Node) -> void:
@@ -110,21 +125,56 @@ func _buscar_ruedas_recursivo(node: Node) -> void:
 				llantas_motrices.append(child)
 		_buscar_ruedas_recursivo(child)
 
+func _contar_ruedas_en_suelo() -> int:
+	var en_suelo: int = 0
+	for rueda in _ruedas_todas:
+		if is_instance_valid(rueda) and rueda.is_colliding():
+			if "compresion_anterior" in rueda:
+				if float(rueda.get("compresion_anterior")) > 0.0:
+					en_suelo += 1
+			else:
+				en_suelo += 1
+	return en_suelo
+
+func _aplicar_fisica_aire(delta: float, ruedas_suelo: int) -> void:
+	var dot_up_actual: float = global_transform.basis.y.dot(Vector3.UP)
+	if ruedas_suelo > 0:
+		_tiempo_en_aire = 0.0
+		angular_damp = 1.2 if dot_up_actual >= 0.86 else 0.25
+		return
+	_tiempo_en_aire += delta
+	angular_damp = 0.25
+	if _tiempo_en_aire <= 0.18:
+		return
+	var factor_aire: float = clampf((_tiempo_en_aire - 0.18) / 0.25, 0.0, 1.0)
+	var g_extra: float = gravedad_extra_aire_caida if linear_velocity.y < 0.0 else gravedad_extra_aire_subida
+	apply_central_force(Vector3.DOWN * (mass * g_extra * factor_aire))
+	var pitch_frontal: float = (-global_transform.basis.z).dot(Vector3.UP)
+	if dot_up_actual > 0.50 and pitch_frontal > -0.12:
+		apply_torque(-global_transform.basis.x.normalized() * (torque_cabeceo_aire * factor_aire))
+
 func _physics_process(delta: float) -> void:
 	var gv_seg = get_node_or_null("/root/GestorVehiculos")
 	if gv_seg and gv_seg.has_method("asegurar_vehiculo_sobre_mapa"):
 		_pos_segura_mapa = gv_seg.asegurar_vehiculo_sobre_mapa(self, _pos_segura_mapa)
+	var ruedas_suelo: int = _contar_ruedas_en_suelo()
+	_aplicar_fisica_aire(delta, ruedas_suelo)
+	if _sonido_choque:
+		_sonido_choque.actualizar(delta, ruedas_suelo)
 	if not activo:
 		return
 	
-	# Estabilización anti-vuelco (Antiroll) basada en la inclinación local del chasis
+	# Estabilización anti-vuelco (Antiroll) solo en conducción normal (sin enderezar vehículos volcados)
+	var factor_apoyo_obj: float = clampf(float(ruedas_suelo - 1) / 2.0, 0.0, 1.0)
+	_factor_apoyo_suave = lerpf(_factor_apoyo_suave, factor_apoyo_obj, clampf(delta * 10.0, 0.0, 1.0))
+	var factor_apoyo: float = _factor_apoyo_suave
 	var local_up = global_transform.basis.y
 	var dot_up = local_up.dot(Vector3.UP)
-	if dot_up < 0.998:
+	if factor_apoyo > 0.0 and dot_up > 0.86 and dot_up < 0.998:
 		var angulo_roll = acos(clamp(dot_up, -1.0, 1.0))
 		var eje_roll = Vector3.UP.cross(local_up).normalized()
 		if eje_roll.length_squared() > 0.001:
-			var decay = clamp((dot_up - 0.25) / 0.70, 0.0, 1.0)
+			var decay = clamp((dot_up - 0.86) / 0.10, 0.0, 1.0) * factor_apoyo
 			var torque_muelle = -eje_roll * (torque_antiroll * angulo_roll * decay)
 			var omega_roll = angular_velocity.dot(eje_roll)
 			var torque_amort = -eje_roll * (amort_antiroll * omega_roll * decay)

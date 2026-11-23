@@ -88,8 +88,15 @@ func _physics_process(delta: float) -> void:
 		var vel_vertical = col_normal.dot(v_punto)
 		
 		var factor_peso = maxf(coche.mass / 1400.0, 1.0)
-		var f_muelle = compresion * (rigidez_muelle * factor_peso)
-		var f_amort = -vel_vertical * (amortiguacion * factor_peso)
+		var comp_ratio = clampf(compresion / maxf(largo_reposo, 0.05), 0.0, 1.35)
+		var comp_efectiva = minf(compresion, largo_reposo * 1.15)
+		var f_muelle = comp_efectiva * (rigidez_muelle * factor_peso) * (1.0 + (0.95 if vel_vertical <= 0.0 else 0.35) * pow(comp_ratio, 2.0))
+		var mult_amort = 1.0
+		if vel_vertical < 0.0: # Comprimiendo
+			mult_amort = 1.0 + clampf((comp_ratio - 0.45) * 2.5, 0.0, 2.5) + clampf((-vel_vertical - 1.5) * 0.40, 0.0, 2.5)
+		else: # Rebote: mayor retención para no rebotar al caer
+			mult_amort = 2.0 + clampf(comp_ratio * 0.9, 0.0, 1.2)
+		var f_amort = -vel_vertical * (amortiguacion * factor_peso * mult_amort)
 		var f_susp_base = f_muelle + f_amort
 		
 		# Anti-geometría
@@ -99,7 +106,8 @@ func _physics_process(delta: float) -> void:
 		aceleracion_longitudinal_coche = vel_local.z
 		
 		var f_anti_geom = accel_coche * coche.mass * coeficiente_geometria
-		var f_normal_total = clampf(f_susp_base + f_anti_geom, 0.0, 50000.0)
+		var f_normal_max = (coche.mass * 9.82) * (1.80 if vel_vertical <= 0.0 else 0.42)
+		var f_normal_total = clampf(f_susp_base + f_anti_geom, 0.0, f_normal_max)
 		fuerza_normal_anterior = f_normal_total
 
 		# Aplicar fuerzas físicas en el punto de contacto

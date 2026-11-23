@@ -74,6 +74,7 @@ signal cruce_edicion_cerrada()
 # Señales de puntos de rasante de carretera
 signal punto_via_eliminado_solicitado()
 signal hora_dia_cambiada(hora: int)
+signal distancia_renderizado_cambiada(distancia: float)
 signal modo_dispersion_vegetacion_alternado(activo: bool)
 signal radio_dispersion_vegetacion_cambiado(radio: float)
 signal densidad_dispersion_vegetacion_cambiada(densidad: int)
@@ -3664,7 +3665,8 @@ func _refrescar_grid_herramientas(cat_id: String) -> void:
 				{"id": "suavizar", "nombre": "Suavizar", "ico": "terreno_suavizar"},
 				{"id": "pendiente", "nombre": "Rampa", "ico": "act_nivelar"},
 				{"id": "pintar", "nombre": "Pintar", "ico": "terreno_pintar"},
-				{"id": "follaje", "nombre": "Follaje 3D", "ico": "terreno_cesped"}
+				{"id": "follaje", "nombre": "Follaje 3D", "ico": "terreno_cesped"},
+				{"id": "lotes", "nombre": "+ Lotes", "ico": "terreno_aplanar"}
 			]
 		"vias":
 			# Biblioteca organizada por secciones compactas: Vías, Rotondas y Cruces/Obra
@@ -4096,7 +4098,7 @@ func _construir_popup_sistema(padre: Control) -> void:
 	_popup_sistema.offset_left = -480.0
 	_popup_sistema.offset_right = -20.0
 	_popup_sistema.offset_top = 100.0
-	_popup_sistema.offset_bottom = 500.0
+	_popup_sistema.offset_bottom = 570.0
 	_popup_sistema.mouse_filter = Control.MOUSE_FILTER_STOP
 	_estilar_panel_glass(_popup_sistema, COLOR_PANEL, COLOR_BORDE, 16.0, 14.0)
 	padre.add_child(_popup_sistema)
@@ -4129,6 +4131,31 @@ func _construir_popup_sistema(padre: Control) -> void:
 		hora_dia_cambiada.emit(_hora_solar_idx)
 	)
 	vbox.add_child(btn_solar)
+
+	# Distancia de renderizado (calidad / FPS)
+	var box_render := VBoxContainer.new()
+	box_render.add_theme_constant_override("separation", 4)
+	vbox.add_child(box_render)
+
+	var lbl_render := Label.new()
+	lbl_render.text = "👁️ Distancia de Renderizado: 600 m"
+	lbl_render.add_theme_font_size_override("font_size", 16)
+	lbl_render.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+	if _fuente_ui:
+		lbl_render.add_theme_font_override("font", _fuente_ui)
+	box_render.add_child(lbl_render)
+
+	var slider_render := HSlider.new()
+	slider_render.min_value = 250.0
+	slider_render.max_value = 1500.0
+	slider_render.step = 50.0
+	slider_render.value = 600.0
+	slider_render.custom_minimum_size = Vector2(0, 28)
+	slider_render.value_changed.connect(func(v: float):
+		lbl_render.text = "👁️ Distancia de Renderizado: %d m" % int(v)
+		distancia_renderizado_cambiada.emit(v)
+	)
+	box_render.add_child(slider_render)
 
 	# Grid Snap y Vista Cenital
 	var hbox_toggles := HBoxContainer.new()

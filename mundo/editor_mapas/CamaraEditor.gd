@@ -66,8 +66,13 @@ func _construir_jerarquia_camara() -> void:
 	_camara.current = true
 	_camara.fov = 55.0
 	_camara.near = 0.5
-	_camara.far = 2500.0
+	_camara.far = 600.0
 	_pivot_pitch.add_child(_camara)
+
+
+func set_distancia_renderizado(dist: float) -> void:
+	if _camara:
+		_camara.far = clampf(dist, 150.0, 2500.0)
 
 func _process(delta: float) -> void:
 	if not activa or not is_visible_in_tree():

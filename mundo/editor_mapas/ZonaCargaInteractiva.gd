@@ -79,6 +79,18 @@ func _ready() -> void:
 		p = p.get_parent()
 
 	_crear_area_deteccion()
+	set_notify_transform(true)
+	call_deferred("_actualizar_alturas_proyeccion")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED and not _es_fantasma:
+		_actualizar_alturas_proyeccion()
+
+
+func _actualizar_alturas_proyeccion() -> void:
+	if get_parent() is Node3D:
+		GeneradorModelosCiudad.actualizar_alturas_proyeccion_zona(get_parent() as Node3D)
 
 
 func _process(_delta: float) -> void:

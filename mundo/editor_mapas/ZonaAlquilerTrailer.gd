@@ -39,6 +39,27 @@ func _ready() -> void:
 		p = p.get_parent()
 
 	_crear_area_deteccion()
+	_precargar_trailers()
+	set_notify_transform(true)
+	call_deferred("_actualizar_alturas_proyeccion")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_TRANSFORM_CHANGED and not _es_fantasma:
+		_actualizar_alturas_proyeccion()
+
+
+func _actualizar_alturas_proyeccion() -> void:
+	if get_parent() is Node3D:
+		GeneradorModelosCiudad.actualizar_alturas_proyeccion_zona(get_parent() as Node3D)
+
+
+func _precargar_trailers() -> void:
+	var ruta_carpado := RUTA_CARPADO_1 if ResourceLoader.exists(RUTA_CARPADO_1) else RUTA_CARPADO_ALT
+	if ResourceLoader.exists(ruta_carpado):
+		ResourceLoader.load_threaded_request(ruta_carpado)
+	if ResourceLoader.exists(RUTA_CHASIS):
+		ResourceLoader.load_threaded_request(RUTA_CHASIS)
 
 
 func _process(_delta: float) -> void:
@@ -72,9 +93,9 @@ func _crear_area_deteccion() -> void:
 	_area.monitorable = false
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(5.6, 3.8, 14.5)
+	box.size = Vector3(5.2, 3.8, 8.6)
 	col.shape = box
-	col.position = Vector3(0.0, 1.9, 0.0)
+	col.position = Vector3(0.0, 1.9, -7.8)
 	_area.add_child(col)
 	add_child(_area)
 
@@ -363,32 +384,21 @@ func _bahia_ocupada(centro_bahia: Vector3) -> String:
 	return ""
 
 
-func _buscar_bahia_lateral_libre() -> Dictionary:
-	var offsets: Array[Vector3] = [Vector3(6.8, 0.0, 0.0), Vector3(-6.8, 0.0, 0.0)]
-	var ultimo_obstaculo := ""
-	for i in range(offsets.size()):
-		var pos_bahia: Vector3 = global_position + (global_transform.basis * offsets[i])
-		var obs := _bahia_ocupada(pos_bahia)
-		if obs.is_empty():
-			return {"libre": true, "pos": pos_bahia, "lado": "derecha" if i == 0 else "izquierda"}
-		ultimo_obstaculo = obs
-	return {"libre": false, "obstaculo": ultimo_obstaculo}
-
-
 func _spawnear_trailer(ruta_escena: String, nombre_tipo: String) -> void:
-	var bahia := _buscar_bahia_lateral_libre()
-	if not bool(bahia.get("libre", false)):
+	var pos_bahia: Vector3 = global_position + (global_transform.basis * Vector3(0.0, 0.0, 7.5))
+	var obstaculo := _bahia_ocupada(pos_bahia)
+	if not obstaculo.is_empty():
 		if _badge_estado:
 			_badge_estado.text = "OCUPADA"
 		if _lbl_estado:
-			_lbl_estado.text = "Las bahías laterales están ocupadas (%s). Despeja un costado para desplegar el tráiler." % str(bahia.get("obstaculo", "vehículo"))
+			_lbl_estado.text = "La bahía trasera está ocupada (%s). Despeja la zona trasera para desplegar el tráiler." % obstaculo
 		return
 
 	if is_instance_valid(_trailer_actual):
 		_trailer_actual.queue_free()
 		_trailer_actual = null
 
-	var pos_sp: Vector3 = (bahia["pos"] as Vector3) + Vector3(0.0, 0.45, 0.0)
+	var pos_sp: Vector3 = pos_bahia + Vector3(0.0, 0.45, 0.0)
 	var rot_sp := global_rotation
 	var trailer := TrailerFactory.crear_trailer(ruta_escena, "rin_t2_cromo", pos_sp, rot_sp)
 	if not trailer:
@@ -399,21 +409,33 @@ func _spawnear_trailer(ruta_escena: String, nombre_tipo: String) -> void:
 	var padre: Node = get_tree().current_scene
 	if not padre:
 		padre = get_tree().root
+	trailer.set_meta("no_auto_reconectar", true)
 	padre.add_child(trailer)
 	trailer.global_position = pos_sp
 	trailer.global_rotation = rot_sp
 	_trailer_actual = trailer
-	var lado := str(bahia.get("lado", "lateral"))
+
+	# Evitar que el tráiler recién desplegado se acople automáticamente al instante
+	var bloqueo_hasta: float = (Time.get_ticks_msec() / 1000.0) + 1.5
+	var eng_tr := trailer.find_child("Enganche", true, false)
+	if eng_tr and "_tiempo_desenganche_bloqueo" in eng_tr:
+		eng_tr.set("_tiempo_desenganche_bloqueo", bloqueo_hasta)
+	for ent in _entidades_dentro:
+		if is_instance_valid(ent):
+			var eng_cam := ent.find_child("Enganche", true, false)
+			if eng_cam and "_tiempo_desenganche_bloqueo" in eng_cam:
+				eng_cam.set("_tiempo_desenganche_bloqueo", bloqueo_hasta)
+
 	_ocultar_ui()
 	var resumen: Array[Dictionary] = [
 		{"label": "SEMIRREMOLQUE", "valor": nombre_tipo},
-		{"label": "UBICACIÓN", "valor": "Bahía %s" % lado},
+		{"label": "UBICACIÓN", "valor": "Bahía trasera (sin enganchar)"},
 	]
 	ZonaCargaInteractiva.mostrar_notificacion_global(
 		self,
-		"ALQUILER · BAHÍA %s" % lado.to_upper(),
+		"ALQUILER · BAHÍA TRASERA",
 		"TRÁILER DESPLEGADO",
-		"Tu semirremolque está listo en la bahía %s. Acércate con el cabezote para enganchar la quinta rueda." % lado,
+		"Tu semirremolque apareció en la bahía trasera sin enganchar. Retrocede suavemente con el cabezote para acoplarlo.",
 		"LISTO",
 		resumen
 	)

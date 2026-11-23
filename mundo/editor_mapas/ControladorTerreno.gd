@@ -17,7 +17,8 @@ enum ModoTerreno {
 	PINTAR_MATERIAL,
 	PINTAR_FOLLAJE,
 	BORRAR_FOLLAJE,
-	PENDIENTE
+	PENDIENTE,
+	LOTES
 }
 
 const MATERIALES_PINTURA: Array[Dictionary] = [
@@ -318,6 +319,8 @@ func _inicializar_terreno() -> void:
 	terrain = Terrain3D.new()
 	terrain.name = "Terrain3D"
 	terrain.free_editor_textures = false
+	terrain.mesh_lods = 5
+	terrain.mesh_size = 32
 	
 	# Usar material con shader liviano para prevenir fallos de compilación SPIR-V en GPU móvil/Intel
 	var mat := Terrain3DMaterial.new()
@@ -334,26 +337,22 @@ func _inicializar_terreno() -> void:
 	# Configurar materiales de terreno reales (0: Césped, 1: Tierra, 2: Roca)
 	terrain.assets = _construir_assets_terreno()
 		
-	# Si existen regiones de mapa base guardadas en demo/data, utilizarlas (o el terreno del mapa del Hub si ya existe)
+	# Si el mapa del Hub ya tiene su carpeta de terreno guardada, cargarla; si es nuevo, iniciar vacío y plano
 	var dir_inicial := ""
 	var ruta_hub := str(Engine.get_meta("nt_editor_mapa_ruta", ""))
 	if not ruta_hub.is_empty():
 		var dir_hub_terreno := ruta_hub.get_basename() + "_terreno"
 		if _tiene_regiones_terreno(dir_hub_terreno):
 			dir_inicial = dir_hub_terreno
-	if dir_inicial.is_empty() and DirAccess.dir_exists_absolute("res://demo/data") and FileAccess.file_exists("res://demo/data/terrain3d_00_00.res"):
-		dir_inicial = "res://demo/data"
 	if not dir_inicial.is_empty():
 		terrain.data_directory = dir_inicial
 		set_meta("ultimo_dir_terreno_cargado", dir_inicial)
 		
 	add_child(terrain)
 	
-	# Si no hay data preexistente, crear los 4 cuadrantes centrales alrededor de (0, 0)
+	# Si no hay data preexistente, crear únicamente un cuadro plano de terreno en (0, 0)
 	if terrain.data and terrain.data.get_region_count() == 0:
-		for rx in [-1, 0]:
-			for rz in [-1, 0]:
-				terrain.data.add_region_blank(Vector2i(rx, rz), false)
+		terrain.data.add_region_blank(Vector2i(0, 0), false)
 		terrain.data.update_maps(3, true, true)
 	
 	# Nota: En tiempo de ejecución (fuera del editor de Godot), operamos directamente
@@ -361,6 +360,23 @@ func _inicializar_terreno() -> void:
 	if terrain.assets and terrain.assets.has_method("update_texture_list"):
 		terrain.assets.update_texture_list()
 	actualizar_parametros_pincel()
+
+
+func aplicar_distancia_renderizado(dist: float, cam: Camera3D = null) -> void:
+	if not is_instance_valid(terrain):
+		return
+	var lods := 5
+	if dist <= 350.0:
+		lods = 4
+	elif dist <= 650.0:
+		lods = 5
+	elif dist <= 1050.0:
+		lods = 6
+	else:
+		lods = 7
+	terrain.mesh_lods = lods
+	if is_instance_valid(cam) and terrain.has_method("set_camera"):
+		terrain.set_camera(cam)
 
 func _construir_assets_terreno() -> Terrain3DAssets:
 	var assets := Terrain3DAssets.new()
@@ -705,17 +721,26 @@ func _calcular_peso_perfil(dist_norm: float) -> float:
 			return pow(clamp(1.0 - dist_norm, 0.0, 1.0), 0.45)
 	return smoothstep(1.0, 0.0, dist_norm)
 
-func _asegurar_region_en(data: Terrain3DData, pt: Vector3) -> void:
-	if not data.has_regionp(pt):
-		data.add_region_blankp(pt, true)
+var _ultimo_update_maps_ms: int = 0
+
+func _asegurar_region_en(data: Terrain3DData, pt: Vector3) -> bool:
+	if is_nan(pt.x) or is_nan(pt.z) or is_inf(pt.x) or is_inf(pt.z):
+		return false
+	if absf(pt.x) > 8192.0 or absf(pt.z) > 8192.0:
+		return false
+	# Evitar crear regiones de 1024x1024 en caliente durante un trazo (previene TDR en GPU integrada/móvil)
+	return data.has_regionp(pt)
 
 func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 	if not terrain or not terrain.data:
 		return
+	if is_nan(pos_mundo.x) or is_nan(pos_mundo.z) or absf(pos_mundo.x) > 8192.0 or absf(pos_mundo.z) > 8192.0:
+		return
 
 	var data := terrain.data
 	if modo_actual == ModoTerreno.PINTAR_FOLLAJE or modo_actual == ModoTerreno.BORRAR_FOLLAJE:
-		_asegurar_region_en(data, pos_mundo)
+		if not _asegurar_region_en(data, pos_mundo):
+			return
 		if terrain.instancer:
 			var params_inst := {
 				"size": maxf(radio_pincel * 2.0, 2.0),
@@ -786,7 +811,8 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 				if d_sq > radio_sq:
 					continue
 				var pt := Vector3(wx, 0.0, wz)
-				_asegurar_region_en(data, pt)
+				if not _asegurar_region_en(data, pt):
+					continue
 				var wy: float = data.get_height(pt)
 				if is_nan(wy):
 					wy = pos_mundo.y
@@ -836,7 +862,10 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 					else:
 						data.set_control_overlay_id(pt, tex_id)
 						data.set_control_blend(pt, clampf(nuevo_blend, 0.0, 1.0))
-		data.update_maps(1, true, false) # 1 = Terrain3DRegion.MapType.Control (forzar subida GPU)
+		var ahora_ms: int = Time.get_ticks_msec()
+		if ahora_ms - _ultimo_update_maps_ms >= 33:
+			_ultimo_update_maps_ms = ahora_ms
+			data.update_maps(1, true, false) # 1 = Terrain3DRegion.MapType.Control (tiempo real)
 	else:
 		# Esculpido en tiempo real (Elevar, Bajar, Aplanar, Suavizar)
 		var muestras_suavizado: Array = []
@@ -851,7 +880,8 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 					if d_sq > radio_sq:
 						continue
 					var pt := Vector3(wx, 0.0, wz)
-					_asegurar_region_en(data, pt)
+					if not _asegurar_region_en(data, pt):
+						continue
 					var h0: float = data.get_height(pt)
 					if is_nan(h0):
 						h0 = 0.0
@@ -880,7 +910,8 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 					if d_sq > radio_sq:
 						continue
 					var pt := Vector3(wx, 0.0, wz)
-					_asegurar_region_en(data, pt)
+					if not _asegurar_region_en(data, pt):
+						continue
 					var h_actual: float = data.get_height(pt)
 					if is_nan(h_actual):
 						h_actual = 0.0
@@ -894,19 +925,23 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 						ModoTerreno.APLANAR:
 							h_nueva = lerpf(h_actual, altura_objetivo, clampf(peso, 0.0, 1.0))
 					data.set_height(pt, h_nueva)
-		data.update_maps(0, true, false) # 0 = Terrain3DRegion.MapType.Height (forzar subida GPU)
+		var ahora_h_ms: int = Time.get_ticks_msec()
+		if ahora_h_ms - _ultimo_update_maps_ms >= 33:
+			_ultimo_update_maps_ms = ahora_h_ms
+			data.update_maps(0, true, false)
 
 var bloqueado_en_prueba: bool = false
 
 func comenzar_trazo(pos_mundo: Vector3) -> void:
-	if bloqueado_en_prueba:
+	if bloqueado_en_prueba or modo_actual == ModoTerreno.LOTES:
 		return
 	_trazo_activo = true
+	_ultimo_update_maps_ms = 0
 	_aplicar_pincel_en_tiempo_real(pos_mundo)
 	terreno_modificado.emit()
 
 func aplicar_trazo(pos_mundo: Vector3, _rot_camara: float = 0.0) -> void:
-	if bloqueado_en_prueba or not _trazo_activo:
+	if bloqueado_en_prueba or not _trazo_activo or modo_actual == ModoTerreno.LOTES:
 		return
 	_aplicar_pincel_en_tiempo_real(pos_mundo)
 	terreno_modificado.emit()
@@ -918,6 +953,103 @@ func finalizar_trazo() -> void:
 	if terrain and terrain.data:
 		terrain.data.update_maps(3, true, true) # 3 = Terrain3DRegion.MapType.Max + mipmaps
 	terreno_modificado.emit()
+
+
+var _contenedor_lotes: Node3D = null
+
+func mostrar_lotes_disponibles(activo: bool) -> void:
+	if not is_instance_valid(_contenedor_lotes):
+		_contenedor_lotes = Node3D.new()
+		_contenedor_lotes.name = "LotesDisponibles3D"
+		add_child(_contenedor_lotes)
+	for ch in _contenedor_lotes.get_children():
+		ch.queue_free()
+	_contenedor_lotes.visible = activo
+	if not activo or not is_instance_valid(terrain) or not terrain.data:
+		return
+
+	var locs: Array = terrain.data.get_region_locations()
+	var ocupados: Dictionary = {}
+	for v in locs:
+		ocupados[Vector2i(int(v.x), int(v.y))] = true
+
+	var candidatos: Dictionary = {}
+	for k: Vector2i in ocupados.keys():
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var nc: Vector2i = k + d
+			if not ocupados.has(nc):
+				candidatos[nc] = true
+
+	var r_size: float = float(terrain.region_size) if "region_size" in terrain else 1024.0
+	var mat_lote := StandardMaterial3D.new()
+	mat_lote.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat_lote.albedo_color = Color(0.88, 0.68, 0.28, 0.72)
+	mat_lote.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat_lote.cull_mode = BaseMaterial3D.CULL_DISABLED
+
+	for coord: Vector2i in candidatos.keys():
+		var cx: float = (float(coord.x) + 0.5) * r_size
+		var cz: float = (float(coord.y) + 0.5) * r_size
+		var nodo := Node3D.new()
+		nodo.position = Vector3(cx, 1.5, cz)
+		_contenedor_lotes.add_child(nodo)
+
+		# Marco perimetral del lote (1024 x 1024)
+		var hw: float = r_size * 0.5 - 6.0
+		var grosor: float = 8.0
+		for sz in [-hw, hw]:
+			var m := MeshInstance3D.new()
+			var b := BoxMesh.new()
+			b.size = Vector3(hw * 2.0 + grosor, 2.0, grosor)
+			m.mesh = b
+			m.material_override = mat_lote
+			m.position = Vector3(0.0, 0.0, sz)
+			nodo.add_child(m)
+		for sx in [-hw, hw]:
+			var m := MeshInstance3D.new()
+			var b := BoxMesh.new()
+			b.size = Vector3(grosor, 2.0, hw * 2.0)
+			m.mesh = b
+			m.material_override = mat_lote
+			m.position = Vector3(sx, 0.0, 0.0)
+			nodo.add_child(m)
+
+		var lbl := Label3D.new()
+		lbl.text = "＋\nAÑADIR LOTE"
+		lbl.font_size = 128
+		lbl.pixel_size = 0.35
+		lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		lbl.modulate = Color(0.95, 0.80, 0.42, 0.96)
+		lbl.outline_size = 14
+		lbl.outline_modulate = Color(0.06, 0.07, 0.09, 0.90)
+		lbl.position = Vector3(0.0, 36.0, 0.0)
+		nodo.add_child(lbl)
+
+
+func intentar_agregar_lote_en(pos_mundo: Vector3) -> Dictionary:
+	if not is_instance_valid(terrain) or not terrain.data:
+		return {"ok": false}
+	var r_size: float = float(terrain.region_size) if "region_size" in terrain else 1024.0
+	var coord := Vector2i(int(floorf(pos_mundo.x / r_size)), int(floorf(pos_mundo.z / r_size)))
+	var data := terrain.data
+	if data.has_region(coord):
+		return {"ok": false, "motivo": "ocupado"}
+	if data.get_region_count() >= 32:
+		return {"ok": false, "motivo": "limite"}
+
+	var adyacente := false
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if data.has_region(coord + d):
+			adyacente = true
+			break
+	if not adyacente:
+		return {"ok": false, "motivo": "no_adyacente"}
+
+	data.add_region_blank(coord, false)
+	data.update_maps(3, true, true)
+	mostrar_lotes_disponibles(true)
+	terreno_modificado.emit()
+	return {"ok": true, "coord": coord}
 
 var _punto_pendiente_a: Vector3 = Vector3.ZERO
 var _tiene_punto_pendiente_a: bool = false

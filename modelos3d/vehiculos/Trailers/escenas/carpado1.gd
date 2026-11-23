@@ -468,6 +468,8 @@ func _snap_to_ground() -> void:
 	sleeping = false
 
 func _reconectar_si_activo() -> void:
+	if has_meta("no_auto_reconectar") and bool(get_meta("no_auto_reconectar")):
+		return
 	if esta_enganchado():
 		return
 	var datos = get_node_or_null("/root/DatosUsuario")

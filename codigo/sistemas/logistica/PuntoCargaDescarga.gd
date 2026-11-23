@@ -147,6 +147,12 @@ enum FormaZona {
 		mostrar_etiqueta_3d = val
 		_actualizar_visuales()
 
+## Muestra u oculta el marco visual en el suelo de este nodo
+@export var mostrar_visual_suelo: bool = true:
+	set(val):
+		mostrar_visual_suelo = val
+		_actualizar_visuales()
+
 # ── Señales ──
 signal vehiculo_entro(cuerpo: Node, punto: PuntoCargaDescarga)
 signal vehiculo_salio(cuerpo: Node, punto: PuntoCargaDescarga)
@@ -203,6 +209,7 @@ func _garantizar_nodos_internos() -> void:
 		add_child(_mesh_node)
 		if Engine.is_editor_hint() and get_tree() and get_tree().edited_scene_root:
 			_mesh_node.owner = get_tree().edited_scene_root
+	_mesh_node.visible = mostrar_visual_suelo
 
 	# 3. Label3D (Texto Informativo)
 	_label_node = get_node_or_null("EtiquetaPunto") as Label3D

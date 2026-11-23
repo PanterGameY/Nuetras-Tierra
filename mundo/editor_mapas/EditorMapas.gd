@@ -116,6 +116,15 @@ func _ready() -> void:
 
 	if camara_editor and controlador_terreno:
 		controlador_terreno.configurar_camara(camara_editor.obtener_camara())
+		if controlador_terreno.terrain and controlador_terreno.terrain.data and controlador_terreno.terrain.data.get_region_count() == 1:
+			var locs_ini: Array = controlador_terreno.terrain.data.get_region_locations()
+			if locs_ini.size() == 1:
+				var c_ini := Vector2i(int(locs_ini[0].x), int(locs_ini[0].y))
+				var r_sz: float = float(controlador_terreno.terrain.region_size) if "region_size" in controlador_terreno.terrain else 1024.0
+				var centro_reg := Vector3((float(c_ini.x) + 0.5) * r_sz, 2.0, (float(c_ini.y) + 0.5) * r_sz)
+				camara_editor.enfocar_punto(centro_reg)
+				if controlador_spawn:
+					controlador_spawn.posicionar_spawn(Vector3(centro_reg.x, 0.2, centro_reg.z))
 	ui_editor.mostrar_notificacion("¡Bienvenido al Editor de Mapas Nuestra Tierra!")
 
 func _configurar_entorno_iluminacion() -> void:
@@ -163,8 +172,8 @@ func _configurar_entorno_iluminacion() -> void:
 	var sky_shader = load("res://shaders/cielo_sky.gdshader")
 	if sky_shader:
 		sky_mat.shader = sky_shader
-		sky_mat.set_shader_parameter("sky_day", Color(0.18, 0.42, 0.74, 1))
-		sky_mat.set_shader_parameter("horizon_day", Color(0.58, 0.72, 0.84, 1))
+		sky_mat.set_shader_parameter("sky_day", Color(0.25, 0.45, 0.70, 1))
+		sky_mat.set_shader_parameter("horizon_day", Color(0.68, 0.77, 0.85, 1))
 		sky_mat.set_shader_parameter("sky_sunset", Color(0.18, 0.22, 0.42, 1))
 		sky_mat.set_shader_parameter("horizon_sunset", Color(0.92, 0.52, 0.22, 1))
 		sky_mat.set_shader_parameter("sky_night", Color(0.03, 0.04, 0.08, 1))
@@ -203,16 +212,27 @@ func _configurar_entorno_iluminacion() -> void:
 	sky_res.radiance_size = Sky.RADIANCE_SIZE_128
 	sky_res.process_mode = Sky.PROCESS_MODE_AUTOMATIC
 	env_p.sky = sky_res
-	env_p.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env_p.ambient_light_color = Color(0.745, 0.813, 0.873, 1)
-	env_p.ambient_light_energy = 0.35
+	env_p.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env_p.ambient_light_sky_contribution = 0.82
+	env_p.ambient_light_energy = 0.55
 	env_p.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env_p.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env_p.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env_p.tonemap_exposure = 1.16
+	env_p.tonemap_white = 1.0
 	env_p.glow_enabled = true
-	env_p.glow_intensity = 0.08
+	env_p.glow_intensity = 0.14
+	env_p.glow_bloom = 0.06
+	env_p.glow_hdr_threshold = 1.15
+	env_p.adjustment_enabled = true
+	env_p.adjustment_contrast = 1.06
+	env_p.adjustment_saturation = 0.95
+	env_p.adjustment_brightness = 1.04
 	env_p.fog_enabled = true
-	env_p.fog_light_color = Color(0.62, 0.74, 0.86, 1)
-	env_p.fog_density = 0.00025
+	env_p.fog_mode = Environment.FOG_MODE_DEPTH
+	env_p.fog_light_color = Color(0.76, 0.83, 0.90, 1)
+	env_p.fog_depth_begin = 210.0
+	env_p.fog_depth_end = 560.0
+	env_p.fog_aerial_perspective = 0.55
 	env_p.fog_sky_affect = 0.0
 	_env_prueba = env_p
 
@@ -225,7 +245,7 @@ func _configurar_entorno_iluminacion() -> void:
 		
 		var sun := DirectionalLight3D.new()
 		sun.name = "SunLight"
-		sun.shadow_enabled = true
+		sun.shadow_enabled = false
 		sun.shadow_bias = 0.03
 		sun.shadow_normal_bias = 1.6
 		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
@@ -247,6 +267,7 @@ func _configurar_entorno_iluminacion() -> void:
 		controlador_sol_luna.energia_maxima_luna = 0.34
 		controlador_sol_luna.hora_actual = 11.5
 		add_child(controlador_sol_luna)
+	call_deferred("_aplicar_distancia_renderizado", 600.0)
 	call_deferred("_cargar_mapa_inicial_hub")
 
 # ── CONEXIÓN DE SEÑALES DE LA INTERFAZ ───────────────────────────────
@@ -312,8 +333,10 @@ func _conectar_senales_ui() -> void:
 		)
 	ui_editor.conectar_vias_solicitado.connect(_on_conectar_vias_solicitado)
 	ui_editor.deshacer_punto_via_solicitado.connect(_deshacer_accion)
-	ui_editor.rehacer_solicitado.connect(_rehacer_accion)
+	if not ui_editor.rehacer_solicitado.is_connected(_rehacer_accion):
+		ui_editor.rehacer_solicitado.connect(_rehacer_accion)
 	ui_editor.hora_dia_cambiada.connect(_cambiar_hora_dia)
+	ui_editor.distancia_renderizado_cambiada.connect(_aplicar_distancia_renderizado)
 	ui_editor.modo_dispersion_vegetacion_alternado.connect(func(act):
 		controlador_objetos.alternar_modo_dispersion(act)
 		ui_editor.mostrar_notificacion("Pincel de dispersión: " + ("ACTIVADO" if act else "DESACTIVADO"))
@@ -845,7 +868,8 @@ func _conectar_senales_ui() -> void:
 		if controlador_objetos:
 			controlador_objetos.radio_auto_casas = r
 	)
-	ui_editor.rehacer_solicitado.connect(_rehacer_accion)
+	if not ui_editor.rehacer_solicitado.is_connected(_rehacer_accion):
+		ui_editor.rehacer_solicitado.connect(_rehacer_accion)
 
 func _on_listo_seleccion() -> void:
 	_arrastrando_objeto = null
@@ -962,6 +986,8 @@ func _on_categoria_cambiada(cat: String) -> void:
 		if controlador_equipamiento:
 			controlador_equipamiento.limpiar_seleccion_tramo()
 			ui_editor.ocultar_panel_equipamiento_vias()
+	if cat != "terreno" and controlador_terreno:
+		controlador_terreno.mostrar_lotes_disponibles(false)
 	if cat != "muros" and controlador_muros:
 		controlador_muros.finalizar_tramo_actual()
 	if controlador_estacionamientos:
@@ -1007,6 +1033,9 @@ func _on_subherramienta_seleccionada(id_herramienta: String) -> void:
 					"tierra": controlador_terreno.establecer_material_pintura("tierra_fertil")
 					"roca": controlador_terreno.establecer_material_pintura("roca_gris")
 					"follaje": controlador_terreno.establecer_follaje_pintura(ui_editor._follaje_pintura_activo if ui_editor else "follaje_cesped_fino")
+					"lotes": controlador_terreno.establecer_modo(ControladorTerreno.ModoTerreno.LOTES)
+			if controlador_terreno:
+				controlador_terreno.mostrar_lotes_disponibles(id_herramienta == "lotes")
 		"vias":
 			controlador_carreteras.subherramienta_via_actual = id_herramienta
 			match id_herramienta:
@@ -1119,7 +1148,7 @@ func _on_rotar_objeto_solicitado() -> void:
 
 func _actualizar_visibilidad_cursores() -> void:
 	var modo_pincel: bool = (_modo_camara_movil == "")
-	var en_terreno = modo_pincel and (_categoria_activa == "terreno")
+	var en_terreno = modo_pincel and (_categoria_activa == "terreno") and (_subherramienta_activa != "lotes")
 	var en_vias = modo_pincel and (_categoria_activa == "vias")
 	var en_objetos = modo_pincel and (_categoria_activa in ["ciudad", "vegetacion"])
 	var en_spawn = modo_pincel and (_categoria_activa == "spawn")
@@ -1255,6 +1284,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_arrastrando_camara = true
 				elif _categoria_activa == "ciudad" and _subherramienta_activa == "auto_casas":
 					_ejecutar_accion_colocar()
+				elif _categoria_activa == "terreno" and _subherramienta_activa == "lotes":
+					_manejar_click_lote(event.position)
 				elif _categoria_activa == "terreno" and _impacto_valido:
 					controlador_terreno.comenzar_trazo(_pos_impacto_terreno)
 			
@@ -1350,6 +1381,8 @@ func _unhandled_input(event: InputEvent) -> void:
 						_arrastrando_camara = true
 					elif _categoria_activa == "ciudad" and _subherramienta_activa == "auto_casas":
 						_ejecutar_accion_colocar()
+					elif _categoria_activa == "terreno" and _subherramienta_activa == "lotes":
+						_manejar_click_lote(event.position)
 					elif _categoria_activa == "terreno" and _impacto_valido:
 						controlador_terreno.comenzar_trazo(_pos_impacto_terreno)
 				
@@ -1390,6 +1423,19 @@ func _unhandled_input(event: InputEvent) -> void:
 			var delta_drag = event.position - _pos_toque_pantalla_anterior
 			camara_editor.panear_por_arrastre(delta_drag)
 			_pos_toque_pantalla_anterior = event.position
+
+func _manejar_click_lote(pos_pantalla: Vector2) -> void:
+	if not camara_editor or not controlador_terreno:
+		return
+	var orig_l: Vector3 = camara_editor.proyectar_rayo_origen(pos_pantalla)
+	var dir_l: Vector3 = camara_editor.proyectar_rayo_direccion(pos_pantalla)
+	var hit_l = Plane(Vector3.UP, 0.0).intersects_ray(orig_l, dir_l)
+	if hit_l != null:
+		var res_l: Dictionary = controlador_terreno.intentar_agregar_lote_en(hit_l)
+		if bool(res_l.get("ok", false)):
+			var c_l: Vector2i = res_l.get("coord", Vector2i.ZERO)
+			if ui_editor:
+				ui_editor.mostrar_notificacion("＋ Lote de terreno añadido (%d, %d)" % [c_l.x, c_l.y])
 
 func _aplicar_gesto_camara_movil(delta_drag: Vector2) -> void:
 	if not camara_editor:
@@ -2064,21 +2110,52 @@ func _ejecutar_accion_colocar() -> void:
 			controlador_spawn.posicionar_spawn(_pos_impacto_terreno)
 			ui_editor.mostrar_notificacion("Punto de Spawn posicionado")
 
-func _process(_delta: float) -> void:
+var _accum_telemetria: float = 0.0
+var _distancia_renderizado: float = 600.0
+
+func _aplicar_distancia_renderizado(dist: float) -> void:
+	var d := clampf(dist, 250.0, 1500.0)
+	_distancia_renderizado = d
+	var cam_ed: Camera3D = camara_editor.obtener_camara() if camara_editor else null
+	if camara_editor and camara_editor.has_method("set_distancia_renderizado"):
+		camara_editor.set_distancia_renderizado(d)
+	if _env_editor:
+		_env_editor.fog_depth_begin = d * 0.48
+		_env_editor.fog_depth_end = d * 0.96
+	if _env_prueba:
+		_env_prueba.fog_depth_begin = d * 0.35
+		_env_prueba.fog_depth_end = d * 0.94
+	if controlador_sol_luna and is_instance_valid(controlador_sol_luna.luz_sol):
+		controlador_sol_luna.luz_sol.directional_shadow_max_distance = clampf(d * 0.25, 80.0, 220.0)
+	if controlador_terreno and controlador_terreno.has_method("aplicar_distancia_renderizado"):
+		controlador_terreno.aplicar_distancia_renderizado(d, cam_ed)
+	if controlador_objetos and controlador_objetos.has_method("aplicar_distancia_visibilidad"):
+		controlador_objetos.aplicar_distancia_visibilidad(d * 0.92)
+
+
+func _process(delta: float) -> void:
 	if not modo_prueba.en_prueba:
-		ui_editor.actualizar_telemetria(
-			Engine.get_frames_per_second(),
-			controlador_objetos._objetos_en_escena.size(),
-			_pos_impacto_terreno.x,
-			_pos_impacto_terreno.z
-		)
+		_accum_telemetria += delta
+		if _accum_telemetria >= 0.25:
+			_accum_telemetria = 0.0
+			ui_editor.actualizar_telemetria(
+				Engine.get_frames_per_second(),
+				controlador_objetos._objetos_en_escena.size(),
+				_pos_impacto_terreno.x,
+				_pos_impacto_terreno.z
+			)
 
 # ── TRANSICIÓN DE MODO PRUEBA (TEST DE CONDUCCIÓN / EXPLORACIÓN) ─────
 
 func _on_iniciar_prueba() -> void:
-	# Activar el cielo completo con nubes/sol/luna solo durante la prueba del mapa
+	# Activar el cielo completo con nubes/sol/luna y calidad realista solo durante la prueba del mapa
 	if is_instance_valid(world_env_editor) and _env_prueba:
 		world_env_editor.environment = _env_prueba
+	if controlador_sol_luna and is_instance_valid(controlador_sol_luna.luz_sol):
+		controlador_sol_luna.energia_maxima_sol = 1.45
+		controlador_sol_luna.luz_sol.shadow_enabled = true
+		controlador_sol_luna.luz_sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		controlador_sol_luna.luz_sol.directional_shadow_max_distance = clampf(_distancia_renderizado * 0.30, 100.0, 220.0)
 	# Ocultar cámara, UI y marcadores del editor
 	if camara_editor:
 		camara_editor.activa = false
@@ -2103,6 +2180,11 @@ func _on_iniciar_prueba() -> void:
 
 func _on_prueba_finalizada() -> void:
 	# Restaurar el cielo ligero de alto rendimiento para el Editor de Mapas
+	if controlador_sol_luna and is_instance_valid(controlador_sol_luna.luz_sol):
+		controlador_sol_luna.energia_maxima_sol = 1.34
+		controlador_sol_luna.luz_sol.shadow_enabled = false
+		controlador_sol_luna.luz_sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		controlador_sol_luna.luz_sol.directional_shadow_max_distance = clampf(_distancia_renderizado * 0.25, 80.0, 220.0)
 	if is_instance_valid(world_env_editor) and _env_editor:
 		world_env_editor.environment = _env_editor
 	# Restaurar cámara, UI y marcadores del editor

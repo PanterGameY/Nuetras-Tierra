@@ -255,6 +255,11 @@ func _physics_process(_delta: float) -> void:
 		var t = ctrl_terr.terrain
 		var cam_activa := get_viewport().get_camera_3d() if get_viewport() else null
 		if is_instance_valid(cam_activa):
+			var dist_render: float = 600.0
+			if "_distancia_renderizado" in _nodo_padre_ref:
+				dist_render = float(_nodo_padre_ref.get("_distancia_renderizado"))
+			if not is_equal_approx(cam_activa.far, dist_render):
+				cam_activa.far = dist_render
 			if t.get_camera() != cam_activa:
 				t.set_camera(cam_activa)
 			if t.get_clipmap_target() != cam_activa:

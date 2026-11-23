@@ -29,7 +29,7 @@ var rueda_tandem: Node = null
 @export var agarre_lateral: float = 18.0
 @export var grip_multiplier: float = 1.30
 @export var resistencia_rodadura: float = 10.0
-@export var respuesta_lateral: float = 1350.0
+@export var respuesta_lateral: float = 1650.0
 @export var respuesta_longitudinal_reposo: float = 3500.0
 @export var umbral_vel_reposo: float = 0.18
 
@@ -117,8 +117,8 @@ func _physics_process(delta: float) -> void:
 	if es_directriz:
 		var steer_input = float(iv.get("direccion")) * -1.0 if (iv and coche.activo and iv.get("direccion") != null) else 0.0
 		var vel_kmh = coche.linear_velocity.length() * 3.6
-		var dureza_giro = clampf(velocidad_giro_volante * (1.0 - (vel_kmh / 180.0)), 40.0, velocidad_giro_volante)
-		var factor_limite_giro = clampf(1.0 - (vel_kmh / 120.0) * 0.60, 0.40, 1.0)
+		var dureza_giro = clampf(velocidad_giro_volante * (1.0 - (vel_kmh / 180.0)), 38.0, velocidad_giro_volante)
+		var factor_limite_giro = clampf(1.0 - (maxf(vel_kmh - 15.0, 0.0) / 95.0) * 0.78, 0.22, 1.0)
 		var angulo_base_rad = absf(steer_input) * deg_to_rad(angulo_giro_max) * factor_limite_giro
 		var angulo_obj = 0.0
 		
@@ -176,19 +176,32 @@ func _physics_process(delta: float) -> void:
 				factor_peso = maxf((coche.mass + p_rem * 0.50) / 8500.0, 1.0)
 
 		# Cálculo analítico de velocidad de suspensión (estilo Rigs of Rods CalcShocks2)
-		# Combina la velocidad instantánea del punto de contacto (-vel_vertical) con la derivada del rayo
-		var v_ray_delta: float = (compresion - compresion_anterior) / delta if delta > 0.0 else 0.0
+		# Evita picos en el primer frame de aterrizaje cuando compresion_anterior era 0
+		var v_ray_delta: float = -vel_vertical
+		if compresion_anterior > 0.0 and delta > 0.0:
+			v_ray_delta = clampf((compresion - compresion_anterior) / delta, -20.0, 20.0)
 		compresion_anterior = compresion
 		var v_suspension: float = (-vel_vertical * 0.70) + (v_ray_delta * 0.30)
 
 		var k_actual: float = (rigidez_compresion if v_suspension >= 0.0 else rigidez_rebote) * factor_peso
 		var d_actual: float = (amortiguacion_compresion if v_suspension >= 0.0 else amortiguacion_rebote) * factor_peso
 
-		# Progresión cuadrática en topes de suspensión (RoR)
-		var factor_progresivo: float = pow(compresion / maxf(largo_reposo, 0.05), 2.0)
-		k_actual *= (1.0 + 1.2 * factor_progresivo)
+		# Progresión controlada y tope hidráulico (absorbe caídas altas sin rebotar como resorte)
+		var comp_ratio: float = clampf(compresion / maxf(largo_reposo, 0.05), 0.0, 1.35)
+		var factor_progresivo: float = pow(comp_ratio, 2.0)
+		if v_suspension >= 0.0:
+			k_actual *= (1.0 + 1.35 * factor_progresivo)
+			# Amortiguación hidráulica extra al comprimirse rápido o cerca del tope para evitar que el chasis toque el suelo
+			var extra_bump_damping: float = 1.0 + clampf((comp_ratio - 0.45) * 2.8, 0.0, 2.8) + clampf((v_suspension - 1.5) * 0.45, 0.0, 2.8)
+			d_actual *= extra_bump_damping
+		else:
+			# En rebote, suavizar resorte y aumentar retención para evitar rebote violento
+			var atenuacion_rebote: float = 0.72 if comp_ratio > 0.45 else 1.0
+			k_actual *= (atenuacion_rebote + 0.25 * factor_progresivo)
+			d_actual *= (1.75 + clampf(comp_ratio * 1.1, 0.0, 1.2))
 
-		var f_muelle = compresion * k_actual
+		var comp_efectiva: float = minf(compresion, largo_reposo * 1.15)
+		var f_muelle = comp_efectiva * k_actual
 		var f_amort = v_suspension * d_actual
 		var f_susp_base = f_muelle + f_amort
 
@@ -214,14 +227,15 @@ func _physics_process(delta: float) -> void:
 		var limite_inclinacion_max = rigidez_muelle * 0.12
 		fuerza_anti_geometrica = clampf(fuerza_anti_geometrica, -limite_inclinacion_max, limite_inclinacion_max)
 			
-		var f_normal_max = (coche.mass * 9.82) * (1.8 if es_doble_rueda else 1.2) * factor_peso
+		var mult_max_normal: float = (1.45 if es_doble_rueda else 1.15) if v_suspension >= 0.0 else (0.40 if es_doble_rueda else 0.32)
+		var f_normal_max = (coche.mass * 9.82) * mult_max_normal * factor_peso
 		var f_normal_total = clampf(f_susp_base + fuerza_anti_geometrica, 0.0, f_normal_max)
 		fuerza_normal_anterior = f_normal_total
 
 		_aplicar_fuerzas_contacto(col_point, col_normal, f_normal_total, delta)
 		
 		if rueda_visual:
-			var target_y = maxf(-profundidad + radio_rueda, -largo_reposo)
+			var target_y = clampf(-profundidad + radio_rueda, -largo_reposo, 0.08)
 			rueda_visual.position.y = target_y if _primer_frame else lerp(rueda_visual.position.y, target_y, delta * 15.0)
 	else:
 		compresion_anterior = 0.0
@@ -333,8 +347,8 @@ func _aplicar_fuerzas_contacto(col_point: Vector3, col_normal: Vector3, f_normal
 	var respuesta_lat_efectiva = respuesta_lateral
 
 	if es_directriz:
-		agarre_lat_efectivo *= 1.15
-		respuesta_lat_efectiva *= 1.25
+		agarre_lat_efectivo *= 1.25
+		respuesta_lat_efectiva *= 1.55
 		derrapando = false
 	else:
 		var iv_fm = (iv != null and iv.get("freno_mano") == true) if coche.activo else false
@@ -344,18 +358,18 @@ func _aplicar_fuerzas_contacto(col_point: Vector3, col_normal: Vector3, f_normal
 		if iv_fm and absf(vel_forward) > 2.0:
 			agarre_lat_efectivo *= 0.45
 			derrapando = true
-		elif frenando_fuerte and velocidad_deslizamiento > 1.5:
-			agarre_lat_efectivo *= 0.60
+		elif frenando_fuerte and velocidad_deslizamiento > 2.2:
+			agarre_lat_efectivo *= 0.65
 			derrapando = true
-		elif velocidad_deslizamiento > 3.8:
-			var factor_derrape = clampf((velocidad_deslizamiento - 3.8) / 3.0, 0.0, 1.0)
-			agarre_lat_efectivo = lerpf(agarre_lat_efectivo, agarre_lat_efectivo * 0.70, factor_derrape)
+		elif velocidad_deslizamiento > 5.2:
+			var factor_derrape = clampf((velocidad_deslizamiento - 5.2) / 3.0, 0.0, 1.0)
+			agarre_lat_efectivo = lerpf(agarre_lat_efectivo, agarre_lat_efectivo * 0.72, factor_derrape)
 			derrapando = true
 		else:
 			derrapando = false
 
-		if absf(coche.angular_velocity.y) > 0.15 and absf(vel_forward) > 0.4:
-			respuesta_lat_efectiva *= 0.85
+		if absf(coche.angular_velocity.y) > 0.65 and absf(vel_forward) > 2.0:
+			respuesta_lat_efectiva *= 0.90
 
 	var fuerza_lateral = -vel_lateral * respuesta_lat_efectiva * (fn_lateral / 1000.0) * mult_pacha
 	var limite_lateral = fn_lateral * agarre_lat_efectivo * grip_multiplier * mult_pacha
@@ -379,8 +393,7 @@ func _aplicar_fuerzas_contacto(col_point: Vector3, col_normal: Vector3, f_normal
 	coche.apply_force(fuerza_contacto_suelo, radio_vec)
 	
 	var fuerza_longitudinal = dir_adelante * fuerza_traccion
-	var radio_com = Vector3(radio_vec.x, 0.0, radio_vec.z)
-	coche.apply_force(fuerza_longitudinal, radio_com)
+	coche.apply_central_force(fuerza_longitudinal)
 
 	_resultant_force = fuerza_contacto_suelo + fuerza_longitudinal
 

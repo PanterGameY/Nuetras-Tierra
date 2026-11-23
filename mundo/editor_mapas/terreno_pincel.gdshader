@@ -285,6 +285,21 @@ mat2 rotate_plane(float angle) {
 	return mat2(vec2(c, s), vec2(-s, c));
 }
 
+float hash_macro(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float noise_macro(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(
+		mix(hash_macro(i + vec2(0.0, 0.0)), hash_macro(i + vec2(1.0, 0.0)), u.x),
+		mix(hash_macro(i + vec2(0.0, 1.0)), hash_macro(i + vec2(1.0, 1.0)), u.x),
+		u.y
+	);
+}
+
 void fragment() {
 	// Recover UVs
 	vec2 uv = UV;
@@ -453,8 +468,24 @@ void fragment() {
 	// Wetness/roughness modifier, converting 0 - 1 range to -1 to 1 range, clamped to Godot roughness values
 	float roughness = clamp(fma(color_map.a - 0.5, 2.0, normal_rough.a), 0., 1.);
 
-	// Apply PBR
+	// Apply PBR con variación orgánica multi-escala (rompe el patrón repetitivo del pasto sin costo de texturas)
 	vec3 final_albedo = albedo_height.rgb * color_map.rgb * macrov;
+	if (info_vista_modo == 0) {
+		float n_med = noise_macro(v_vertex.xz * 0.055);
+		float n_big = noise_macro(v_vertex.xz * 0.014 + vec2(17.3, 9.1));
+		float n_mix = n_med * 0.55 + n_big * 0.45;
+		// Variación orgánica sutil de tono (parches ligeramente más cálidos/secos y más frescos)
+		vec3 tinte_org = mix(vec3(0.92, 0.90, 0.84), vec3(1.06, 1.05, 1.00), n_mix);
+		final_albedo *= tinte_org;
+		// Suavizar únicamente verdes/colores excesivamente neón del terreno sin apagar el brillo general
+		float luma = dot(final_albedo, vec3(0.299, 0.587, 0.114));
+		float exceso_verde = clamp((final_albedo.g - max(final_albedo.r, final_albedo.b)) * 2.2, 0.0, 1.0);
+		final_albedo = mix(final_albedo, vec3(luma), exceso_verde * 0.32);
+		// Sombrear sutilmente pendientes pronunciadas para mayor volumen 3D
+		float factor_pend = smoothstep(0.65, 0.98, clamp(v_normal.y, 0.0, 1.0));
+		final_albedo *= mix(0.86, 1.0, factor_pend);
+		roughness = clamp(roughness + (0.5 - n_med) * 0.14, 0.35, 0.98);
+	}
 	if (info_vista_modo > 0) {
 		float h_w = v_vertex.y;
 		float minor_c = abs(fract(h_w) - 0.5);

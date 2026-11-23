@@ -308,96 +308,181 @@ static func crear_instancia_objeto(id_modelo: String) -> Node3D:
 			
 	return nodo_raiz
 
+static var _shader_proyeccion_zona: Shader = null
+
+static func _obtener_shader_proyeccion_zona() -> Shader:
+	if _shader_proyeccion_zona:
+		return _shader_proyeccion_zona
+	_shader_proyeccion_zona = Shader.new()
+	_shader_proyeccion_zona.code = """
+shader_type spatial;
+render_mode unshaded, cull_front, depth_test_disabled, depth_draw_never, blend_mix;
+
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+uniform sampler2D mapa_altura : filter_linear, repeat_disable;
+uniform bool usa_mapa_altura = false;
+uniform float tolerancia_altura = 0.22;
+uniform vec4 color_zona : source_color = vec4(0.68, 0.58, 0.38, 0.85);
+uniform float half_w = 3.0;
+uniform float half_l = 5.0;
+uniform float half_h = 12.0;
+
+varying mat4 v_inv_model;
+
+void vertex() {
+	v_inv_model = inverse(MODEL_MATRIX);
+}
+
+void fragment() {
+	float depth = texture(depth_tex, SCREEN_UV).r;
+	if (depth <= 0.00001) {
+		discard;
+	}
+
+	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
+	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
+	view.xyz /= view.w;
+	vec3 world_pos = (INV_VIEW_MATRIX * vec4(view.xyz, 1.0)).xyz;
+	vec3 local_pos = (v_inv_model * vec4(world_pos, 1.0)).xyz;
+
+	if (abs(local_pos.y) > half_h) {
+		discard;
+	}
+
+	// Proyectar únicamente sobre superficies horizontales/terreno, no sobre laterales de vehículos
+	vec3 surf_normal = normalize(cross(dFdx(world_pos), dFdy(world_pos)));
+	if (abs(surf_normal.y) < 0.55) {
+		discard;
+	}
+
+	vec2 p = local_pos.xz;
+	vec2 b = vec2(half_w, half_l);
+	float r_esq = 0.35;
+	vec2 q = abs(p) - b + vec2(r_esq);
+	float d_box = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r_esq;
+	if (d_box > 0.0) {
+		discard;
+	}
+
+	if (usa_mapa_altura) {
+		vec2 uv_h = clamp((p / vec2(half_w * 2.0, half_l * 2.0)) + 0.5, vec2(0.0), vec2(1.0));
+		float h_suelo = texture(mapa_altura, uv_h).r;
+		if (abs(local_pos.y - h_suelo) > tolerancia_altura) {
+			discard;
+		}
+	}
+
+	// Marco perimetral nítido (0.20 m)
+	float borde = 1.0 - smoothstep(0.17, 0.22, -d_box);
+
+	// Flecha direccional sobria hacia -Z
+	float d_tallo = max(abs(p.x) - 0.13, abs(p.y - 0.15) - 0.72);
+	float py_punta = p.y + 0.55;
+	float ancho_punta = clamp((py_punta + 0.70) / 0.70, 0.0, 1.0) * 0.46;
+	float d_punta = (p.y > -1.25 && p.y < -0.55) ? (abs(p.x) - ancho_punta) : 1.0;
+	float flecha = 1.0 - smoothstep(-0.02, 0.02, min(d_tallo, d_punta));
+
+	float relleno = 0.08;
+	float alpha = clamp(borde * 0.88 + flecha * 0.78 + relleno, 0.0, 0.90) * color_zona.a;
+
+	ALBEDO = color_zona.rgb;
+	ALPHA = alpha;
+}
+"""
+	return _shader_proyeccion_zona
+
+
+static func actualizar_alturas_proyeccion_zona(padre: Node3D) -> void:
+	if not is_instance_valid(padre) or not padre.is_inside_tree():
+		return
+	var raiz := padre.get_tree().current_scene if padre.get_tree().current_scene else padre.get_tree().root
+	var terr := raiz.find_child("Terrain3D", true, false)
+	if not terr or not ("data" in terr) or not terr.data:
+		return
+	var t_data = terr.data
+	for ch in padre.get_children():
+		if ch is MeshInstance3D and ch.material_override is ShaderMaterial:
+			var sm := ch.material_override as ShaderMaterial
+			if sm.shader != _obtener_shader_proyeccion_zona():
+				continue
+			var hw := float(sm.get_shader_parameter("half_w"))
+			var hl := float(sm.get_shader_parameter("half_l"))
+			var img := Image.create(16, 16, false, Image.FORMAT_RF)
+			for iy in range(16):
+				var tz := (float(iy) / 15.0 - 0.5) * 2.0 * hl
+				for ix in range(16):
+					var tx := (float(ix) / 15.0 - 0.5) * 2.0 * hw
+					var w_pos: Vector3 = ch.global_transform * Vector3(tx, 0.0, tz)
+					var h: float = t_data.get_height(w_pos)
+					var h_loc: float = (h - ch.global_position.y) if (not is_nan(h) and not is_inf(h)) else 0.0
+					img.set_pixel(ix, iy, Color(h_loc, 0.0, 0.0, 1.0))
+			var tex := ImageTexture.create_from_image(img)
+			sm.set_shader_parameter("mapa_altura", tex)
+			sm.set_shader_parameter("usa_mapa_altura", true)
+
+
+static func _crear_proyector_zona(nombre: String, ancho: float, largo: float, alto_proy: float, col_zona: Color, pos_local: Vector3) -> MeshInstance3D:
+	var mat_proy := ShaderMaterial.new()
+	mat_proy.shader = _obtener_shader_proyeccion_zona()
+	mat_proy.set_shader_parameter("color_zona", col_zona)
+	mat_proy.set_shader_parameter("half_w", ancho * 0.5)
+	mat_proy.set_shader_parameter("half_l", largo * 0.5)
+	mat_proy.set_shader_parameter("half_h", alto_proy * 0.5)
+
+	var proyector := MeshInstance3D.new()
+	proyector.name = nombre
+	var box_proy := BoxMesh.new()
+	box_proy.size = Vector3(ancho + 0.6, alto_proy, largo + 0.6)
+	proyector.mesh = box_proy
+	proyector.material_override = mat_proy
+	proyector.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	proyector.position = pos_local
+	return proyector
+
+
 static func _construir_zona_checkpoint(padre: StaticBody3D, id_modelo: String) -> void:
 	var ancho: float = 6.0
 	var largo: float = 10.0
+	var alto_proy: float = 24.0
 	var titulo: String = "PUNTO DE CARGA"
-	var col_zona := Color(0.86, 0.68, 0.34, 0.88) # Ámbar suave sobrio
+	var col_zona := Color(0.68, 0.58, 0.38, 0.85) # Arena cálida moderada
 
 	if id_modelo == "zona_descarga":
 		titulo = "PUNTO DE DESCARGA"
-		col_zona = Color(0.76, 0.82, 0.86, 0.88) # Acero claro sobrio
+		col_zona = Color(0.58, 0.64, 0.70, 0.85) # Acero pizarra sobrio
 	elif id_modelo == "zona_alquiler_trailer":
 		ancho = 5.0
-		largo = 14.0
+		largo = 24.0
 		titulo = "ALQUILER TRÁILER"
-		col_zona = Color(0.82, 0.78, 0.68, 0.88) # Gris cálido sobrio
+		col_zona = Color(0.62, 0.60, 0.54, 0.85) # Piedra neutra sobria
 
-	var mat_neon := StandardMaterial3D.new()
-	mat_neon.albedo_color = col_zona
-	mat_neon.emission_enabled = true
-	mat_neon.emission = Color(col_zona.r, col_zona.g, col_zona.b)
-	mat_neon.emission_energy_multiplier = 0.35
-	mat_neon.roughness = 0.45
+	if id_modelo == "zona_alquiler_trailer":
+		# Cuadro delantero más largo para el cabezote, separado de la bahía del tráiler (Z = -7.8)
+		padre.add_child(_crear_proyector_zona(
+			"ProyeccionCabina", 5.0, 8.5, alto_proy,
+			Color(0.72, 0.62, 0.42, 0.88), Vector3(0.0, 0.0, -7.8)
+		))
+		# Cuadro trasero más largo donde aparece el tráiler sin enganchar (Z = +7.5)
+		padre.add_child(_crear_proyector_zona(
+			"ProyeccionBahiaTrailer", 5.0, 13.0, alto_proy,
+			Color(0.58, 0.62, 0.66, 0.82), Vector3(0.0, 0.0, 7.5)
+		))
+	else:
+		padre.add_child(_crear_proyector_zona(
+			"ProyeccionZona", ancho, largo, alto_proy, col_zona, Vector3.ZERO
+		))
 
-	var mat_poste := StandardMaterial3D.new()
-	mat_poste.albedo_color = Color(0.14, 0.16, 0.19)
-	mat_poste.roughness = 0.55
-	var hw: float = ancho * 0.5
-	var hl: float = largo * 0.5
-	var grosor: float = 0.22
-	var alto_franja: float = 0.05
-
-	# Marco perimetral en el suelo (sin piso sólido para no obstruir ruedas)
-	for side_z in [-hl, hl]:
-		var m_f := MeshInstance3D.new()
-		var b_f := BoxMesh.new()
-		b_f.size = Vector3(ancho + grosor, alto_franja, grosor)
-		m_f.mesh = b_f
-		m_f.material_override = mat_neon
-		m_f.position = Vector3(0.0, alto_franja * 0.5, side_z)
-		padre.add_child(m_f)
-
-	for side_x in [-hw, hw]:
-		var m_l := MeshInstance3D.new()
-		var b_l := BoxMesh.new()
-		b_l.size = Vector3(grosor, alto_franja, largo)
-		m_l.mesh = b_l
-		m_l.material_override = mat_neon
-		m_l.position = Vector3(side_x, alto_franja * 0.5, 0.0)
-		padre.add_child(m_l)
-
-	# 4 bolardos bajos en esquinas
-	for sx in [-hw, hw]:
-		for sz in [-hl, hl]:
-			var post := MeshInstance3D.new()
-			var cyl := CylinderMesh.new()
-			cyl.top_radius = 0.12
-			cyl.bottom_radius = 0.14
-			cyl.height = 0.75
-			post.mesh = cyl
-			post.material_override = mat_poste
-			post.position = Vector3(sx, 0.375, sz)
-			padre.add_child(post)
-
-			var cap := MeshInstance3D.new()
-			var cap_m := CylinderMesh.new()
-			cap_m.top_radius = 0.13
-			cap_m.bottom_radius = 0.13
-			cap_m.height = 0.14
-			cap.mesh = cap_m
-			cap.material_override = mat_neon
-			cap.position = Vector3(sx, 0.78, sz)
-			padre.add_child(cap)
-
-	# Flecha direccional de entrada/orientación en el centro (-Z = frente)
-	var flecha := MeshInstance3D.new()
-	var f_box := BoxMesh.new()
-	f_box.size = Vector3(0.45, alto_franja, 2.2)
-	flecha.mesh = f_box
-	flecha.material_override = mat_neon
-	flecha.position = Vector3(0.0, alto_franja * 0.5, -0.4)
-	padre.add_child(flecha)
-
-	# Etiqueta 3D flotante visible en el editor y en juego
+	# Etiqueta 3D flotante sobria visible en el editor y en juego
 	var lbl := Label3D.new()
+	lbl.name = "EtiquetaZona"
 	lbl.text = titulo
-	lbl.font_size = 72
-	lbl.pixel_size = 0.012
+	lbl.font_size = 64
+	lbl.pixel_size = 0.011
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.modulate = Color(col_zona.r, col_zona.g, col_zona.b, 1.0)
-	lbl.outline_size = 10
-	lbl.position = Vector3(0.0, 2.4, 0.0)
+	lbl.modulate = Color(0.90, 0.92, 0.94, 0.92)
+	lbl.outline_size = 6
+	lbl.outline_modulate = Color(0.06, 0.07, 0.09, 0.78)
+	lbl.position = Vector3(0.0, 2.35, -7.8 if id_modelo == "zona_alquiler_trailer" else 0.0)
 	padre.add_child(lbl)
 
 	# Colisión plana mínima solo para selección con raycast en el editor (no frena camiones)
@@ -424,6 +509,8 @@ static func _construir_zona_checkpoint(padre: StaticBody3D, id_modelo: String) -
 		punto.set("ancho", ancho - 0.5)
 		punto.set("largo", largo - 0.5)
 		punto.set("generar_area_deteccion", true)
+		punto.set("mostrar_etiqueta_3d", false)
+		punto.set("mostrar_visual_suelo", false)
 		padre.add_child(punto)
 
 		var script_carga_ui = preload("res://mundo/editor_mapas/ZonaCargaInteractiva.gd")

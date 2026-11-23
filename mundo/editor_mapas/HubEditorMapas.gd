@@ -832,7 +832,7 @@ func _crear_archivo_mapa(nombre: String, plantilla: String, hora: int) -> String
 		"carreteras": [],
 		"equipamiento_vias": [],
 		"cuerpos_agua": [],
-		"spawn": {"posicion": [0.0, 0.2, 0.0], "rotacion_y": 0.0, "modo": "vehiculo"}
+		"spawn": {"posicion": [512.0, 0.2, 512.0], "rotacion_y": 0.0, "modo": "vehiculo"}
 	}
 	var f := FileAccess.open(ruta, FileAccess.WRITE)
 	if not f:
