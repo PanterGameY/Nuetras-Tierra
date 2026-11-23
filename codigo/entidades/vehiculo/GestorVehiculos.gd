@@ -23,37 +23,47 @@ func subir_jugador_a_vehiculo(jugador: Node3D, vehiculo: Node3D) -> void:
 func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salida: Vector3 = Vector3.ZERO) -> void:
 	if not is_instance_valid(jugador):
 		return
-	
+	if jugador.has_meta("_bajando_de_vehiculo") and jugador.get_meta("_bajando_de_vehiculo") == true:
+		return
+	jugador.set_meta("_bajando_de_vehiculo", true)
+
 	vehiculo_actual = null
 
-	# 1. Notificar al script del jugador (jugador3D) para que ejecute su salida limpia
+	# 0. Desactivar colisión del jugador mientras sale del chasis para evitar choque Jolt con la cabina
+	var col := jugador.find_child("CollisionShape3D", true, false)
+	if col and is_instance_valid(col) and col is CollisionShape3D:
+		(col as CollisionShape3D).disabled = true
+
+	# 1. Posicionar al jugador fuera del chasis ANTES de reactivar su colisión
+	var destino_salida: Vector3 = _resolver_punto_salida_seguro(jugador, vehiculo, posicion_salida)
+	if destino_salida != Vector3.ZERO:
+		if jugador is CharacterBody3D:
+			(jugador as CharacterBody3D).velocity = Vector3.ZERO
+		jugador.global_position = destino_salida
+
+	# 2. Excepción temporal de colisión jugador <-> vehículo
+	var veh_excep: PhysicsBody3D = vehiculo as PhysicsBody3D if is_instance_valid(vehiculo) and vehiculo is PhysicsBody3D else null
+	if veh_excep and jugador is PhysicsBody3D:
+		veh_excep.add_collision_exception_with(jugador)
+		(jugador as PhysicsBody3D).add_collision_exception_with(veh_excep)
+
+	# 3. Notificar al script del jugador para restaurar estado a pie
 	if jugador.has_method("salir_del_vehiculo"):
 		jugador.salir_del_vehiculo()
 	elif jugador.has_method("_salir_del_vehiculo"):
 		jugador._salir_del_vehiculo()
 
-	# 2. Desactivar forzosamente variables internas de conducción en el jugador
+	# 4. Desactivar banderas internas de conducción y reafirmar posición segura
 	if "_conduciendo" in jugador:
 		jugador.set("_conduciendo", false)
 	if "_vehiculo_actual" in jugador:
 		jugador.set("_vehiculo_actual", null)
-
-	# 3. Posicionar al jugador en el punto de salida seguro sobre el suelo estático
-	var destino_salida: Vector3 = posicion_salida
-	if destino_salida == Vector3.ZERO and is_instance_valid(vehiculo):
-		var zona = vehiculo.find_child("ZonaEntrada", true, false)
-		if zona and is_instance_valid(zona):
-			destino_salida = zona.global_position - (vehiculo.global_transform.basis.x.normalized() * 0.6)
-		else:
-			destino_salida = vehiculo.global_position - (vehiculo.global_transform.basis.x.normalized() * 2.2)
-
 	if destino_salida != Vector3.ZERO:
-		destino_salida = _ajustar_salida_sobre_suelo(jugador, vehiculo, destino_salida)
 		if jugador is CharacterBody3D:
 			(jugador as CharacterBody3D).velocity = Vector3.ZERO
 		jugador.global_position = destino_salida
 
-	# 4. Restaurar estado de procesamiento y visibilidad del nodo
+	# 5. Restaurar estado de procesamiento y visibilidad del nodo
 	jugador.show()
 	jugador.process_mode = Node.PROCESS_MODE_INHERIT
 	if jugador.has_method("set_physics_process"):
@@ -61,19 +71,25 @@ func bajar_jugador_de_vehiculo(jugador: Node3D, vehiculo: Node3D, posicion_salid
 	if jugador.has_method("set_process"):
 		jugador.set_process(true)
 
-	# 5. Asegurar visibilidad del modelo 3D del personaje
+	# 6. Asegurar visibilidad del modelo 3D del personaje
 	var modelo = jugador.get_node_or_null("RootNode")
 	if not modelo:
 		modelo = jugador.find_child("RootNode", true, false)
 	if modelo:
 		modelo.show()
 
-	# 6. Reactivar la forma de colisión del jugador
-	var col = jugador.find_child("CollisionShape3D", true, false)
+	# 7. Reactivar colisión del jugador ya posicionado fuera del chasis y con excepción activa
 	if col and is_instance_valid(col) and col is CollisionShape3D:
-		col.disabled = false
+		(col as CollisionShape3D).disabled = false
 	if jugador.has_method("_verificar_seguridad_mapa"):
 		jugador.call("_verificar_seguridad_mapa", true)
+	if veh_excep and jugador.is_inside_tree():
+		jugador.get_tree().create_timer(0.55).timeout.connect(func():
+			if is_instance_valid(veh_excep) and is_instance_valid(jugador) and jugador is PhysicsBody3D:
+				veh_excep.remove_collision_exception_with(jugador)
+				(jugador as PhysicsBody3D).remove_collision_exception_with(veh_excep)
+		, CONNECT_ONE_SHOT)
+	jugador.set_meta("_bajando_de_vehiculo", false)
 
 	# 7. Reactivar interfaz táctil a pie (UIpie) y sus controles
 	if jugador.has_method("mostrar_interfaz_pie"):
@@ -153,6 +169,55 @@ func _ajustar_salida_sobre_suelo(jugador: Node3D, vehiculo: Node3D, pos: Vector3
 		out.y = (res["position"] as Vector3).y + 0.15
 		return out
 	return pos
+
+
+func _hay_muro_en_salida(jugador: Node3D, vehiculo: Node3D, destino: Vector3) -> bool:
+	if not is_instance_valid(vehiculo) or not vehiculo.is_inside_tree():
+		return false
+	var mundo := vehiculo.get_world_3d()
+	if not mundo or not mundo.direct_space_state:
+		return false
+	var excl: Array[RID] = []
+	if vehiculo is CollisionObject3D:
+		excl.append((vehiculo as CollisionObject3D).get_rid())
+	if is_instance_valid(jugador) and jugador is CollisionObject3D:
+		excl.append((jugador as CollisionObject3D).get_rid())
+	var origen := vehiculo.global_position + Vector3(0.0, 1.1, 0.0)
+	var fin := Vector3(destino.x, vehiculo.global_position.y + 1.1, destino.z)
+	var q := PhysicsRayQueryParameters3D.create(origen, fin, 1, excl)
+	return not mundo.direct_space_state.intersect_ray(q).is_empty()
+
+
+func _resolver_punto_salida_seguro(jugador: Node3D, vehiculo: Node3D, posicion_salida: Vector3 = Vector3.ZERO) -> Vector3:
+	if not is_instance_valid(vehiculo):
+		return posicion_salida if posicion_salida != Vector3.ZERO else (jugador.global_position if is_instance_valid(jugador) else Vector3.ZERO)
+	var dir_x := vehiculo.global_transform.basis.x
+	dir_x.y = 0.0
+	if dir_x.length_squared() < 0.0001:
+		dir_x = Vector3.RIGHT
+	dir_x = dir_x.normalized()
+	var dir_z := vehiculo.global_transform.basis.z
+	dir_z.y = 0.0
+	if dir_z.length_squared() < 0.0001:
+		dir_z = Vector3.BACK
+	dir_z = dir_z.normalized()
+
+	var candidatos: Array[Vector3] = []
+	if posicion_salida != Vector3.ZERO:
+		candidatos.append(posicion_salida - dir_x * 0.35)
+		candidatos.append(posicion_salida - dir_x * 0.9)
+	var zona := vehiculo.find_child("ZonaEntrada", true, false) as Area3D
+	if zona and is_instance_valid(zona):
+		candidatos.append(zona.global_position - dir_x * 0.95)
+		candidatos.append(zona.global_position + dir_x * 3.8)
+	candidatos.append(vehiculo.global_position - dir_x * 2.5 - dir_z * 1.5)
+	candidatos.append(vehiculo.global_position + dir_x * 2.5 - dir_z * 1.5)
+	candidatos.append(vehiculo.global_position - dir_z * 5.8)
+
+	for cand in candidatos:
+		if not _hay_muro_en_salida(jugador, vehiculo, cand):
+			return _ajustar_salida_sobre_suelo(jugador, vehiculo, cand)
+	return _ajustar_salida_sobre_suelo(jugador, vehiculo, candidatos[0])
 
 
 func _es_via_o_suelo_estatico(col: Object) -> bool:
@@ -284,9 +349,18 @@ func restaurar_ubicacion_vehiculo(vehiculo: Node3D) -> bool:
 		return false
 	if not (entry.get("pos") is Vector3):
 		return false
-	vehiculo.global_position = entry["pos"]
+	var pos_restaurar: Vector3 = entry["pos"]
+	var rot_restaurar := Vector3.ZERO
 	if entry.get("rot") is Vector3:
-		vehiculo.global_rotation = entry["rot"]
+		rot_restaurar = entry["rot"]
+		var pitch_norm := absf(wrapf(rot_restaurar.x, -PI, PI))
+		var roll_norm := absf(wrapf(rot_restaurar.z, -PI, PI))
+		if pitch_norm > 0.55 or roll_norm > 0.55 or pos_restaurar.y < 0.0:
+			rot_restaurar = Vector3(0.0, rot_restaurar.y, 0.0)
+			pos_restaurar.y = maxf(pos_restaurar.y, 1.35)
+	vehiculo.global_position = pos_restaurar
+	if entry.get("rot") is Vector3:
+		vehiculo.global_rotation = rot_restaurar
 	if vehiculo is RigidBody3D:
 		(vehiculo as RigidBody3D).linear_velocity = Vector3.ZERO
 		(vehiculo as RigidBody3D).angular_velocity = Vector3.ZERO

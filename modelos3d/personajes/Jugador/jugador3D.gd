@@ -141,6 +141,7 @@ var _zona_camara_activa = false
 var _zoom_guardado = 3.5
 var _conduciendo = false
 var _recien_bajado_timer: float = 0.0
+var _recien_subido_timer: float = 0.0
 var _autosave_timer: float = 0.0
 const AUTOSAVE_INTERVAL: float = 15.0
 var _vehiculo_actual: Node3D
@@ -712,14 +713,16 @@ func _physics_process(delta: float) -> void:
 			anim_player.play(_anim_actual)
 		return
 	if _conduciendo:
+		if _recien_subido_timer > 0.0:
+			_recien_subido_timer = maxf(_recien_subido_timer - delta, 0.0)
 		if _vehiculo_actual:
 			var gv := get_node_or_null("/root/GestorVehiculos")
 			if gv and gv.has_method("asegurar_vehiculo_sobre_mapa") and _vehiculo_actual is RigidBody3D:
 				var prev_seg_v: Vector3 = _vehiculo_actual.get_meta("_pos_segura_mapa", Vector3.ZERO)
 				_vehiculo_actual.set_meta("_pos_segura_mapa", gv.asegurar_vehiculo_sobre_mapa(_vehiculo_actual, prev_seg_v))
 			_manterner_en_vehiculo(_vehiculo_actual)
-			# Cambiado para salir usando la tecla ESC (ui_cancel) o el boton interactuar para evitar conflictos con S (freno)
-			if Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("interactuar"):
+			# Cooldown tras subir para evitar que la misma pulsación de F que sube al jugador lo baje en el mismo frame
+			if _recien_subido_timer <= 0.0 and (Input.is_action_just_pressed("ui_cancel") or Input.is_action_just_pressed("interactuar")):
 				_salir_del_vehiculo()
 		return
 	
@@ -988,6 +991,11 @@ func _set_primera_persona(v):
 		_vigneta_layer.hide()
 
 func _subir_al_vehiculo(v):
+	if not is_instance_valid(v):
+		return
+	if _conduciendo and _vehiculo_actual == v:
+		return
+	_recien_subido_timer = 0.35
 	_conduciendo = true
 	_vehiculo_actual = v
 	_asiento_cache = v.find_child("AsientoConductor", true, false)
@@ -1019,9 +1027,12 @@ func _salir_del_vehiculo():
 		if is_instance_valid(cam_activa):
 			item_en_mano_ctrl.vincular_jugador(self, cam_activa)
 			
-	if v.has_method("bajar_jugador"): v.bajar_jugador()
-	if _collision_shape: _collision_shape.disabled = false
-	_verificar_seguridad_mapa(true)
+	var gestionado_por_gv: bool = has_meta("_bajando_de_vehiculo") and get_meta("_bajando_de_vehiculo") == true
+	if v.has_method("bajar_jugador") and not gestionado_por_gv:
+		v.bajar_jugador()
+	if not gestionado_por_gv:
+		if _collision_shape: _collision_shape.disabled = false
+		_verificar_seguridad_mapa(true)
 	_recien_bajado_timer = 1.0 # Previene animaciones de caída/salto temporalmente (tiempo de seguridad)
 	_reproducir_anim(ANIM_IDLE)
 

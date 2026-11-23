@@ -708,8 +708,7 @@ func _on_boton_salir() -> void:
 		vehiculo.bajar_jugador()
 	elif jugador and jugador.has_method("salir_del_vehiculo"):
 		jugador.salir_del_vehiculo()
-
-	if is_instance_valid(jugador):
+	elif is_instance_valid(jugador):
 		if _get_gv() and _get_gv().has_method("bajar_jugador_de_vehiculo"): _get_gv().bajar_jugador_de_vehiculo(jugador, vehiculo)
 
 	visible = false

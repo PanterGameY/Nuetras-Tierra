@@ -507,11 +507,18 @@ func _reconectar_si_activo() -> void:
 		# Alinear remolque físicamente a la quinta rueda antes de activar el joint
 		var marker = hitch.find_child("Marker3D", true, false)
 		var marker_pos = marker.global_position if marker else hitch.global_position
-		global_transform.basis = truck.global_transform.basis
+		var basis_camion: Basis = truck.global_transform.basis.orthonormalized()
+		if absf(wrapf(truck.global_rotation.x, -PI, PI)) > 0.55 or absf(wrapf(truck.global_rotation.z, -PI, PI)) > 0.55:
+			basis_camion = Basis.from_euler(Vector3(0.0, truck.global_rotation.y, 0.0))
+		global_transform.basis = basis_camion
 		var local_pin = to_local(mi_enganche.global_position)
 		global_position = marker_pos - (global_transform.basis * local_pin)
+		if global_position.y < 0.5:
+			global_position.y = 1.0
 		linear_velocity = Vector3.ZERO
 		angular_velocity = Vector3.ZERO
+		freeze = false
+		sleeping = false
 
 		hitch.call("_conectar_a", mi_enganche, true)
 		var t_ruedas = entry.get("tipo_ruedas", "")
