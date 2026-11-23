@@ -659,7 +659,7 @@ func _conectar_botones() -> void:
 	if dock_box and not dock_box.has_node("BtnEditorMapas"):
 		var btn_ed := Button.new()
 		btn_ed.name = "BtnEditorMapas"
-		btn_ed.text = "🗺️ EDITOR MAPAS"
+		btn_ed.text = "🗺️ MAPAS"
 		btn_ed.custom_minimum_size = Vector2(240, 96)
 		btn_ed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		btn_ed.add_theme_font_size_override("font_size", 22)
@@ -705,7 +705,7 @@ func _on_editor_mapas_pressed() -> void:
 	if ResourceLoader.exists(ESCENA_EDITOR_MAPAS):
 		get_tree().change_scene_to_file(ESCENA_EDITOR_MAPAS)
 	else:
-		_mostrar_toast("EDITOR DE MAPAS NO DISPONIBLE")
+		_mostrar_toast("CENTRO DE MAPAS NO DISPONIBLE")
 
 
 func _on_multijugador_pressed() -> void:

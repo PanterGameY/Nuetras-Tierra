@@ -85,6 +85,15 @@ var _contenedor_seleccionadores_puntos: Node3D = null
 var _marcador_punto_seleccionado: Node3D = null
 var _dict_marcadores_puntos: Dictionary = {}
 var _rp_hover_actual: RoadPoint = null
+var _marcador_curvas_extremo: Node3D = null
+var _manejador_curva_izq: Node3D = null
+var _manejador_curva_der: Node3D = null
+var _barra_curvas_extremo: MeshInstance3D = null
+var _arco_curvas_extremo: MeshInstance3D = null
+var _mat_gizmo_izq: StandardMaterial3D = null
+var _mat_gizmo_der: StandardMaterial3D = null
+var _offset_curvas_actual: float = 7.0
+var _mostrar_curvas_extremo: bool = true
 
 func _ready() -> void:
 	_inicializar_road_generator()
@@ -96,6 +105,7 @@ func _ready() -> void:
 	_crear_marcador_ramal_seleccionado()
 	_crear_contenedor_seleccionadores()
 	_crear_marcador_punto_seleccionado()
+	_crear_marcador_curvas_extremo()
 
 func _inicializar_road_generator() -> void:
 	road_container = RoadContainer.new()
@@ -344,11 +354,202 @@ func _process(_delta: float) -> void:
 		var t2 = Time.get_ticks_msec() * 0.007
 		var pulse = sin(t2) * 0.10 + 1.0
 		_marcador_punto_seleccionado.scale = Vector3(pulse, 1.0, pulse)
+	_actualizar_marcador_curvas_extremo()
 
 func _crear_contenedor_seleccionadores() -> void:
 	_contenedor_seleccionadores_puntos = Node3D.new()
 	_contenedor_seleccionadores_puntos.name = "ContenedorSeleccionadoresPuntos"
 	add_child(_contenedor_seleccionadores_puntos)
+
+func _crear_flecha_gizmo_rotacion(nombre: String, mat: StandardMaterial3D) -> Node3D:
+	var raiz := Node3D.new()
+	raiz.name = nombre
+
+	# Eje tangencial (orientado en Z local para indicar giro horario/antihorario)
+	var asta := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.16
+	cyl.bottom_radius = 0.16
+	cyl.height = 2.6
+	asta.mesh = cyl
+	asta.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	asta.material_override = mat
+	raiz.add_child(asta)
+
+	# Punta cónica delantera (-Z)
+	var punta_fwd := MeshInstance3D.new()
+	var cono_f := CylinderMesh.new()
+	cono_f.top_radius = 0.0
+	cono_f.bottom_radius = 0.48
+	cono_f.height = 1.05
+	punta_fwd.mesh = cono_f
+	punta_fwd.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+	punta_fwd.position = Vector3(0.0, 0.0, -1.75)
+	punta_fwd.material_override = mat
+	raiz.add_child(punta_fwd)
+
+	# Punta cónica trasera (+Z)
+	var punta_back := MeshInstance3D.new()
+	var cono_b := CylinderMesh.new()
+	cono_b.top_radius = 0.0
+	cono_b.bottom_radius = 0.48
+	cono_b.height = 1.05
+	punta_back.mesh = cono_b
+	punta_back.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	punta_back.position = Vector3(0.0, 0.0, 1.75)
+	punta_back.material_override = mat
+	raiz.add_child(punta_back)
+
+	return raiz
+
+func _actualizar_arco_gizmo(radio: float) -> void:
+	if not is_instance_valid(_arco_curvas_extremo):
+		return
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	for signo_lado in [-1.0, 1.0]:
+		var pasos := 14
+		var ang_ini := -0.58
+		var ang_fin := 0.58
+		for i in range(pasos):
+			var a0 := lerpf(ang_ini, ang_fin, float(i) / float(pasos))
+			var a1 := lerpf(ang_ini, ang_fin, float(i + 1) / float(pasos))
+			im.surface_add_vertex(Vector3(signo_lado * cos(a0) * radio, 0.35, sin(a0) * radio))
+			im.surface_add_vertex(Vector3(signo_lado * cos(a1) * radio, 0.35, sin(a1) * radio))
+	im.surface_end()
+	_arco_curvas_extremo.mesh = im
+
+func _crear_marcador_curvas_extremo() -> void:
+	_marcador_curvas_extremo = Node3D.new()
+	_marcador_curvas_extremo.name = "MarcadorCurvasExtremoVia"
+	_marcador_curvas_extremo.visible = false
+	add_child(_marcador_curvas_extremo)
+
+	var mat_guia := StandardMaterial3D.new()
+	mat_guia.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat_guia.albedo_color = Color(0.78, 0.81, 0.85, 0.45)
+	mat_guia.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat_guia.no_depth_test = true
+	mat_guia.render_priority = 3
+
+	_barra_curvas_extremo = MeshInstance3D.new()
+	var cyl_b := CylinderMesh.new()
+	cyl_b.top_radius = 0.07
+	cyl_b.bottom_radius = 0.07
+	cyl_b.height = 14.0
+	_barra_curvas_extremo.mesh = cyl_b
+	_barra_curvas_extremo.rotation_degrees = Vector3(0.0, 0.0, 90.0)
+	_barra_curvas_extremo.material_override = mat_guia
+	_barra_curvas_extremo.position = Vector3(0.0, 0.35, 0.0)
+	_marcador_curvas_extremo.add_child(_barra_curvas_extremo)
+
+	_arco_curvas_extremo = MeshInstance3D.new()
+	_arco_curvas_extremo.material_override = mat_guia
+	_marcador_curvas_extremo.add_child(_arco_curvas_extremo)
+
+	_mat_gizmo_izq = StandardMaterial3D.new()
+	_mat_gizmo_izq.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mat_gizmo_izq.albedo_color = Color(0.95, 0.72, 0.22, 1.0)
+	_mat_gizmo_izq.no_depth_test = true
+	_mat_gizmo_izq.render_priority = 4
+
+	_mat_gizmo_der = StandardMaterial3D.new()
+	_mat_gizmo_der.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mat_gizmo_der.albedo_color = Color(0.95, 0.72, 0.22, 1.0)
+	_mat_gizmo_der.no_depth_test = true
+	_mat_gizmo_der.render_priority = 4
+
+	_manejador_curva_izq = _crear_flecha_gizmo_rotacion("ManejadorCurvaIzq", _mat_gizmo_izq)
+	_marcador_curvas_extremo.add_child(_manejador_curva_izq)
+
+	_manejador_curva_der = _crear_flecha_gizmo_rotacion("ManejadorCurvaDer", _mat_gizmo_der)
+	_marcador_curvas_extremo.add_child(_manejador_curva_der)
+
+func _obtener_rp_curvas_activo() -> RoadPoint:
+	if is_instance_valid(punto_carretera_seleccionado):
+		return punto_carretera_seleccionado
+	if is_instance_valid(_ultimo_road_point):
+		return _ultimo_road_point
+	return null
+
+func establecer_visibilidad_manejadores_curva(vis: bool) -> void:
+	_mostrar_curvas_extremo = vis
+	if not vis and is_instance_valid(_marcador_curvas_extremo):
+		_marcador_curvas_extremo.visible = false
+
+func _actualizar_marcador_curvas_extremo() -> void:
+	if not is_instance_valid(_marcador_curvas_extremo):
+		return
+	var rp := _obtener_rp_curvas_activo()
+	if not _mostrar_curvas_extremo or not is_instance_valid(rp) or not rp.is_inside_tree():
+		_marcador_curvas_extremo.visible = false
+		return
+	var escala_cam := 1.0
+	var cam := get_viewport().get_camera_3d()
+	if is_instance_valid(cam):
+		var dist_cam: float = cam.global_position.distance_to(rp.global_position)
+		escala_cam = clampf(dist_cam * 0.042, 0.85, 3.2)
+
+	var nuevo_offset: float = (_obtener_ancho_via_punto(rp) * 0.5) + (2.8 * escala_cam)
+	var cambio_radio: bool = (not _marcador_curvas_extremo.visible) or absf(nuevo_offset - _offset_curvas_actual) > 0.05
+	_offset_curvas_actual = nuevo_offset
+	_marcador_curvas_extremo.visible = true
+	_marcador_curvas_extremo.global_position = rp.global_position
+	_marcador_curvas_extremo.rotation = Vector3(0.0, rp.rotation.y, 0.0)
+	if is_instance_valid(_manejador_curva_izq):
+		_manejador_curva_izq.position = Vector3(-_offset_curvas_actual, 0.35, 0.0)
+		_manejador_curva_izq.scale = Vector3.ONE * escala_cam
+	if is_instance_valid(_manejador_curva_der):
+		_manejador_curva_der.position = Vector3(_offset_curvas_actual, 0.35, 0.0)
+		_manejador_curva_der.scale = Vector3.ONE * escala_cam
+	if is_instance_valid(_barra_curvas_extremo) and _barra_curvas_extremo.mesh is CylinderMesh:
+		(_barra_curvas_extremo.mesh as CylinderMesh).height = _offset_curvas_actual * 2.0
+	if cambio_radio:
+		_actualizar_arco_gizmo(_offset_curvas_actual)
+
+func detectar_manejador_rotacion_punto(pos_mundo: Vector3, radio: float = 3.2) -> int:
+	if not is_instance_valid(_marcador_curvas_extremo) or not _marcador_curvas_extremo.visible:
+		return 0
+	var escala_hit := _manejador_curva_izq.scale.x if is_instance_valid(_manejador_curva_izq) else 1.0
+	var radio_efectivo := radio * maxf(escala_hit, 1.0)
+	var p2 := Vector2(pos_mundo.x, pos_mundo.z)
+	if is_instance_valid(_manejador_curva_izq):
+		var pi := Vector2(_manejador_curva_izq.global_position.x, _manejador_curva_izq.global_position.z)
+		if p2.distance_to(pi) <= radio_efectivo:
+			return -1
+	if is_instance_valid(_manejador_curva_der):
+		var pd := Vector2(_manejador_curva_der.global_position.x, _manejador_curva_der.global_position.z)
+		if p2.distance_to(pd) <= radio_efectivo:
+			return 1
+	return 0
+
+func rotar_punto_por_arrastre(lado: int, pos_mundo: Vector3, en_tiempo_real: bool = true) -> void:
+	if _mat_gizmo_izq:
+		_mat_gizmo_izq.albedo_color = Color(1.0, 0.90, 0.55, 1.0) if (en_tiempo_real and lado < 0) else Color(0.95, 0.72, 0.22, 1.0)
+	if _mat_gizmo_der:
+		_mat_gizmo_der.albedo_color = Color(1.0, 0.90, 0.55, 1.0) if (en_tiempo_real and lado > 0) else Color(0.95, 0.72, 0.22, 1.0)
+	if lado == 0:
+		return
+	var rp := _obtener_rp_curvas_activo()
+	if not is_instance_valid(rp):
+		return
+	var delta_xz := Vector2(pos_mundo.x - rp.global_position.x, pos_mundo.z - rp.global_position.z)
+	if delta_xz.length_squared() < 0.25:
+		return
+	var dir := delta_xz.normalized()
+	var yaw: float = atan2(-dir.y, dir.x) if lado > 0 else atan2(dir.y, -dir.x)
+	rp.rotation.y = yaw
+	rp.set_meta("rotacion_manual", true)
+	rp.set_meta("angulo_manual_y", yaw)
+	_actualizar_marcador_curvas_extremo()
+	if road_container:
+		road_container.update_edges()
+		road_container.rebuild_segments(true)
+	if not en_tiempo_real:
+		nivelar_terreno_bajo_carreteras()
+		if equipamiento_controller and equipamiento_controller.has_method("actualizar_puentes_y_tuneles_automaticos"):
+			equipamiento_controller.actualizar_puentes_y_tuneles_automaticos()
+		carretera_actualizada.emit()
 
 func _crear_instancia_marcador_punto() -> Node3D:
 	var nodo := Node3D.new()
@@ -778,7 +979,11 @@ func _actualizar_orientaciones_y_curvaturas() -> void:
 			continue
 			
 		var fwd = Vector3(t_dir.x, 0.0, t_dir.z).normalized()
-		if fwd.length_squared() > 0.001:
+		if rp.get_meta("rotacion_manual", false) and inter_node == null:
+			rp.rotation.y = float(rp.get_meta("angulo_manual_y", rp.rotation.y))
+			if rp.has_meta("peralte_grados"):
+				rp.rotation_degrees.z = float(rp.get_meta("peralte_grados", 0.0))
+		elif fwd.length_squared() > 0.001:
 			var up_ref = Vector3.UP
 			if absf(fwd.dot(up_ref)) > 0.96:
 				up_ref = Vector3.FORWARD

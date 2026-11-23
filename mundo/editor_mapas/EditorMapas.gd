@@ -42,6 +42,7 @@ var _pos_impacto_terreno: Vector3 = Vector3.ZERO
 var _impacto_valido: bool = false
 var _arrastrando_punto_carretera: bool = false
 var _punto_carretera_fue_arrastrado: bool = false
+var _rotando_punto_carretera_lado: int = 0
 var _arrastrando_esquina_parqueo: bool = false
 var _esquina_parqueo_idx_est: int = -1
 var _esquina_parqueo_idx_esq: int = -1
@@ -973,6 +974,8 @@ func _on_categoria_cambiada(cat: String) -> void:
 		ui_editor.ocultar_panel_variaciones_garaje()
 		_arrastrando_objeto = null
 		_modo_mover_objeto = false
+	if controlador_carreteras:
+		controlador_carreteras.establecer_visibilidad_manejadores_curva(cat == "vias")
 	if cat != "vias":
 		if controlador_carreteras.modo_conectar_activo:
 			controlador_carreteras.desactivar_modo_conexion()
@@ -1245,6 +1248,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_arrastrando_objeto = null
 				_objeto_fue_arrastrado = false
 				_eje_arrastre_objeto = Vector3.ZERO
+			if _rotando_punto_carretera_lado != 0:
+				controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, false)
+				_rotando_punto_carretera_lado = 0
 			if _arrastrando_punto_carretera:
 				_arrastrando_punto_carretera = false
 				if _punto_carretera_fue_arrastrado and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
@@ -1303,6 +1309,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.position.distance_to(_pos_toque_pantalla_anterior) > 6.0 or _objeto_fue_arrastrado:
 				_objeto_fue_arrastrado = true
 				_aplicar_arrastre_objeto()
+		elif _rotando_punto_carretera_lado != 0:
+			controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, true)
 		elif _arrastrando_punto_carretera and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
 			if event.position.distance_to(_pos_toque_pantalla_anterior) > 5.0 or _punto_carretera_fue_arrastrado:
 				_punto_carretera_fue_arrastrado = true
@@ -1342,6 +1350,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					_arrastrando_objeto = null
 					_objeto_fue_arrastrado = false
 					_eje_arrastre_objeto = Vector3.ZERO
+				if _rotando_punto_carretera_lado != 0:
+					controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, false)
+					_rotando_punto_carretera_lado = 0
 				if _arrastrando_punto_carretera:
 					_arrastrando_punto_carretera = false
 					if _punto_carretera_fue_arrastrado and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
@@ -1403,6 +1414,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.position.distance_to(_pos_toque_pantalla_anterior) > 6.0 or _objeto_fue_arrastrado:
 				_objeto_fue_arrastrado = true
 				_aplicar_arrastre_objeto()
+		elif _rotando_punto_carretera_lado != 0:
+			controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, true)
 		elif _arrastrando_punto_carretera and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
 			if event.position.distance_to(_pos_toque_pantalla_anterior) > 5.0 or _punto_carretera_fue_arrastrado:
 				_punto_carretera_fue_arrastrado = true
@@ -1745,6 +1758,12 @@ func _verificar_seleccion_en_click() -> bool:
 	if _categoria_activa == "vias":
 		if controlador_carreteras.modo_conectar_activo:
 			return false
+
+		if not (_subherramienta_activa in ["cruce_4", "cruce_t", "conectar_vias", "equipamiento_vias"]):
+			var lado_rot := controlador_carreteras.detectar_manejador_rotacion_punto(_pos_impacto_terreno)
+			if lado_rot != 0:
+				_rotando_punto_carretera_lado = lado_rot
+				return true
 			
 			
 		# 1. Si ya hay un cruce seleccionado, verificar primero si se hizo clic en una de sus salidas
@@ -2228,6 +2247,9 @@ func _cargar_mapa_inicial_hub() -> void:
 			_nombre_mapa_actual = nombre_hub
 		if FileAccess.file_exists(ruta_hub):
 			cargar_mapa_desde_ruta(ruta_hub)
+	if bool(Engine.get_meta("nt_jugar_directo", false)):
+		Engine.set_meta("nt_jugar_directo", false)
+		call_deferred("_on_iniciar_prueba")
 
 func guardar_mapa() -> void:
 	var dir_mapas = "user://mapas"
@@ -2260,9 +2282,11 @@ func guardar_mapa() -> void:
 		"spawn": controlador_spawn.serializar_spawn()
 	}
 	
-	var file = FileAccess.open(ruta_ntmap, FileAccess.WRITE)
+	var file = FileAccess.open_compressed(ruta_ntmap, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if not file:
+		file = FileAccess.open(ruta_ntmap, FileAccess.WRITE)
 	if file:
-		file.store_string(JSON.stringify(datos, "  "))
+		file.store_string(JSON.stringify(datos))
 		file.close()
 		# Guardar copia compatible .json
 		var f_json = FileAccess.open(dir_mapas + "/mapa_guardado.json", FileAccess.WRITE)
@@ -2284,14 +2308,26 @@ func cargar_mapa() -> void:
 			return
 	cargar_mapa_desde_ruta(ruta_archivo)
 
+func _leer_texto_ntmap(ruta_archivo: String) -> String:
+	var f_comp = FileAccess.open_compressed(ruta_archivo, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+	if f_comp:
+		var txt_c := f_comp.get_as_text()
+		f_comp.close()
+		if txt_c.strip_edges().begins_with("{"):
+			return txt_c
+	var f_plain = FileAccess.open(ruta_archivo, FileAccess.READ)
+	if f_plain:
+		var txt_p := f_plain.get_as_text()
+		f_plain.close()
+		return txt_p
+	return ""
+
 func cargar_mapa_desde_ruta(ruta_archivo: String) -> void:
 	if not FileAccess.file_exists(ruta_archivo):
 		return
-	var file = FileAccess.open(ruta_archivo, FileAccess.READ)
-	if not file:
+	var texto := _leer_texto_ntmap(ruta_archivo)
+	if texto.is_empty():
 		return
-	var texto = file.get_as_text()
-	file.close()
 	
 	var json = JSON.new()
 	if json.parse(texto) == OK:
@@ -2325,6 +2361,8 @@ func cargar_mapa_desde_ruta(ruta_archivo: String) -> void:
 				controlador_agua.deserializar_aguas(datos["cuerpos_agua"])
 			if datos.has("spawn"):
 				controlador_spawn.deserializar_spawn(datos["spawn"])
+				if camara_editor and controlador_spawn:
+					camara_editor.enfocar_punto(controlador_spawn.obtener_posicion() + Vector3(0.0, 4.0, 0.0))
 			if datos.has("hora_dia"):
 				_cambiar_hora_dia(int(datos["hora_dia"]))
 			ui_editor.mostrar_notificacion("¡Mapa '%s' cargado!" % _nombre_mapa_actual)

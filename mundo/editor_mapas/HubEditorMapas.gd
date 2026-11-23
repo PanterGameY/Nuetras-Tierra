@@ -76,9 +76,17 @@ const MAPAS_GALERIA: Array[Dictionary] = [
 ]
 
 var _fuente: Font = null
-var _tab_actual: String = "mis_mapas"
+var _fuente_cuerpo: Font = null
+var _fuente_bold: Font = null
+var _tab_actual: String = "galeria"
+var _modo_creador: bool = false
+var _lbl_hub_titulo: Label = null
+var _lbl_hub_sub: Label = null
+var _btn_modo_creador: Button = null
 var _plantilla_seleccionada: String = "valle_verde"
 var _filtro_galeria: String = "Todos"
+var _busqueda_galeria: String = ""
+var _grid_galeria: GridContainer = null
 
 var _cam_fondo: Camera3D = null
 var _angulo_cam: float = 0.0
@@ -97,6 +105,10 @@ var _modal_subida: PanelContainer = null
 func _ready() -> void:
 	if ResourceLoader.exists(RUTA_FUENTE_UI):
 		_fuente = load(RUTA_FUENTE_UI)
+	if ResourceLoader.exists("res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf"):
+		_fuente_cuerpo = load("res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf")
+	if ResourceLoader.exists("res://recursos/fonts/creato_display/CreatoDisplay-Bold.otf"):
+		_fuente_bold = load("res://recursos/fonts/creato_display/CreatoDisplay-Bold.otf")
 	_repo_comunidad = RepositorioComunidad.new()
 	add_child(_repo_comunidad)
 	_repo_comunidad.mapas_cargados.connect(_on_mapas_comunidad_cargados)
@@ -108,7 +120,7 @@ func _ready() -> void:
 	_construir_fondo_3d()
 	_construir_hud_flotante()
 	_actualizar_saldo_esmeraldas()
-	_cambiar_tab("mis_mapas")
+	_cambiar_tab("galeria")
 	_repo_comunidad.cargar_mapas_comunidad()
 	_animar_entrada()
 
@@ -263,19 +275,19 @@ func _construir_hud_flotante() -> void:
 	vb_tit.add_theme_constant_override("separation", 0)
 	hb_brand.add_child(vb_tit)
 
-	var lbl_tit := Label.new()
-	lbl_tit.text = "TALLER DE MAPAS"
-	lbl_tit.add_theme_font_size_override("font_size", 28)
-	lbl_tit.add_theme_color_override("font_color", C_AMBER_BRIGHT)
-	if _fuente: lbl_tit.add_theme_font_override("font", _fuente)
-	vb_tit.add_child(lbl_tit)
+	_lbl_hub_titulo = Label.new()
+	_lbl_hub_titulo.text = "CENTRO DE MAPAS"
+	_lbl_hub_titulo.add_theme_font_size_override("font_size", 28)
+	_lbl_hub_titulo.add_theme_color_override("font_color", C_AMBER_BRIGHT)
+	if _fuente: _lbl_hub_titulo.add_theme_font_override("font", _fuente)
+	vb_tit.add_child(_lbl_hub_titulo)
 
-	var lbl_sub := Label.new()
-	lbl_sub.text = "NUESTRA TIERRA  •  EDITOR DE RUTAS 3D"
-	lbl_sub.add_theme_font_size_override("font_size", 13)
-	lbl_sub.add_theme_color_override("font_color", C_TEXT_MUTED)
-	if _fuente: lbl_sub.add_theme_font_override("font", _fuente)
-	vb_tit.add_child(lbl_sub)
+	_lbl_hub_sub = Label.new()
+	_lbl_hub_sub.text = "NUESTRA TIERRA  •  EXPLORA, DESCARGA Y JUEGA"
+	_lbl_hub_sub.add_theme_font_size_override("font_size", 13)
+	_lbl_hub_sub.add_theme_color_override("font_color", C_TEXT_MUTED)
+	if _fuente: _lbl_hub_sub.add_theme_font_override("font", _fuente)
+	vb_tit.add_child(_lbl_hub_sub)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -334,9 +346,9 @@ func _construir_hud_flotante() -> void:
 	m_nav.add_child(vb_nav)
 
 	var tabs := [
+		{"id": "galeria", "nom": "DESCUBRIR"},
 		{"id": "mis_mapas", "nom": "MIS MAPAS"},
 		{"id": "nuevo", "nom": "+ NUEVO MAPA"},
-		{"id": "galeria", "nom": "GALERIA"},
 		{"id": "guia", "nom": "GUIA RAPIDA"}
 	]
 	for t in tabs:
@@ -349,6 +361,16 @@ func _construir_hud_flotante() -> void:
 		btn_t.pressed.connect(func(): _cambiar_tab(tid))
 		vb_nav.add_child(btn_t)
 		_botones_tabs[tid] = btn_t
+
+	_btn_modo_creador = Button.new()
+	_btn_modo_creador.text = "🛠  MODO CREADOR"
+	_btn_modo_creador.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_btn_modo_creador.custom_minimum_size = Vector2(0, 74)
+	if _fuente: _btn_modo_creador.add_theme_font_override("font", _fuente)
+	_aplicar_estilo_primario(_btn_modo_creador, 18)
+	_btn_modo_creador.pressed.connect(func(): _alternar_modo_creador(not _modo_creador))
+	vb_nav.add_child(_btn_modo_creador)
+	_actualizar_visibilidad_nav_modo()
 
 	# Stage central transparente (las tarjetas flotan sobre el fondo 3D)
 	_contenedor_vista = MarginContainer.new()
@@ -364,6 +386,27 @@ func _construir_hud_flotante() -> void:
 	if _fuente: _lbl_toast.add_theme_font_override("font", _fuente)
 	_lbl_toast.modulate.a = 0.0
 	vbox_main.add_child(_lbl_toast)
+
+func _alternar_modo_creador(activar: bool) -> void:
+	_modo_creador = activar
+	_actualizar_visibilidad_nav_modo()
+	if _modo_creador:
+		_cambiar_tab("mis_mapas")
+	else:
+		_cambiar_tab("galeria")
+
+func _actualizar_visibilidad_nav_modo() -> void:
+	if _botones_tabs.has("galeria"):
+		_botones_tabs["galeria"].visible = not _modo_creador
+	for tid_c in ["mis_mapas", "nuevo", "guia"]:
+		if _botones_tabs.has(tid_c):
+			_botones_tabs[tid_c].visible = _modo_creador
+	if is_instance_valid(_btn_modo_creador):
+		_btn_modo_creador.text = "←  VOLVER A DESCUBRIR" if _modo_creador else "🛠  MODO CREADOR"
+	if is_instance_valid(_lbl_hub_titulo):
+		_lbl_hub_titulo.text = "MODO CREADOR" if _modo_creador else "CENTRO DE MAPAS"
+	if is_instance_valid(_lbl_hub_sub):
+		_lbl_hub_sub.text = "NUESTRA TIERRA  •  EDITOR Y GESTIÓN DE RUTAS" if _modo_creador else "NUESTRA TIERRA  •  EXPLORA, DESCARGA Y JUEGA"
 
 func _cambiar_tab(id_tab: String) -> void:
 	_tab_actual = id_tab
@@ -632,8 +675,58 @@ func _construir_vista_mis_mapas() -> void:
 
 func _construir_vista_galeria() -> void:
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 16)
+	vbox.add_theme_constant_override("separation", 14)
 	_contenedor_vista.add_child(vbox)
+
+	# Buscador amplio optimizado para móviles (nombre, creador o identificador)
+	var hbox_busq := HBoxContainer.new()
+	hbox_busq.add_theme_constant_override("separation", 10)
+	vbox.add_child(hbox_busq)
+
+	var le_busq := LineEdit.new()
+	le_busq.text = _busqueda_galeria
+	le_busq.placeholder_text = "🔍  Buscar mapa por nombre, creador o ID (ej: 123.map)..."
+	le_busq.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	le_busq.custom_minimum_size = Vector2(0, 62)
+	le_busq.add_theme_font_size_override("font_size", 20)
+	le_busq.add_theme_color_override("font_color", C_TEXT)
+	le_busq.add_theme_color_override("font_placeholder_color", Color(0.68, 0.72, 0.78, 0.70))
+	if _fuente_cuerpo:
+		le_busq.add_theme_font_override("font", _fuente_cuerpo)
+	elif _fuente:
+		le_busq.add_theme_font_override("font", _fuente)
+	var sb_busq := StyleBoxFlat.new()
+	sb_busq.bg_color = Color(0.06, 0.07, 0.09, 0.94)
+	sb_busq.set_corner_radius_all(12)
+	sb_busq.set_border_width_all(2)
+	sb_busq.border_color = C_BORDER_FROST
+	sb_busq.content_margin_left = 18
+	sb_busq.content_margin_right = 18
+	var sb_busq_f := sb_busq.duplicate() as StyleBoxFlat
+	sb_busq_f.border_color = C_AMBER
+	le_busq.add_theme_stylebox_override("normal", sb_busq)
+	le_busq.add_theme_stylebox_override("focus", sb_busq_f)
+	hbox_busq.add_child(le_busq)
+
+	var btn_limpiar_busq := Button.new()
+	btn_limpiar_busq.text = "✕"
+	btn_limpiar_busq.custom_minimum_size = Vector2(62, 62)
+	btn_limpiar_busq.add_theme_font_size_override("font_size", 22)
+	btn_limpiar_busq.visible = not _busqueda_galeria.strip_edges().is_empty()
+	_aplicar_estilo_nav(btn_limpiar_busq, false)
+	hbox_busq.add_child(btn_limpiar_busq)
+
+	le_busq.text_changed.connect(func(nuevo: String):
+		_busqueda_galeria = nuevo
+		btn_limpiar_busq.visible = not nuevo.strip_edges().is_empty()
+		_poblar_grid_galeria()
+	)
+	btn_limpiar_busq.pressed.connect(func():
+		_busqueda_galeria = ""
+		le_busq.text = ""
+		btn_limpiar_busq.visible = false
+		_poblar_grid_galeria()
+	)
 
 	var hbox_filtros := HBoxContainer.new()
 	hbox_filtros.add_theme_constant_override("separation", 10)
@@ -674,89 +767,231 @@ func _construir_vista_galeria() -> void:
 	scroll_g.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_child(scroll_g)
 
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 16)
-	grid.add_theme_constant_override("v_separation", 16)
-	scroll_g.add_child(grid)
+	_grid_galeria = GridContainer.new()
+	_grid_galeria.columns = 3
+	_grid_galeria.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid_galeria.add_theme_constant_override("h_separation", 16)
+	_grid_galeria.add_theme_constant_override("v_separation", 16)
+	scroll_g.add_child(_grid_galeria)
+	_poblar_grid_galeria()
 
-	var fuente_lista: Array[Dictionary] = _mapas_comunidad_cache if not _mapas_comunidad_cache.is_empty() else []
+func _poblar_grid_galeria() -> void:
+	if not is_instance_valid(_grid_galeria):
+		return
+	for ch in _grid_galeria.get_children():
+		ch.queue_free()
+	var grid := _grid_galeria
+	var q_busq: String = _busqueda_galeria.strip_edges().to_lower()
+	var fuente_lista: Array[Dictionary] = _mapas_comunidad_cache
 	for item in fuente_lista:
 		var cat_it: String = str(item.get("categoria", "Sierra"))
 		if _filtro_galeria != "Todos" and cat_it != _filtro_galeria:
 			continue
+		if not q_busq.is_empty():
+			var nom_b := str(item.get("nombre", "")).to_lower()
+			var aut_b := str(item.get("autor", "")).to_lower()
+			var id_b := str(item.get("id_mapa", "")).to_lower()
+			var cod_b := str(item.get("codigo_id", "")).to_lower()
+			if not (q_busq in nom_b or q_busq in aut_b or q_busq in id_b or q_busq in cod_b):
+				continue
 		var card := PanelContainer.new()
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_estilar_panel(card, C_GLASS, C_BORDER_FROST, 14, 6)
+		card.clip_contents = true
+		_estilar_panel(card, Color(0.07, 0.08, 0.10, 0.94), C_BORDER_FROST, 16, 0)
 		grid.add_child(card)
 
+		var vb_root := VBoxContainer.new()
+		vb_root.add_theme_constant_override("separation", 0)
+		card.add_child(vb_root)
+
+		var portada_url: String = str(item.get("portada_url", ""))
+
+		# Portada edge-to-edge con degradado inferior y badges flotantes
+		var marco_portada := Control.new()
+		marco_portada.custom_minimum_size = Vector2(0, 224)
+		marco_portada.clip_contents = true
+		vb_root.add_child(marco_portada)
+
+		var bg_ph := ColorRect.new()
+		bg_ph.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bg_ph.color = Color(0.05, 0.06, 0.08, 1.0)
+		marco_portada.add_child(bg_ph)
+
+		var tex_portada := TextureRect.new()
+		tex_portada.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tex_portada.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex_portada.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		marco_portada.add_child(tex_portada)
+
+		var lbl_sin_img := Label.new()
+		lbl_sin_img.set_anchors_preset(Control.PRESET_FULL_RECT)
+		lbl_sin_img.text = str(item.get("nombre", "MAPA")).to_upper()
+		lbl_sin_img.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_sin_img.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl_sin_img.add_theme_font_size_override("font_size", 20)
+		lbl_sin_img.add_theme_color_override("font_color", Color(0.78, 0.81, 0.85, 0.28))
+		if _fuente: lbl_sin_img.add_theme_font_override("font", _fuente)
+		marco_portada.add_child(lbl_sin_img)
+
+		# Degradado inferior para fundir la portada con la tarjeta oscura
+		var grad := Gradient.new()
+		grad.colors = PackedColorArray([Color(0.07, 0.08, 0.10, 0.0), Color(0.07, 0.08, 0.10, 0.96)])
+		var grad_tex := GradientTexture2D.new()
+		grad_tex.gradient = grad
+		grad_tex.fill_from = Vector2(0.5, 0.0)
+		grad_tex.fill_to = Vector2(0.5, 1.0)
+		var rect_grad := TextureRect.new()
+		rect_grad.anchor_left = 0.0
+		rect_grad.anchor_right = 1.0
+		rect_grad.anchor_top = 0.45
+		rect_grad.anchor_bottom = 1.0
+		rect_grad.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		rect_grad.texture = grad_tex
+		rect_grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		marco_portada.add_child(rect_grad)
+
+		# Badge de categoría arriba izquierda
+		var pill_cat := PanelContainer.new()
+		pill_cat.position = Vector2(14, 14)
+		_estilar_panel(pill_cat, Color(0.06, 0.07, 0.09, 0.86), C_AMBER, 8, 6)
+		marco_portada.add_child(pill_cat)
+		var lbl_cat := Label.new()
+		lbl_cat.text = cat_it.to_upper()
+		lbl_cat.add_theme_font_size_override("font_size", 12)
+		lbl_cat.add_theme_color_override("font_color", C_AMBER_BRIGHT)
+		if _fuente_bold: lbl_cat.add_theme_font_override("font", _fuente_bold)
+		elif _fuente: lbl_cat.add_theme_font_override("font", _fuente)
+		pill_cat.add_child(lbl_cat)
+
+		# Pill de peso abajo derecha
+		var pill_stats := PanelContainer.new()
+		pill_stats.anchor_left = 1.0
+		pill_stats.anchor_right = 1.0
+		pill_stats.anchor_top = 1.0
+		pill_stats.anchor_bottom = 1.0
+		pill_stats.offset_left = -112.0
+		pill_stats.offset_right = -14.0
+		pill_stats.offset_top = -38.0
+		pill_stats.offset_bottom = -10.0
+		_estilar_panel(pill_stats, Color(0.06, 0.07, 0.09, 0.88), C_BORDER_FROST, 8, 5)
+		marco_portada.add_child(pill_stats)
+		var lbl_stats := Label.new()
+		lbl_stats.text = str(item.get("peso_texto", "Ligero"))
+		lbl_stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_stats.add_theme_font_size_override("font_size", 14)
+		lbl_stats.add_theme_color_override("font_color", Color(0.92, 0.94, 0.97))
+		if _fuente_bold: lbl_stats.add_theme_font_override("font", _fuente_bold)
+		elif _fuente_cuerpo: lbl_stats.add_theme_font_override("font", _fuente_cuerpo)
+		pill_stats.add_child(lbl_stats)
+
+		if _repo_comunidad and not portada_url.is_empty():
+			var tex_ref := tex_portada
+			var lbl_ref := lbl_sin_img
+			_repo_comunidad.descargar_portada_async(portada_url, func(tex: Texture2D):
+				if is_instance_valid(tex_ref) and tex:
+					tex_ref.texture = tex
+					if is_instance_valid(lbl_ref):
+						lbl_ref.visible = false
+			)
+
+		# Cuerpo inferior con márgenes compactos y CreatoDisplay para textos
 		var mc := MarginContainer.new()
-		mc.add_theme_constant_override("margin_left", 20)
-		mc.add_theme_constant_override("margin_right", 20)
-		mc.add_theme_constant_override("margin_top", 20)
-		mc.add_theme_constant_override("margin_bottom", 20)
-		card.add_child(mc)
+		mc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		mc.add_theme_constant_override("margin_left", 18)
+		mc.add_theme_constant_override("margin_right", 18)
+		mc.add_theme_constant_override("margin_top", 8)
+		mc.add_theme_constant_override("margin_bottom", 14)
+		vb_root.add_child(mc)
 
 		var vb := VBoxContainer.new()
-		vb.add_theme_constant_override("separation", 10)
+		vb.add_theme_constant_override("separation", 6)
 		mc.add_child(vb)
-
-		var id_mapa: String = str(item.get("id_mapa", ""))
-		var ya_guardado: bool = _repo_comunidad != null and _repo_comunidad.mapa_ya_descargado(id_mapa)
-
-		var lbl_cat := Label.new()
-		lbl_cat.text = ("GUARDADO  •  " if ya_guardado else "") + cat_it.to_upper()
-		lbl_cat.add_theme_font_size_override("font_size", 14)
-		lbl_cat.add_theme_color_override("font_color", Color(0.42, 0.90, 0.56) if ya_guardado else C_AMBER)
-		if _fuente: lbl_cat.add_theme_font_override("font", _fuente)
-		vb.add_child(lbl_cat)
 
 		var lbl_t := Label.new()
 		lbl_t.text = str(item.get("nombre", "Mapa"))
-		lbl_t.add_theme_font_size_override("font_size", 23)
+		lbl_t.add_theme_font_size_override("font_size", 21)
 		lbl_t.add_theme_color_override("font_color", C_TEXT)
+		lbl_t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		if _fuente: lbl_t.add_theme_font_override("font", _fuente)
 		vb.add_child(lbl_t)
 
+		# Autor con chip premium
+		var hb_autor := HBoxContainer.new()
+		hb_autor.add_theme_constant_override("separation", 6)
+		vb.add_child(hb_autor)
+
+		var lbl_estrella := Label.new()
+		lbl_estrella.text = "✦"
+		lbl_estrella.add_theme_font_size_override("font_size", 16)
+		lbl_estrella.add_theme_color_override("font_color", C_AMBER_BRIGHT)
+		hb_autor.add_child(lbl_estrella)
+
 		var lbl_a := Label.new()
-		lbl_a.text = "Por %s  •  Vias: %d  •  Obj: %d" % [
-			str(item.get("autor", "Comunidad")),
-			int(item.get("num_vias", 0)),
-			int(item.get("num_objetos", 0))
-		]
-		lbl_a.add_theme_font_size_override("font_size", 14)
-		lbl_a.add_theme_color_override("font_color", C_TEXT_MUTED)
-		if _fuente: lbl_a.add_theme_font_override("font", _fuente)
-		vb.add_child(lbl_a)
+		lbl_a.text = str(item.get("autor", "Comunidad"))
+		lbl_a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl_a.add_theme_font_size_override("font_size", 17)
+		lbl_a.add_theme_color_override("font_color", Color(0.96, 0.78, 0.36, 1.0))
+		if _fuente_bold: lbl_a.add_theme_font_override("font", _fuente_bold)
+		elif _fuente_cuerpo: lbl_a.add_theme_font_override("font", _fuente_cuerpo)
+		hb_autor.add_child(lbl_a)
+
+		var cod_disp: String = str(item.get("codigo_id", item.get("id_mapa", "")))
+		if not cod_disp.is_empty():
+			var lbl_id := Label.new()
+			lbl_id.text = "ID: " + cod_disp
+			lbl_id.add_theme_font_size_override("font_size", 14)
+			lbl_id.add_theme_color_override("font_color", Color(0.68, 0.73, 0.80, 0.88))
+			if _fuente_bold: lbl_id.add_theme_font_override("font", _fuente_bold)
+			elif _fuente_cuerpo: lbl_id.add_theme_font_override("font", _fuente_cuerpo)
+			hb_autor.add_child(lbl_id)
 
 		var lbl_d := Label.new()
 		lbl_d.text = str(item.get("descripcion", ""))
 		lbl_d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl_d.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		lbl_d.add_theme_font_size_override("font_size", 16)
-		lbl_d.add_theme_color_override("font_color", C_TEXT_MUTED)
-		if _fuente: lbl_d.add_theme_font_override("font", _fuente)
+		lbl_d.custom_minimum_size = Vector2(0, 34)
+		lbl_d.add_theme_font_size_override("font_size", 18)
+		lbl_d.add_theme_color_override("font_color", Color(0.84, 0.88, 0.93, 0.95))
+		if _fuente_cuerpo: lbl_d.add_theme_font_override("font", _fuente_cuerpo)
 		vb.add_child(lbl_d)
 
-		var btn_clonar := Button.new()
-		var precio: int = int(item.get("precio_esmeraldas", PRECIO_MAPA_ESMERALDAS))
-		btn_clonar.text = "ABRIR MAPA" if ya_guardado else ("DESCARGAR (%d ESMERALDAS)" % precio)
-		btn_clonar.custom_minimum_size = Vector2(0, 48)
-		if _fuente: btn_clonar.add_theme_font_override("font", _fuente)
-		_aplicar_estilo_primario(btn_clonar, 16)
+		var btn_jugar := Button.new()
+		btn_jugar.text = "▶   JUGAR AHORA"
+		btn_jugar.custom_minimum_size = Vector2(0, 46)
+		if _fuente: btn_jugar.add_theme_font_override("font", _fuente)
+		btn_jugar.add_theme_font_size_override("font_size", 17)
+		btn_jugar.add_theme_color_override("font_color", Color(0.06, 0.07, 0.09, 1.0))
+		btn_jugar.add_theme_color_override("font_hover_color", Color(0.04, 0.05, 0.07, 1.0))
+		btn_jugar.add_theme_color_override("font_pressed_color", Color(0.04, 0.05, 0.07, 1.0))
+
+		var sb_n := StyleBoxFlat.new()
+		sb_n.bg_color = Color(0.90, 0.67, 0.24, 0.96)
+		sb_n.set_corner_radius_all(12)
+		sb_n.set_border_width_all(2)
+		sb_n.border_color = Color(1.0, 0.85, 0.46, 0.95)
+		sb_n.shadow_size = 8
+		sb_n.shadow_color = Color(0.90, 0.67, 0.24, 0.32)
+
+		var sb_h := sb_n.duplicate() as StyleBoxFlat
+		sb_h.bg_color = Color(0.98, 0.76, 0.32, 1.0)
+		sb_h.border_color = Color(1.0, 0.92, 0.62, 1.0)
+		sb_h.shadow_size = 12
+
+		var sb_p := sb_n.duplicate() as StyleBoxFlat
+		sb_p.bg_color = Color(0.76, 0.55, 0.18, 1.0)
+		sb_p.shadow_size = 4
+
+		btn_jugar.add_theme_stylebox_override("normal", sb_n)
+		btn_jugar.add_theme_stylebox_override("hover", sb_h)
+		btn_jugar.add_theme_stylebox_override("pressed", sb_p)
 		var it_copy := item
-		btn_clonar.pressed.connect(func():
-			if ya_guardado:
-				_abrir_en_editor(_repo_comunidad.ruta_mapa_descargado(id_mapa), str(it_copy.get("nombre", "Mapa")), "valle_verde")
-				return
-			var res: Dictionary = _repo_comunidad.comprar_y_descargar_mapa(it_copy)
+		btn_jugar.pressed.connect(func():
+			var res: Dictionary = _repo_comunidad.preparar_mapa_para_jugar(it_copy)
 			_mostrar_toast(str(res.get("mensaje", "")))
-			_actualizar_saldo_esmeraldas()
 			if res.get("exito", false):
-				_cambiar_tab("galeria")
+				_jugar_mapa_directo(str(res.get("ruta", "")), str(res.get("nombre", "Mapa")))
 		)
-		vb.add_child(btn_clonar)
+		vb.add_child(btn_jugar)
 
 # ── VISTA: GUÍA RÁPIDA ────────────────────────────────────────────────
 
@@ -832,20 +1067,44 @@ func _crear_archivo_mapa(nombre: String, plantilla: String, hora: int) -> String
 		"carreteras": [],
 		"equipamiento_vias": [],
 		"cuerpos_agua": [],
-		"spawn": {"posicion": [512.0, 0.2, 512.0], "rotacion_y": 0.0, "modo": "vehiculo"}
+		"spawn": {"posicion": [128.0, 0.2, 128.0], "rotacion_y": 0.0, "modo": "vehiculo"}
 	}
-	var f := FileAccess.open(ruta, FileAccess.WRITE)
+	var f := FileAccess.open_compressed(ruta, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+	if not f:
+		f = FileAccess.open(ruta, FileAccess.WRITE)
 	if not f:
 		_mostrar_toast("Error al crear el archivo del mapa.")
 		return ""
-	f.store_string(JSON.stringify(datos, "  "))
+	f.store_string(JSON.stringify(datos))
 	f.close()
 	return ruta
+
+func _leer_texto_ntmap(ruta: String) -> String:
+	var f_comp := FileAccess.open_compressed(ruta, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+	if f_comp:
+		var txt_c := f_comp.get_as_text()
+		f_comp.close()
+		if txt_c.strip_edges().begins_with("{"):
+			return txt_c
+	var f_plain := FileAccess.open(ruta, FileAccess.READ)
+	if f_plain:
+		var txt_p := f_plain.get_as_text()
+		f_plain.close()
+		return txt_p
+	return ""
 
 func _listar_mapas_locales() -> Array[Dictionary]:
 	var res: Array[Dictionary] = []
 	if not DirAccess.dir_exists_absolute(DIR_MAPAS):
-		return res
+		DirAccess.make_dir_recursive_absolute(DIR_MAPAS)
+	var ruta_def := "res://mundo/editor_mapas/mapas_defecto/ciudad_prueba_grande.ntmap"
+	var ruta_dest := DIR_MAPAS + "/ciudad_prueba_grande.ntmap"
+	if FileAccess.file_exists(ruta_def) and not FileAccess.file_exists(ruta_dest):
+		var bytes_def := FileAccess.get_file_as_bytes(ruta_def)
+		var f_out := FileAccess.open(ruta_dest, FileAccess.WRITE)
+		if f_out and not bytes_def.is_empty():
+			f_out.store_buffer(bytes_def)
+			f_out.close()
 	var dir := DirAccess.open(DIR_MAPAS)
 	if not dir:
 		return res
@@ -854,10 +1113,10 @@ func _listar_mapas_locales() -> Array[Dictionary]:
 	while fname != "":
 		if not dir.current_is_dir() and fname.ends_with(".ntmap"):
 			var ruta := DIR_MAPAS + "/" + fname
-			var f := FileAccess.open(ruta, FileAccess.READ)
-			if f:
+			var txt := _leer_texto_ntmap(ruta)
+			if not txt.is_empty():
 				var json := JSON.new()
-				if json.parse(f.get_as_text()) == OK and json.data is Dictionary:
+				if json.parse(txt) == OK and json.data is Dictionary:
 					var d: Dictionary = json.data
 					res.append({
 						"ruta": ruta,
@@ -867,7 +1126,6 @@ func _listar_mapas_locales() -> Array[Dictionary]:
 						"num_vias": (d.get("carreteras", []) as Array).size(),
 						"num_objetos": (d.get("objetos", []) as Array).size()
 					})
-				f.close()
 		fname = dir.get_next()
 	dir.list_dir_end()
 	return res
@@ -895,10 +1153,18 @@ func _eliminar_mapa(ruta: String) -> void:
 		_mostrar_toast("Mapa eliminado.")
 		_cambiar_tab("mis_mapas")
 
+func _jugar_mapa_directo(ruta: String, nombre: String) -> void:
+	Engine.set_meta("nt_editor_mapa_ruta", ruta)
+	Engine.set_meta("nt_editor_mapa_nombre", nombre)
+	Engine.set_meta("nt_editor_mapa_plantilla", "valle_verde")
+	Engine.set_meta("nt_jugar_directo", true)
+	get_tree().change_scene_to_file(ESCENA_EDITOR_MAPAS)
+
 func _abrir_en_editor(ruta: String, nombre: String, plantilla: String) -> void:
 	Engine.set_meta("nt_editor_mapa_ruta", ruta)
 	Engine.set_meta("nt_editor_mapa_nombre", nombre)
 	Engine.set_meta("nt_editor_mapa_plantilla", plantilla)
+	Engine.set_meta("nt_jugar_directo", false)
 	get_tree().change_scene_to_file(ESCENA_EDITOR_MAPAS)
 
 func _on_mapas_comunidad_cargados(lista: Array[Dictionary]) -> void:
@@ -921,8 +1187,8 @@ func _abrir_modal_subida(ruta_mapa: String, nombre_mapa: String) -> void:
 
 	_modal_subida = PanelContainer.new()
 	_modal_subida.set_anchors_preset(Control.PRESET_CENTER)
-	_modal_subida.custom_minimum_size = Vector2(560, 360)
-	_modal_subida.position = Vector2(-280, -180)
+	_modal_subida.custom_minimum_size = Vector2(600, 420)
+	_modal_subida.position = Vector2(-300, -210)
 	_estilar_panel(_modal_subida, Color(0.06, 0.07, 0.08, 0.96), C_AMBER, 16, 12)
 	add_child(_modal_subida)
 
@@ -966,14 +1232,22 @@ func _abrir_modal_subida(ruta_mapa: String, nombre_mapa: String) -> void:
 		btns_c.append(bc)
 
 	var le_desc := LineEdit.new()
-	le_desc.placeholder_text = "Descripcion corta de tu ruta..."
+	le_desc.placeholder_text = "Descripción corta de tu ruta..."
 	le_desc.custom_minimum_size = Vector2(0, 48)
 	le_desc.add_theme_font_size_override("font_size", 18)
 	if _fuente: le_desc.add_theme_font_override("font", _fuente)
 	vb.add_child(le_desc)
 
+	var le_portada := LineEdit.new()
+	le_portada.placeholder_text = "Link de imagen de portada (ej: https://cdn.discordapp.com/...)"
+	le_portada.custom_minimum_size = Vector2(0, 48)
+	le_portada.add_theme_font_size_override("font_size", 16)
+	if _fuente: le_portada.add_theme_font_override("font", _fuente)
+	vb.add_child(le_portada)
+
 	var lbl_info := Label.new()
-	lbl_info.text = "Otros jugadores podran descargarlo por %d Esmeraldas." % PRECIO_MAPA_ESMERALDAS
+	lbl_info.text = "Se subirá tu archivo .ntmap a Supabase y aparecerá en Descubrir para todo el mundo."
+	lbl_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lbl_info.add_theme_font_size_override("font_size", 15)
 	lbl_info.add_theme_color_override("font_color", C_TEXT_MUTED)
 	if _fuente: lbl_info.add_theme_font_override("font", _fuente)
@@ -993,13 +1267,13 @@ func _abrir_modal_subida(ruta_mapa: String, nombre_mapa: String) -> void:
 	hb_act.add_child(btn_can)
 
 	var btn_pub := Button.new()
-	btn_pub.text = "PUBLICAR EN COMUNIDAD"
+	btn_pub.text = "PUBLICAR EN DESCUBRIR"
 	btn_pub.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn_pub.custom_minimum_size = Vector2(0, 50)
 	if _fuente: btn_pub.add_theme_font_override("font", _fuente)
 	_aplicar_estilo_primario(btn_pub, 18)
 	btn_pub.pressed.connect(func():
-		var res: Dictionary = _repo_comunidad.subir_mapa(ruta_mapa, cat_sel["val"], le_desc.text)
+		var res: Dictionary = _repo_comunidad.subir_mapa(ruta_mapa, cat_sel["val"], le_desc.text, le_portada.text)
 		_mostrar_toast(str(res.get("mensaje", "")))
 		_modal_subida.queue_free()
 	)

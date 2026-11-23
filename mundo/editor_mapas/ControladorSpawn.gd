@@ -30,56 +30,32 @@ static func _obtener_shader_proyeccion_spawn() -> Shader:
 	_shader_proyeccion_spawn = Shader.new()
 	_shader_proyeccion_spawn.code = """
 shader_type spatial;
-render_mode unshaded, cull_front, depth_test_disabled, depth_draw_never, blend_mix;
+render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
 
-uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
-uniform sampler2D mapa_altura : filter_linear, repeat_disable;
+uniform sampler2D mapa_altura : filter_nearest, repeat_disable;
 uniform bool usa_mapa_altura = false;
-uniform float tolerancia_altura = 0.22;
 uniform vec4 color_spawn : source_color = vec4(0.76, 0.62, 0.34, 0.86);
 uniform float radio_ext = 2.7;
-uniform float half_h = 12.0;
 uniform float animar_pulso = 1.0;
 
-varying mat4 v_inv_model;
+varying vec2 v_local_xz;
 
 void vertex() {
-	v_inv_model = inverse(MODEL_MATRIX);
+	v_local_xz = VERTEX.xz;
+	if (usa_mapa_altura) {
+		vec2 uv_h = clamp((VERTEX.xz / vec2(radio_ext * 2.0)) + 0.5, vec2(0.0), vec2(1.0));
+		float h_suelo = clamp(textureLod(mapa_altura, uv_h, 0.0).r, -25.0, 25.0);
+		VERTEX.y = h_suelo + 0.08;
+	} else {
+		VERTEX.y += 0.08;
+	}
 }
 
 void fragment() {
-	float depth = texture(depth_tex, SCREEN_UV).r;
-	if (depth <= 0.00001) {
-		discard;
-	}
-
-	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
-	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
-	view.xyz /= view.w;
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(view.xyz, 1.0)).xyz;
-	vec3 local_pos = (v_inv_model * vec4(world_pos, 1.0)).xyz;
-
-	if (abs(local_pos.y) > half_h) {
-		discard;
-	}
-
-	vec3 surf_normal = normalize(cross(dFdx(world_pos), dFdy(world_pos)));
-	if (abs(surf_normal.y) < 0.55) {
-		discard;
-	}
-
-	vec2 p = local_pos.xz;
+	vec2 p = v_local_xz;
 	float r = length(p);
 	if (r > radio_ext + 0.15) {
 		discard;
-	}
-
-	if (usa_mapa_altura) {
-		vec2 uv_h = clamp((p / vec2(radio_ext * 2.0)) + 0.5, vec2(0.0), vec2(1.0));
-		float h_suelo = texture(mapa_altura, uv_h).r;
-		if (abs(local_pos.y - h_suelo) > tolerancia_altura) {
-			discard;
-		}
 	}
 
 	// Aro exterior nítido con pulso muy sutil
@@ -109,13 +85,14 @@ func _crear_proyector_spawn(color_base: Color, con_pulso: bool) -> MeshInstance3
 	mat.shader = _obtener_shader_proyeccion_spawn()
 	mat.set_shader_parameter("color_spawn", color_base)
 	mat.set_shader_parameter("radio_ext", 2.7)
-	mat.set_shader_parameter("half_h", 12.0)
 	mat.set_shader_parameter("animar_pulso", 1.0 if con_pulso else 0.0)
 
 	var mi := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = Vector3(6.4, 24.0, 6.4)
-	mi.mesh = box
+	var plano := PlaneMesh.new()
+	plano.size = Vector2(6.0, 6.0)
+	plano.subdivide_width = 12
+	plano.subdivide_depth = 12
+	mi.mesh = plano
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi

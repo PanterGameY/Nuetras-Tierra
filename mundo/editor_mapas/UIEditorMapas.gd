@@ -221,6 +221,8 @@ var _subherramienta_activa: String = "elevar"
 var _rotonda_salidas_activa: int = 4
 var _seccion_vias_library: String = "vias"
 var _btn_flotante_rotonda: Button = null
+var _panel_zonas_inferior: PanelContainer = null
+var _hbox_zonas_inferior: HBoxContainer = null
 var _id_item_activo: String = "elevar"
 var _perfil_pincel_activo: int = 0 # 0: Suave, 1: Medio, 2: Fuerte
 var _filtro_categoria_material: String = "todos"
@@ -400,10 +402,194 @@ func _construir_interfaz_completa() -> void:
 	_construir_hud_inferior_izquierdo(_contenedor_raiz)
 	_construir_dock_camara_movil(_contenedor_raiz)
 	_construir_hud_barra_estado(_contenedor_raiz)
+	_construir_panel_zonas_inferior(_contenedor_raiz)
 	_construir_boton_flotante_rotonda(_contenedor_raiz)
 	_construir_boton_centrar_seleccion(_contenedor_raiz)
 	_construir_popup_sistema(_contenedor_raiz)
 	_construir_toast_flotante(_contenedor_raiz)
+
+func _construir_panel_zonas_inferior(padre: Control) -> void:
+	_panel_zonas_inferior = PanelContainer.new()
+	_panel_zonas_inferior.name = "PanelZonasLogisticaInferior"
+	_panel_zonas_inferior.anchor_left = 0.5
+	_panel_zonas_inferior.anchor_right = 0.5
+	_panel_zonas_inferior.anchor_top = 1.0
+	_panel_zonas_inferior.anchor_bottom = 1.0
+	_panel_zonas_inferior.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_panel_zonas_inferior.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_panel_zonas_inferior.offset_top = -275.0
+	_panel_zonas_inferior.offset_bottom = -18.0
+	_panel_zonas_inferior.mouse_filter = Control.MOUSE_FILTER_STOP
+	_panel_zonas_inferior.visible = false
+	_estilar_panel_glass(_panel_zonas_inferior, Color(0.06, 0.07, 0.08, 0.92), COLOR_BORDE, 18.0, 14.0)
+	padre.add_child(_panel_zonas_inferior)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 10)
+	_panel_zonas_inferior.add_child(vbox)
+
+	# Cabecera compacta del dock horizontal
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 12)
+	vbox.add_child(header)
+
+	var ico_h := TextureRect.new()
+	ico_h.custom_minimum_size = Vector2(26, 26)
+	ico_h.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ico_h.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ico_h.texture = _cargar_icono_svg("cat_logistica")
+	header.add_child(ico_h)
+
+	var lbl_tit := Label.new()
+	lbl_tit.text = "PUNTOS DE CARGA, DESCARGA Y LOGÍSTICA"
+	lbl_tit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl_tit.add_theme_font_size_override("font_size", 18)
+	lbl_tit.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	if _fuente_ui:
+		lbl_tit.add_theme_font_override("font", _fuente_ui)
+	elif _fuente_moderniz:
+		lbl_tit.add_theme_font_override("font", _fuente_moderniz)
+	header.add_child(lbl_tit)
+
+	var btn_rot := Button.new()
+	btn_rot.text = " Rotar"
+	btn_rot.custom_minimum_size = Vector2(124, 38)
+	btn_rot.add_theme_font_size_override("font_size", 16)
+	var tex_rot := _cargar_icono_svg("act_rotar")
+	if tex_rot:
+		btn_rot.icon = tex_rot
+		btn_rot.expand_icon = true
+		btn_rot.add_theme_constant_override("icon_max_width", 20)
+	if _fuente_ui:
+		btn_rot.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_rot, COLOR_PANEL_SEC, COLOR_BORDE, 10.0)
+	btn_rot.pressed.connect(func(): rotar_objeto_solicitado.emit())
+	header.add_child(btn_rot)
+
+	var btn_col := Button.new()
+	btn_col.text = " Colocar"
+	btn_col.custom_minimum_size = Vector2(138, 38)
+	btn_col.add_theme_font_size_override("font_size", 16)
+	var tex_col := _cargar_icono_svg("act_colocar")
+	if tex_col:
+		btn_col.icon = tex_col
+		btn_col.expand_icon = true
+		btn_col.add_theme_constant_override("icon_max_width", 20)
+	if _fuente_ui:
+		btn_col.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_col, Color(0.18, 0.14, 0.07, 0.94), COLOR_AMARILLO_SEL, 10.0)
+	btn_col.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	btn_col.pressed.connect(func(): accion_colocar_solicitada.emit())
+	header.add_child(btn_col)
+
+	# Contenedor horizontal con scroll para tarjetas grandes
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(1080, 186)
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	vbox.add_child(scroll)
+
+	_hbox_zonas_inferior = HBoxContainer.new()
+	_hbox_zonas_inferior.alignment = BoxContainer.ALIGNMENT_CENTER
+	_hbox_zonas_inferior.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hbox_zonas_inferior.add_theme_constant_override("separation", 16)
+	scroll.add_child(_hbox_zonas_inferior)
+
+func _actualizar_panel_zonas_inferior(categoria: String, subherramienta: String) -> void:
+	if not is_instance_valid(_panel_zonas_inferior) or not is_instance_valid(_hbox_zonas_inferior):
+		return
+	var mostrar: bool = (categoria == "ciudad") and (subherramienta in ["zonas", "zona_carga", "zona_descarga", "zona_alquiler_trailer"] or _seccion_biblioteca_activa == "05_Zonas_Logistica")
+	if not mostrar:
+		_panel_zonas_inferior.visible = false
+		return
+
+	for child in _hbox_zonas_inferior.get_children():
+		child.queue_free()
+
+	CargadorBiblioteca.inicializar()
+	var items := CargadorBiblioteca.obtener_items_filtrados("01_Edificaciones", "05_Zonas_Logistica", "todos")
+	if items.is_empty():
+		_panel_zonas_inferior.visible = false
+		return
+
+	var ids_items: Array[String] = []
+	for it_chk in items:
+		ids_items.append(str(it_chk.get("id", "")))
+	if not (_id_item_activo in ids_items) and not ids_items.is_empty():
+		_id_item_activo = ids_items[0]
+
+	for it in items:
+		var it_id: String = str(it.get("id", ""))
+		var it_nom: String = str(it.get("nombre", it_id))
+		var es_sel: bool = (_id_item_activo == it_id)
+
+		var card_btn := Button.new()
+		card_btn.custom_minimum_size = Vector2(340, 174)
+		card_btn.text = ""
+		_estilar_boton(
+			card_btn,
+			Color(0.18, 0.14, 0.07, 0.94) if es_sel else Color(0.09, 0.10, 0.12, 0.90),
+			COLOR_AMARILLO_SEL if es_sel else COLOR_BORDE,
+			14.0
+		)
+		var v_card := VBoxContainer.new()
+		v_card.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v_card.offset_left = 14.0
+		v_card.offset_right = -14.0
+		v_card.offset_top = 12.0
+		v_card.offset_bottom = -12.0
+		v_card.alignment = BoxContainer.ALIGNMENT_CENTER
+		v_card.add_theme_constant_override("separation", 10)
+		v_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_btn.add_child(v_card)
+
+		var lbl_n := Label.new()
+		lbl_n.text = it_nom
+		lbl_n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl_n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl_n.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl_n.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl_n.add_theme_font_size_override("font_size", 24)
+		lbl_n.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if es_sel else COLOR_TEXTO_PRI)
+		if _fuente_ui:
+			lbl_n.add_theme_font_override("font", _fuente_ui)
+		elif _fuente_moderniz:
+			lbl_n.add_theme_font_override("font", _fuente_moderniz)
+		v_card.add_child(lbl_n)
+
+		var badge := PanelContainer.new()
+		badge.custom_minimum_size = Vector2(96, 96)
+		badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_estilar_panel_glass(badge, Color(0.06, 0.07, 0.08, 0.90), COLOR_AMARILLO_SEL if es_sel else COLOR_BORDE, 14.0, 10.0)
+		v_card.add_child(badge)
+
+		var tex_ico := TextureRect.new()
+		tex_ico.custom_minimum_size = Vector2(68, 68)
+		tex_ico.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex_ico.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex_ico.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var svg_tex := _cargar_icono_svg(it_id)
+		if svg_tex:
+			tex_ico.texture = svg_tex
+		badge.add_child(tex_ico)
+
+		card_btn.pressed.connect(func():
+			_id_item_activo = it_id
+			_subherramienta_activa = it_id
+			subherramienta_seleccionada.emit(it_id)
+			_actualizar_panel_contextual("ciudad", it_id)
+		)
+		_hbox_zonas_inferior.add_child(card_btn)
+
+	if not _panel_zonas_inferior.visible:
+		_panel_zonas_inferior.visible = true
+		_panel_zonas_inferior.modulate.a = 0.0
+		_panel_zonas_inferior.scale = Vector2(0.94, 0.94)
+		var tw := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(_panel_zonas_inferior, "modulate:a", 1.0, 0.25)
+		tw.parallel().tween_property(_panel_zonas_inferior, "scale", Vector2.ONE, 0.25)
 
 func _asegurar_hbox_flotante_inferior(padre: Control) -> void:
 	if is_instance_valid(_hbox_flotante_inferior):
@@ -1111,6 +1297,7 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 	var tex_ico = _cargar_icono_svg(info_tool["icono"])
 	if tex_ico:
 		_ico_prop_header.texture = tex_ico
+	_actualizar_panel_zonas_inferior(categoria, subherramienta)
 
 	match categoria:
 		"terreno":
@@ -1134,11 +1321,14 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 			_construir_vista_vias_general(subherramienta)
 		"ciudad":
 			match subherramienta:
+				"construir":
+					if _seccion_biblioteca_activa in ["05_Zonas_Logistica", ""]:
+						_seccion_biblioteca_activa = "01_Residencial"
 				"res": _seccion_biblioteca_activa = "01_Residencial"
 				"com": _seccion_biblioteca_activa = "02_Comercial"
 				"ind": _seccion_biblioteca_activa = "03_Industrial_Logistica"
 				"inst": _seccion_biblioteca_activa = "04_Servicios_Publicos"
-				"zonas": _seccion_biblioteca_activa = "05_Zonas_Logistica"
+				"zonas", "zona_carga", "zona_descarga", "zona_alquiler_trailer": _seccion_biblioteca_activa = "05_Zonas_Logistica"
 				"hist": _seccion_biblioteca_activa = "todos"
 			_construir_vista_ciudad()
 		"vegetacion":
@@ -2443,6 +2633,27 @@ func _construir_vista_ciudad() -> void:
 			lbl_prev_desc.add_theme_font_override("font", _fuente_ui)
 		vbox_prev.add_child(lbl_prev_desc)
 
+	if _seccion_biblioteca_activa == "05_Zonas_Logistica":
+		var lbl_inf_z := Label.new()
+		lbl_inf_z.text = "Selecciona una tarjeta en el panel inferior horizontal para elegir Punto de Carga, Descarga o Alquiler de Tráiler."
+		lbl_inf_z.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl_inf_z.add_theme_font_size_override("font_size", 16)
+		lbl_inf_z.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+		if _fuente_ui:
+			lbl_inf_z.add_theme_font_override("font", _fuente_ui)
+		_box_prop_contenido.add_child(lbl_inf_z)
+		_crear_botones_accion_inferiores(
+			func():
+				_modo_demolicion_activo = not _modo_demolicion_activo
+				demolicion_alternada.emit(_modo_demolicion_activo)
+				_actualizar_panel_contextual("ciudad", _subherramienta_activa),
+			func():
+				accion_colocar_solicitada.emit(),
+			"Demoler" if not _modo_demolicion_activo else "Colocar",
+			"Colocar"
+		)
+		return
+
 	# Lista en 1 columna amplia (legible en móvil, sin corte de texto)
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, 220)
@@ -3729,18 +3940,12 @@ func _refrescar_grid_herramientas(cat_id: String) -> void:
 					]
 		"ciudad":
 			lista_tools = [
-				{"id": "res", "nombre": "Viviendas", "ico": "cat_ciudad"},
-				{"id": "com", "nombre": "Comercio", "ico": "cat_ciudad"},
-				{"id": "inst", "nombre": "Público", "ico": "cat_ciudad"},
-				{"id": "hist", "nombre": "Patrimonio", "ico": "cat_ciudad"},
-				{"id": "ind", "nombre": "Industria", "ico": "cat_ciudad"},
-				{"id": "zonas", "nombre": "Zonas", "ico": "cat_ciudad"},
-				{"id": "auto_casas", "nombre": "Auto-Casas", "ico": "cat_ciudad"},
+				{"id": "construir", "nombre": "Edificios", "ico": "cat_ciudad"},
+				{"id": "zonas", "nombre": "Zonas", "ico": "cat_logistica"},
 				{"id": "zonificar", "nombre": "Zonificar", "ico": "act_grid"},
+				{"id": "auto_casas", "nombre": "Auto-Casas", "ico": "cat_terreno"},
 				{"id": "rotar", "nombre": "Rotar", "ico": "act_rotar"},
-				{"id": "demoler", "nombre": "Demoler", "ico": "act_demoler"},
-				{"id": "mover", "nombre": "Mover", "ico": "act_colocar"},
-				{"id": "grid", "nombre": "Cuadrícula", "ico": "act_grid"}
+				{"id": "demoler", "nombre": "Demoler", "ico": "act_demoler"}
 			]
 		"vegetacion":
 			lista_tools = [
@@ -3845,7 +4050,15 @@ func _seleccionar_subherramienta(tool_id: String) -> void:
 		"demoler":
 			_modo_demolicion_activo = not _modo_demolicion_activo
 			demolicion_alternada.emit(_modo_demolicion_activo)
-			_actualizar_panel_contextual(_categoria_activa, tool_id)
+			_actualizar_estilo_botones_herramientas()
+			_actualizar_panel_contextual(_categoria_activa, _subherramienta_activa)
+			return
+		"construir":
+			_subherramienta_activa = "res"
+			_seccion_biblioteca_activa = "01_Residencial"
+			_actualizar_estilo_botones_herramientas()
+			subherramienta_seleccionada.emit("res")
+			_actualizar_panel_contextual(_categoria_activa, "res")
 			return
 		"grid", "snap":
 			_snap_grid_activo = not _snap_grid_activo
@@ -3897,7 +4110,10 @@ func _seleccionar_subherramienta(tool_id: String) -> void:
 func _actualizar_estilo_botones_herramientas() -> void:
 	for t_id in _dict_botones_herramientas:
 		var btn: Button = _dict_botones_herramientas[t_id]
-		var es_activo: bool = (t_id == _subherramienta_activa) or (t_id == "auto_nivelar" and _auto_nivelar_vias_activo) or (_subherramienta_activa == "rotonda" and t_id == ("rotonda_%d" % _rotonda_salidas_activa))
+		var es_edificio_ciudad: bool = (_categoria_activa == "ciudad") and (_subherramienta_activa in ["construir", "res", "com", "ind", "inst", "hist"])
+		var es_zona_logistica: bool = (_categoria_activa == "ciudad") and (_subherramienta_activa in ["zonas", "zona_carga", "zona_descarga", "zona_alquiler_trailer"])
+		var es_demoler_act: bool = (t_id == "demoler" and _modo_demolicion_activo)
+		var es_activo: bool = (t_id == _subherramienta_activa) or (t_id == "construir" and es_edificio_ciudad) or (t_id == "zonas" and es_zona_logistica) or (t_id == "auto_nivelar" and _auto_nivelar_vias_activo) or (_subherramienta_activa == "rotonda" and t_id == ("rotonda_%d" % _rotonda_salidas_activa)) or es_demoler_act
 		var sb_normal := StyleBoxFlat.new()
 		sb_normal.set_corner_radius_all(12)
 		sb_normal.content_margin_left = 12
@@ -4417,6 +4633,8 @@ func esta_sobre_interfaz(pos_pantalla: Vector2) -> bool:
 	if _panel_herramientas and _panel_herramientas.visible and _panel_herramientas.get_global_rect().has_point(pos_pantalla):
 		return true
 	if _panel_camara_movil and _panel_camara_movil.visible and _panel_camara_movil.get_global_rect().has_point(pos_pantalla):
+		return true
+	if _panel_zonas_inferior and _panel_zonas_inferior.visible and _panel_zonas_inferior.get_global_rect().has_point(pos_pantalla):
 		return true
 	if _panel_propiedades and _panel_propiedades.visible and _panel_propiedades.get_global_rect().has_point(pos_pantalla):
 		return true

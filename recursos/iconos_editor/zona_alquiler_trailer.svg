@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Caja / contenedor del trailer -->
+  <rect x="6" y="13" width="46" height="24" rx="3.5" fill="#1C2129" stroke="#C7CFD9" stroke-width="3"/>
+  <path d="M14 19V31M24 19V31M34 19V31" stroke="#C7CFD9" stroke-width="2.2" stroke-opacity="0.38" stroke-linecap="round"/>
+  <!-- Chasis y quinta rueda (pin de enganche) -->
+  <path d="M6 37H54" stroke="#E0AD47" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M13 37V44H17" stroke="#E0AD47" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Patas de apoyo delanteras -->
+  <path d="M22 37V47M19 47H25" stroke="#C7CFD9" stroke-width="2.6" stroke-linecap="round"/>
+  <!-- Eje doble trasero -->
+  <circle cx="38" cy="46" r="6" fill="#12161C" stroke="#C7CFD9" stroke-width="3"/>
+  <circle cx="38" cy="46" r="2" fill="#E0AD47"/>
+  <circle cx="51" cy="46" r="6" fill="#12161C" stroke="#C7CFD9" stroke-width="3"/>
+  <circle cx="51" cy="46" r="2" fill="#E0AD47"/>
+  <!-- Indicador de alquiler (etiqueta/llave ambar arriba derecha) -->
+  <circle cx="51" cy="15" r="8.5" fill="#E0AD47" stroke="#12161C" stroke-width="2"/>
+  <path d="M51 10.5V19.5M46.5 15H55.5" stroke="#12161C" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

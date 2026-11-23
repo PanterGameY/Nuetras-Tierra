@@ -316,60 +316,35 @@ static func _obtener_shader_proyeccion_zona() -> Shader:
 	_shader_proyeccion_zona = Shader.new()
 	_shader_proyeccion_zona.code = """
 shader_type spatial;
-render_mode unshaded, cull_front, depth_test_disabled, depth_draw_never, blend_mix;
+render_mode unshaded, cull_disabled, depth_draw_never, blend_mix;
 
-uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
-uniform sampler2D mapa_altura : filter_linear, repeat_disable;
+uniform sampler2D mapa_altura : filter_nearest, repeat_disable;
 uniform bool usa_mapa_altura = false;
-uniform float tolerancia_altura = 0.22;
 uniform vec4 color_zona : source_color = vec4(0.68, 0.58, 0.38, 0.85);
 uniform float half_w = 3.0;
 uniform float half_l = 5.0;
-uniform float half_h = 12.0;
 
-varying mat4 v_inv_model;
+varying vec2 v_local_xz;
 
 void vertex() {
-	v_inv_model = inverse(MODEL_MATRIX);
+	v_local_xz = VERTEX.xz;
+	if (usa_mapa_altura) {
+		vec2 uv_h = clamp((VERTEX.xz / vec2(half_w * 2.0, half_l * 2.0)) + 0.5, vec2(0.0), vec2(1.0));
+		float h_suelo = clamp(textureLod(mapa_altura, uv_h, 0.0).r, -25.0, 25.0);
+		VERTEX.y = h_suelo + 0.08;
+	} else {
+		VERTEX.y += 0.08;
+	}
 }
 
 void fragment() {
-	float depth = texture(depth_tex, SCREEN_UV).r;
-	if (depth <= 0.00001) {
-		discard;
-	}
-
-	vec3 ndc = vec3(SCREEN_UV * 2.0 - 1.0, depth);
-	vec4 view = INV_PROJECTION_MATRIX * vec4(ndc, 1.0);
-	view.xyz /= view.w;
-	vec3 world_pos = (INV_VIEW_MATRIX * vec4(view.xyz, 1.0)).xyz;
-	vec3 local_pos = (v_inv_model * vec4(world_pos, 1.0)).xyz;
-
-	if (abs(local_pos.y) > half_h) {
-		discard;
-	}
-
-	// Proyectar únicamente sobre superficies horizontales/terreno, no sobre laterales de vehículos
-	vec3 surf_normal = normalize(cross(dFdx(world_pos), dFdy(world_pos)));
-	if (abs(surf_normal.y) < 0.55) {
-		discard;
-	}
-
-	vec2 p = local_pos.xz;
+	vec2 p = v_local_xz;
 	vec2 b = vec2(half_w, half_l);
 	float r_esq = 0.35;
 	vec2 q = abs(p) - b + vec2(r_esq);
 	float d_box = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r_esq;
 	if (d_box > 0.0) {
 		discard;
-	}
-
-	if (usa_mapa_altura) {
-		vec2 uv_h = clamp((p / vec2(half_w * 2.0, half_l * 2.0)) + 0.5, vec2(0.0), vec2(1.0));
-		float h_suelo = texture(mapa_altura, uv_h).r;
-		if (abs(local_pos.y - h_suelo) > tolerancia_altura) {
-			discard;
-		}
 	}
 
 	// Marco perimetral nítido (0.20 m)
@@ -421,19 +396,20 @@ static func actualizar_alturas_proyeccion_zona(padre: Node3D) -> void:
 			sm.set_shader_parameter("usa_mapa_altura", true)
 
 
-static func _crear_proyector_zona(nombre: String, ancho: float, largo: float, alto_proy: float, col_zona: Color, pos_local: Vector3) -> MeshInstance3D:
+static func _crear_proyector_zona(nombre: String, ancho: float, largo: float, _alto_proy: float, col_zona: Color, pos_local: Vector3) -> MeshInstance3D:
 	var mat_proy := ShaderMaterial.new()
 	mat_proy.shader = _obtener_shader_proyeccion_zona()
 	mat_proy.set_shader_parameter("color_zona", col_zona)
 	mat_proy.set_shader_parameter("half_w", ancho * 0.5)
 	mat_proy.set_shader_parameter("half_l", largo * 0.5)
-	mat_proy.set_shader_parameter("half_h", alto_proy * 0.5)
 
 	var proyector := MeshInstance3D.new()
 	proyector.name = nombre
-	var box_proy := BoxMesh.new()
-	box_proy.size = Vector3(ancho + 0.6, alto_proy, largo + 0.6)
-	proyector.mesh = box_proy
+	var plano_proy := PlaneMesh.new()
+	plano_proy.size = Vector2(ancho + 0.6, largo + 0.6)
+	plano_proy.subdivide_width = 15
+	plano_proy.subdivide_depth = 15
+	proyector.mesh = plano_proy
 	proyector.material_override = mat_proy
 	proyector.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	proyector.position = pos_local
