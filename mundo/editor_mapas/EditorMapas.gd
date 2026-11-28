@@ -18,12 +18,17 @@ const ControladorAgua = preload("res://mundo/editor_mapas/ControladorAgua.gd")
 const ControladorMuros = preload("res://mundo/editor_mapas/ControladorMuros.gd")
 const ControladorEstacionamientos = preload("res://mundo/editor_mapas/ControladorEstacionamientos.gd")
 const ControladorConcreto = preload("res://mundo/editor_mapas/ControladorConcreto.gd")
+const ControladorGasolineras = preload("res://mundo/editor_mapas/ControladorGasolineras.gd")
 const ControladorZonificacion = preload("res://mundo/editor_mapas/ControladorZonificacion.gd")
+const EditorColabManager = preload("res://mundo/editor_mapas/EditorColabManager.gd")
+const UIEditorHelpers = preload("res://mundo/editor_mapas/ui/UIEditorHelpers.gd")
 var controlador_agua: ControladorAgua = null
 var controlador_muros: ControladorMuros = null
 var controlador_estacionamientos: ControladorEstacionamientos = null
 var controlador_concreto: ControladorConcreto = null
+var controlador_gasolineras: ControladorGasolineras = null
 var controlador_zonificacion: ControladorZonificacion = null
+var colab_manager: EditorColabManager = null
 var _undo_redo: UndoRedo = UndoRedo.new()
 var hora_actual_editor: int = 1
 var controlador_sol_luna: ControladorSolLuna = null
@@ -49,6 +54,9 @@ var _esquina_parqueo_idx_esq: int = -1
 var _arrastrando_punto_concreto: bool = false
 var _punto_concreto_idx_zona: int = -1
 var _punto_concreto_idx_pto: int = -1
+var _arrastrando_punto_gasolinera: bool = false
+var _punto_gasolinera_idx_zona: int = -1
+var _punto_gasolinera_idx_pto: int = -1
 var _arrastrando_objeto: Node3D = null
 var _objeto_fue_arrastrado: bool = false
 var _eje_arrastre_objeto: Vector3 = Vector3.ZERO
@@ -60,6 +68,7 @@ var _offset_arrastre_libre: Vector3 = Vector3.ZERO
 var _modo_mover_objeto: bool = false
 var _arrastrando_camara: bool = false
 var _pos_toque_pantalla_anterior: Vector2 = Vector2.ZERO
+var _en_modo_multijugador: bool = false
 
 func _ready() -> void:
 	controlador_equipamiento = ControladorEquipamientoVias.new()
@@ -103,6 +112,16 @@ func _ready() -> void:
 		if ui_editor:
 			ui_editor.actualizar_estado_concreto_ui(hay_sel, datos)
 	)
+
+	controlador_gasolineras = ControladorGasolineras.new()
+	controlador_gasolineras.name = "ControladorGasolineras"
+	controlador_gasolineras.controlador_terreno = controlador_terreno
+	controlador_gasolineras.controlador_carreteras = controlador_carreteras
+	add_child(controlador_gasolineras)
+	controlador_gasolineras.gasolinera_seleccionada_cambiada.connect(func(hay_sel: bool, datos: Dictionary):
+		if ui_editor:
+			ui_editor.actualizar_estado_gasolinera_ui(hay_sel, datos)
+	)
 	
 	if controlador_objetos:
 		controlador_objetos.controlador_terreno = controlador_terreno
@@ -114,6 +133,18 @@ func _ready() -> void:
 	controlador_zonificacion.controlador_carreteras = controlador_carreteras
 	controlador_zonificacion.controlador_objetos = controlador_objetos
 	add_child(controlador_zonificacion)
+
+	colab_manager = EditorColabManager.new()
+	colab_manager.name = "EditorColabManager"
+	colab_manager.configurar(self)
+	add_child(colab_manager)
+	if ui_editor and colab_manager:
+		colab_manager.estado_colab_cambiado.connect(ui_editor.actualizar_estado_colab_ui)
+	if controlador_terreno and controlador_terreno.has_signal("trazo_completado_con_undo"):
+		controlador_terreno.trazo_completado_con_undo.connect(_on_terreno_trazo_completado)
+	if controlador_terreno and controlador_terreno.has_signal("pintura_completada_con_undo"):
+		controlador_terreno.pintura_completada_con_undo.connect(_on_terreno_pintura_completada)
+	_iniciar_autoguardado()
 
 	if camara_editor and controlador_terreno:
 		controlador_terreno.configurar_camara(camara_editor.obtener_camara())
@@ -268,7 +299,8 @@ func _configurar_entorno_iluminacion() -> void:
 		controlador_sol_luna.energia_maxima_luna = 0.34
 		controlador_sol_luna.hora_actual = 11.5
 		add_child(controlador_sol_luna)
-	call_deferred("_aplicar_distancia_renderizado", 600.0)
+	_cargar_config_editor()
+	call_deferred("_aplicar_config_rendimiento_editor")
 	call_deferred("_cargar_mapa_inicial_hub")
 
 # ── CONEXIÓN DE SEÑALES DE LA INTERFAZ ───────────────────────────────
@@ -338,6 +370,7 @@ func _conectar_senales_ui() -> void:
 		ui_editor.rehacer_solicitado.connect(_rehacer_accion)
 	ui_editor.hora_dia_cambiada.connect(_cambiar_hora_dia)
 	ui_editor.distancia_renderizado_cambiada.connect(_aplicar_distancia_renderizado)
+	ui_editor.editor_config_cambiada.connect(_on_editor_config_cambiada)
 	ui_editor.modo_dispersion_vegetacion_alternado.connect(func(act):
 		controlador_objetos.alternar_modo_dispersion(act)
 		ui_editor.mostrar_notificacion("Pincel de dispersión: " + ("ACTIVADO" if act else "DESACTIVADO"))
@@ -406,6 +439,11 @@ func _conectar_senales_ui() -> void:
 		ui_editor.mostrar_notificacion("Modo de spawn cambiado a: " + nuevo_m.to_upper())
 	)
 	ui_editor.guardar_mapa_solicitado.connect(guardar_mapa)
+	if ui_editor.has_signal("colab_online_solicitado"):
+		ui_editor.colab_online_solicitado.connect(func():
+			if colab_manager:
+				colab_manager.abrir_modal_colab()
+		)
 	ui_editor.cargar_mapa_solicitado.connect(cargar_mapa)
 	ui_editor.iniciar_prueba_solicitado.connect(_on_iniciar_prueba)
 	
@@ -576,13 +614,21 @@ func _conectar_senales_ui() -> void:
 	ui_editor.objeto_altura_delta.connect(func(delta_h):
 		controlador_objetos.modificar_altura_objeto_seleccionado(delta_h)
 		ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
+		_marcar_cambios_sin_guardar()
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_categoria("objetos", "Ajustó altura de objeto")
 	)
 	ui_editor.objeto_altura_reset.connect(func():
 		controlador_objetos.establecer_altura_offset_seleccionado(0.0)
 		ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
+		_marcar_cambios_sin_guardar()
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_categoria("objetos", "Restableció altura de objeto")
 	)
 	ui_editor.objeto_eliminar_solicitado.connect(func():
+		var antes_el = _capturar_estado_categoria("objetos")
 		controlador_objetos.eliminar_objeto_seleccionado()
+		_registrar_diff_categoria("Eliminar objeto", "objetos", antes_el, _capturar_estado_categoria("objetos"))
 		ui_editor.mostrar_notificacion("Objeto eliminado.")
 	)
 	ui_editor.objeto_reemplazar_solicitado.connect(func():
@@ -590,6 +636,9 @@ func _conectar_senales_ui() -> void:
 		if nuevo:
 			ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
 			var nombre = nuevo.get_meta("id_modelo", "objeto").capitalize()
+			_marcar_cambios_sin_guardar()
+			if colab_manager and colab_manager.sesion_activa:
+				colab_manager.notificar_cambio_categoria("objetos", "Reemplazó objeto")
 			ui_editor.mostrar_notificacion("Objeto reemplazado por: %s" % nombre)
 	)
 	ui_editor.objeto_mover_alternado.connect(func(activo):
@@ -646,6 +695,9 @@ func _conectar_senales_ui() -> void:
 		elif _categoria_activa == "concreto" and controlador_concreto:
 			if controlador_concreto.finalizar_edicion_actual():
 				ui_editor.mostrar_notificacion("✓ Concreto finalizado. Tócalo para editar puntos o acabado.")
+		elif _categoria_activa == "gasolinera" and controlador_gasolineras:
+			if controlador_gasolineras.finalizar_edicion_actual():
+				ui_editor.mostrar_notificacion("✓ Gasolinera finalizada. Lista para usar o editar.")
 		elif _categoria_activa == "agua" and controlador_agua:
 			if controlador_agua.finalizar_tramo_rio():
 				ui_editor.mostrar_notificacion("✓ Río finalizado")
@@ -779,6 +831,92 @@ func _conectar_senales_ui() -> void:
 			var ang_c := controlador_concreto.rotar_seleccionado(delta)
 			ui_editor.mostrar_notificacion("Concreto rotado a %d°" % int(round(ang_c)))
 	)
+	ui_editor.gasolinera_bahias_cambiado.connect(func(cant: int):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_bahias_seleccionado(cant)
+	)
+	ui_editor.gasolinera_surtidores_cambiado.connect(func(cant: int):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_surtidores_seleccionado(cant)
+	)
+	ui_editor.gasolinera_tipo_techo_cambiado.connect(func(tipo: int):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_tipo_techo_seleccionado(tipo)
+	)
+	ui_editor.gasolinera_altura_techo_cambiada.connect(func(altura: float):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_altura_techo_seleccionado(altura)
+	)
+	ui_editor.gasolinera_colores_cambiados.connect(func(cp: Color, cs: Color, ce: Color):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_colores_seleccionado(cp, cs, ce)
+	)
+	ui_editor.gasolinera_adaptar_terreno_cambiado.connect(func(activo: bool):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_adaptar_terreno(activo)
+	)
+	ui_editor.gasolinera_agregar_punto_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.agregar_punto_en_borde_seleccionado():
+			ui_editor.mostrar_notificacion("✓ Punto agregado a la base")
+	)
+	ui_editor.gasolinera_subdividir_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.subdividir_bordes_seleccionado():
+			ui_editor.mostrar_notificacion("✓ Puntos de base duplicados")
+	)
+	ui_editor.gasolinera_eliminar_punto_solicitado.connect(func():
+		if controlador_gasolineras:
+			if controlador_gasolineras.eliminar_punto_seleccionado():
+				ui_editor.mostrar_notificacion("Punto eliminado")
+			else:
+				ui_editor.mostrar_notificacion("Mínimo 4 puntos requeridos")
+	)
+	ui_editor.gasolinera_finalizar_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.finalizar_edicion_actual():
+			ui_editor.mostrar_notificacion("✓ Gasolinera finalizada")
+	)
+	ui_editor.gasolinera_editar_puntos_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.activar_edicion_puntos_seleccionado():
+			ui_editor.mostrar_notificacion("Modo edición de puntos activado")
+	)
+	ui_editor.gasolinera_nivelar_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.nivelar_terreno_seleccionado():
+			ui_editor.mostrar_notificacion("✓ Terreno nivelado a la base de concreto")
+	)
+	ui_editor.gasolinera_adaptar_base_a_terreno_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.adaptar_base_a_terreno_seleccionado():
+			ui_editor.mostrar_notificacion("✓ Base de concreto adaptada al terreno")
+	)
+	ui_editor.gasolinera_eliminar_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.eliminar_seleccionado():
+			ui_editor.mostrar_notificacion("Gasolinera eliminada")
+	)
+	ui_editor.gasolinera_rotacion_delta_solicitada.connect(func(delta: float):
+		if controlador_gasolineras:
+			var ang_g := controlador_gasolineras.rotar_seleccionado(delta)
+			ui_editor.mostrar_notificacion("Gasolinera rotada a %d°" % int(round(ang_g)))
+	)
+	ui_editor.gasolinera_tipo_letrero_cambiado.connect(func(tipo: int):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_tipo_letrero_seleccionado(tipo)
+	)
+	ui_editor.gasolinera_letrero_rotacion_delta_solicitada.connect(func(delta: float):
+		if controlador_gasolineras:
+			var ang_l := controlador_gasolineras.rotar_letrero_seleccionado(delta)
+			ui_editor.mostrar_notificacion("Letrero rotado a %d°" % int(round(ang_l)))
+	)
+	ui_editor.gasolinera_lado_conexion_cambiado.connect(func(lado: int):
+		if controlador_gasolineras:
+			controlador_gasolineras.establecer_lado_conexion_seleccionado(lado)
+	)
+	ui_editor.gasolinera_conectar_carretera_solicitado.connect(func():
+		if controlador_gasolineras:
+			var res_g := controlador_gasolineras.conectar_a_carretera_seleccionada()
+			ui_editor.mostrar_notificacion(str(res_g.get("mensaje", "")))
+	)
+	ui_editor.gasolinera_desconectar_carretera_solicitado.connect(func():
+		if controlador_gasolineras and controlador_gasolineras.desconectar_carretera_seleccionada():
+			ui_editor.mostrar_notificacion("Conexión a carretera eliminada")
+	)
 	ui_editor.agua_rio_limpiar_solicitado.connect(func():
 		if controlador_agua:
 			controlador_agua.limpiar_trazo_rio()
@@ -896,6 +1034,8 @@ func _on_centrar_camara_seleccion() -> void:
 		camara_editor.enfocar_punto(controlador_carreteras.cruce_seleccionado.global_position, 42.0)
 	elif _categoria_activa == "concreto" and controlador_concreto and controlador_concreto.indice_seleccionado >= 0:
 		camara_editor.enfocar_punto(controlador_concreto.obtener_centro_seleccionado(), 34.0)
+	elif _categoria_activa == "gasolinera" and controlador_gasolineras and controlador_gasolineras.indice_seleccionado >= 0:
+		camara_editor.enfocar_punto(controlador_gasolineras.obtener_centro_seleccionado(), 40.0)
 	elif _categoria_activa == "parqueo" and controlador_estacionamientos and controlador_estacionamientos.indice_seleccionado >= 0:
 		camara_editor.enfocar_punto(controlador_estacionamientos.obtener_centro_seleccionado(), 38.0)
 
@@ -997,6 +1137,8 @@ func _on_categoria_cambiada(cat: String) -> void:
 		controlador_estacionamientos.establecer_visibilidad_manejadores(cat == "parqueo")
 	if controlador_concreto:
 		controlador_concreto.establecer_visibilidad_manejadores(cat == "concreto")
+	if controlador_gasolineras:
+		controlador_gasolineras.establecer_manejadores_visibles(cat == "gasolinera")
 	_actualizar_visibilidad_cursores()
 	ui_editor.actualizar_estado_boton_colocar(_categoria_activa, _subherramienta_activa, controlador_objetos.modo_demolicion)
 
@@ -1145,6 +1287,13 @@ func _on_rotar_objeto_solicitado() -> void:
 		else:
 			var rc_c := controlador_concreto.rotar_cursor(45.0)
 			ui_editor.mostrar_notificacion("Orientación de concreto: %d°" % int(round(rc_c)))
+	elif _categoria_activa == "gasolinera" and controlador_gasolineras:
+		if controlador_gasolineras.indice_seleccionado >= 0:
+			var rg_z := controlador_gasolineras.rotar_seleccionado(45.0)
+			ui_editor.mostrar_notificacion("Gasolinera rotada a %d°" % int(round(rg_z)))
+		else:
+			var rg_c := controlador_gasolineras.rotar_cursor(45.0)
+			ui_editor.mostrar_notificacion("Orientación de gasolinera: %d°" % int(round(rg_c)))
 	else:
 		controlador_objetos.rotar_objeto(45.0)
 		ui_editor.mostrar_notificacion("Objeto rotado 45°")
@@ -1173,6 +1322,10 @@ func _actualizar_visibilidad_cursores() -> void:
 		var editando_concreto := _arrastrando_punto_concreto or controlador_concreto.esta_editando_puntos()
 		var mostrar_cursor_concreto := _impacto_valido and modo_pincel and (_categoria_activa == "concreto") and (_subherramienta_activa == "concreto_crear") and (not editando_concreto)
 		controlador_concreto.actualizar_cursor_concreto(_pos_impacto_terreno, mostrar_cursor_concreto)
+	if controlador_gasolineras:
+		var editando_gas := _arrastrando_punto_gasolinera or controlador_gasolineras.esta_editando_puntos()
+		var mostrar_cursor_gas := _impacto_valido and modo_pincel and (_categoria_activa == "gasolinera") and (_subherramienta_activa == "gasolinera_crear") and (not editando_gas)
+		controlador_gasolineras.actualizar_cursor_gasolinera(_pos_impacto_terreno, mostrar_cursor_gas)
 	if controlador_agua:
 		var r_cur_agua: float = ui_editor._radio_lago if ui_editor else 24.0
 		if _subherramienta_activa == "rio":
@@ -1183,7 +1336,7 @@ func _actualizar_visibilidad_cursores() -> void:
 # ── PROCESAMIENTO DE ENTRADA Y RAYCASTING AL MUNDO 3D ────────────────
 
 func _unhandled_input(event: InputEvent) -> void:
-	if modo_prueba.en_prueba:
+	if modo_prueba.en_prueba or _en_modo_multijugador:
 		return
 		
 	# Manejar gestos táctiles multitouch de cámara (pinch zoom, dos dedos pan)
@@ -1233,43 +1386,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Interacción táctil y ratón: arrastre de elementos si se toca uno, o navegación fluida de cámara en espacio libre
 	if event is InputEventScreenTouch:
 		if not event.pressed:
-			_puntero_presionado = false
-			_arrastrando_camara = false
-			controlador_terreno.finalizar_trazo()
-			if _categoria_activa == "ciudad" and _subherramienta_activa == "zonificar" and controlador_zonificacion:
-				var n_auto_z := controlador_zonificacion.finalizar_pintura()
-				if n_auto_z > 0:
-					ui_editor.mostrar_notificacion("🏠 %d casas construidas en los cuadros pintados" % n_auto_z)
-			if _arrastrando_objeto:
-				if _objeto_fue_arrastrado and is_instance_valid(_arrastrando_objeto):
-					_aplicar_arrastre_objeto()
-					ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
-					ui_editor.mostrar_notificacion("✓ Objeto reposicionado")
-				_arrastrando_objeto = null
-				_objeto_fue_arrastrado = false
-				_eje_arrastre_objeto = Vector3.ZERO
-			if _rotando_punto_carretera_lado != 0:
-				controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, false)
-				_rotando_punto_carretera_lado = 0
-			if _arrastrando_punto_carretera:
-				_arrastrando_punto_carretera = false
-				if _punto_carretera_fue_arrastrado and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
-					controlador_carreteras.mover_punto_carretera(controlador_carreteras.punto_carretera_seleccionado, _pos_impacto_terreno, false)
-					ui_editor.actualizar_datos_panel_punto_via(controlador_carreteras.obtener_datos_punto_seleccionado())
-					ui_editor.mostrar_notificacion("✓ Carretera actualizada")
-				_punto_carretera_fue_arrastrado = false
-			if _arrastrando_esquina_parqueo:
-				if controlador_estacionamientos and _esquina_parqueo_idx_est >= 0 and _esquina_parqueo_idx_esq != 4:
-					controlador_estacionamientos.adaptar_terreno_estacionamiento(_esquina_parqueo_idx_est)
-				_arrastrando_esquina_parqueo = false
-				_esquina_parqueo_idx_est = -1
-				_esquina_parqueo_idx_esq = -1
-			if _arrastrando_punto_concreto:
-				if controlador_concreto and _punto_concreto_idx_zona >= 0:
-					controlador_concreto.adaptar_terreno_zona(_punto_concreto_idx_zona)
-				_arrastrando_punto_concreto = false
-				_punto_concreto_idx_zona = -1
-				_punto_concreto_idx_pto = -1
+			_finalizar_interaccion_puntero()
 		elif not (ui_editor and ui_editor.esta_sobre_interfaz(event.position)):
 			_puntero_presionado = true
 			_pos_puntero_pantalla = event.position
@@ -1319,6 +1436,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			controlador_estacionamientos.mover_esquina(_esquina_parqueo_idx_est, _esquina_parqueo_idx_esq, _pos_impacto_terreno)
 		elif _arrastrando_punto_concreto and controlador_concreto and _impacto_valido:
 			controlador_concreto.mover_punto(_punto_concreto_idx_zona, _punto_concreto_idx_pto, _pos_impacto_terreno)
+		elif _arrastrando_punto_gasolinera and controlador_gasolineras and _impacto_valido:
+			controlador_gasolineras.mover_punto(_punto_gasolinera_idx_zona, _punto_gasolinera_idx_pto, _pos_impacto_terreno)
 		elif _modo_camara_movil == "seleccionar":
 			return
 		elif _categoria_activa == "terreno" and _puntero_presionado and _impacto_valido:
@@ -1335,43 +1454,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if not event.pressed:
-				_puntero_presionado = false
-				_arrastrando_camara = false
-				controlador_terreno.finalizar_trazo()
-				if _categoria_activa == "ciudad" and _subherramienta_activa == "zonificar" and controlador_zonificacion:
-					var n_auto_zm := controlador_zonificacion.finalizar_pintura()
-					if n_auto_zm > 0:
-						ui_editor.mostrar_notificacion("🏠 %d casas construidas en los cuadros pintados" % n_auto_zm)
-				if _arrastrando_objeto:
-					if _objeto_fue_arrastrado and is_instance_valid(_arrastrando_objeto):
-						_aplicar_arrastre_objeto()
-						ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
-						ui_editor.mostrar_notificacion("✓ Objeto reposicionado")
-					_arrastrando_objeto = null
-					_objeto_fue_arrastrado = false
-					_eje_arrastre_objeto = Vector3.ZERO
-				if _rotando_punto_carretera_lado != 0:
-					controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, false)
-					_rotando_punto_carretera_lado = 0
-				if _arrastrando_punto_carretera:
-					_arrastrando_punto_carretera = false
-					if _punto_carretera_fue_arrastrado and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
-						controlador_carreteras.mover_punto_carretera(controlador_carreteras.punto_carretera_seleccionado, _pos_impacto_terreno, false)
-						ui_editor.actualizar_datos_panel_punto_via(controlador_carreteras.obtener_datos_punto_seleccionado())
-						ui_editor.mostrar_notificacion("✓ Carretera actualizada")
-					_punto_carretera_fue_arrastrado = false
-				if _arrastrando_esquina_parqueo:
-					if controlador_estacionamientos and _esquina_parqueo_idx_est >= 0 and _esquina_parqueo_idx_esq != 4:
-						controlador_estacionamientos.adaptar_terreno_estacionamiento(_esquina_parqueo_idx_est)
-					_arrastrando_esquina_parqueo = false
-					_esquina_parqueo_idx_est = -1
-					_esquina_parqueo_idx_esq = -1
-				if _arrastrando_punto_concreto:
-					if controlador_concreto and _punto_concreto_idx_zona >= 0:
-						controlador_concreto.adaptar_terreno_zona(_punto_concreto_idx_zona)
-					_arrastrando_punto_concreto = false
-					_punto_concreto_idx_zona = -1
-					_punto_concreto_idx_pto = -1
+				_finalizar_interaccion_puntero()
 			elif not (ui_editor and ui_editor.esta_sobre_interfaz(event.position)):
 				_puntero_presionado = true
 				_pos_puntero_pantalla = event.position
@@ -1424,6 +1507,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			controlador_estacionamientos.mover_esquina(_esquina_parqueo_idx_est, _esquina_parqueo_idx_esq, _pos_impacto_terreno)
 		elif _arrastrando_punto_concreto and controlador_concreto and _impacto_valido:
 			controlador_concreto.mover_punto(_punto_concreto_idx_zona, _punto_concreto_idx_pto, _pos_impacto_terreno)
+		elif _arrastrando_punto_gasolinera and controlador_gasolineras and _impacto_valido:
+			controlador_gasolineras.mover_punto(_punto_gasolinera_idx_zona, _punto_gasolinera_idx_pto, _pos_impacto_terreno)
 		elif _modo_camara_movil == "seleccionar":
 			return
 		elif _categoria_activa == "terreno" and _impacto_valido:
@@ -1486,6 +1571,85 @@ func _iniciar_arrastre_objeto(obj: Node3D, eje: Vector3) -> void:
 	else:
 		_hit_inicio_arrastre = obj.global_position
 		_offset_arrastre_libre = Vector3.ZERO
+
+func _finalizar_interaccion_puntero() -> void:
+	var estaba_editando := _puntero_presionado or _arrastrando_objeto != null or _arrastrando_punto_carretera or _arrastrando_esquina_parqueo or _arrastrando_punto_concreto or _arrastrando_punto_gasolinera
+	_puntero_presionado = false
+	_arrastrando_camara = false
+	controlador_terreno.finalizar_trazo()
+	if _categoria_activa == "ciudad" and _subherramienta_activa == "zonificar" and controlador_zonificacion:
+		var n_auto_z := controlador_zonificacion.finalizar_pintura()
+		if n_auto_z > 0:
+			_marcar_cambios_sin_guardar()
+			ui_editor.mostrar_notificacion("🏠 %d casas construidas en los cuadros pintados" % n_auto_z)
+	if _arrastrando_objeto:
+		if _objeto_fue_arrastrado and is_instance_valid(_arrastrando_objeto):
+			var obj_mov := _arrastrando_objeto
+			var pos_ini := _pos_inicio_arrastre_eje
+			_aplicar_arrastre_objeto()
+			var pos_fin := obj_mov.global_position
+			if pos_ini.distance_to(pos_fin) > 0.05:
+				_marcar_cambios_sin_guardar()
+				_undo_redo.create_action("Mover objeto")
+				_undo_redo.add_do_method(func():
+					if is_instance_valid(obj_mov):
+						obj_mov.global_position = pos_fin
+				)
+				_undo_redo.add_undo_method(func():
+					if is_instance_valid(obj_mov):
+						obj_mov.global_position = pos_ini
+				)
+				_undo_redo.commit_action(false)
+				if colab_manager and colab_manager.sesion_activa:
+					colab_manager.notificar_cambio_categoria("objetos", "Movió objeto")
+			ui_editor.actualizar_datos_panel_objeto(controlador_objetos.obtener_datos_objeto_seleccionado())
+			ui_editor.mostrar_notificacion("✓ Objeto reposicionado")
+		_arrastrando_objeto = null
+		_objeto_fue_arrastrado = false
+		_eje_arrastre_objeto = Vector3.ZERO
+	if _rotando_punto_carretera_lado != 0:
+		controlador_carreteras.rotar_punto_por_arrastre(_rotando_punto_carretera_lado, _pos_impacto_terreno, false)
+		_rotando_punto_carretera_lado = 0
+		_marcar_cambios_sin_guardar()
+	if _arrastrando_punto_carretera:
+		_arrastrando_punto_carretera = false
+		if _punto_carretera_fue_arrastrado and is_instance_valid(controlador_carreteras.punto_carretera_seleccionado):
+			controlador_carreteras.mover_punto_carretera(controlador_carreteras.punto_carretera_seleccionado, _pos_impacto_terreno, false)
+			_marcar_cambios_sin_guardar()
+			ui_editor.actualizar_datos_panel_punto_via(controlador_carreteras.obtener_datos_punto_seleccionado())
+			ui_editor.mostrar_notificacion("✓ Carretera actualizada")
+		_punto_carretera_fue_arrastrado = false
+	if _arrastrando_esquina_parqueo:
+		if controlador_estacionamientos and _esquina_parqueo_idx_est >= 0 and _esquina_parqueo_idx_esq != 4:
+			controlador_estacionamientos.adaptar_terreno_estacionamiento(_esquina_parqueo_idx_est)
+			_marcar_cambios_sin_guardar()
+		_arrastrando_esquina_parqueo = false
+		_esquina_parqueo_idx_est = -1
+		_esquina_parqueo_idx_esq = -1
+	if _arrastrando_punto_concreto:
+		if controlador_concreto and _punto_concreto_idx_zona >= 0:
+			controlador_concreto.adaptar_terreno_zona(_punto_concreto_idx_zona)
+			_marcar_cambios_sin_guardar()
+		_arrastrando_punto_concreto = false
+		_punto_concreto_idx_zona = -1
+		_punto_concreto_idx_pto = -1
+	if _arrastrando_punto_gasolinera:
+		if controlador_gasolineras and _punto_gasolinera_idx_zona >= 0 and not (_punto_gasolinera_idx_pto in [-2, -3]):
+			controlador_gasolineras.adaptar_terreno_gasolinera(_punto_gasolinera_idx_zona)
+			controlador_gasolineras.finalizar_arrastre_punto(_punto_gasolinera_idx_zona)
+			_marcar_cambios_sin_guardar()
+		_arrastrando_punto_gasolinera = false
+		_punto_gasolinera_idx_zona = -1
+		_punto_gasolinera_idx_pto = -1
+	if estaba_editando and colab_manager and colab_manager.sesion_activa:
+		var cat_sync := _categoria_activa
+		match _categoria_activa:
+			"ciudad", "vegetacion": cat_sync = "objetos"
+			"parqueo": cat_sync = "estacionamientos"
+			"concreto": cat_sync = "zonas_concreto"
+			"gasolinera": cat_sync = "gasolineras"
+			"agua": cat_sync = "cuerpos_agua"
+		colab_manager.notificar_cambio_categoria(cat_sync, "Editó " + _categoria_activa)
 
 func _aplicar_arrastre_objeto() -> void:
 	if not is_instance_valid(_arrastrando_objeto):
@@ -1659,6 +1823,28 @@ func _seleccionar_cualquier_objeto_en_escena() -> bool:
 				ui_editor.mostrar_notificacion("Zona de concreto #%d seleccionada." % (idx_z + 1))
 				return true
 
+	# 4b. Gasolineras procedurales
+	if controlador_gasolineras:
+		var res_ptg := controlador_gasolineras.buscar_punto_por_rayo(ray_orig, ray_dir)
+		if res_ptg.get("encontrado", false):
+			if _categoria_activa != "gasolinera" and ui_editor:
+				ui_editor.seleccionar_categoria("gasolinera")
+				ui_editor._seleccionar_subherramienta("gasolinera_editar")
+			_punto_gasolinera_idx_zona = int(res_ptg["idx_zona"])
+			_punto_gasolinera_idx_pto = int(res_ptg["idx_pto"])
+			_arrastrando_punto_gasolinera = true
+			controlador_gasolineras.seleccionar_punto(_punto_gasolinera_idx_zona, _punto_gasolinera_idx_pto)
+			return true
+		if _impacto_valido:
+			var idx_g := controlador_gasolineras.buscar_gasolinera_por_posicion(_pos_impacto_terreno)
+			if idx_g >= 0:
+				if _categoria_activa != "gasolinera" and ui_editor:
+					ui_editor.seleccionar_categoria("gasolinera")
+					ui_editor._seleccionar_subherramienta("gasolinera_editar")
+				controlador_gasolineras.seleccionar_gasolinera(idx_g)
+				ui_editor.mostrar_notificacion("Gasolinera #%d seleccionada." % (idx_g + 1))
+				return true
+
 	# 5. Vías (puntos de carretera, cruces y tramos)
 	if controlador_carreteras and _impacto_valido:
 		var rp_cercano = controlador_carreteras.buscar_punto_carretera_cercano(_pos_impacto_terreno, 7.0)
@@ -1753,6 +1939,25 @@ func _verificar_seleccion_en_click() -> bool:
 		if idx_z >= 0:
 			controlador_concreto.seleccionar_zona(idx_z)
 			ui_editor.mostrar_notificacion("Zona de concreto #%d seleccionada." % (idx_z + 1))
+			return true
+
+	if _categoria_activa == "gasolinera" and controlador_gasolineras and camara_editor:
+		var cam_g: Camera3D = camara_editor.obtener_camara()
+		if cam_g:
+			var orig_g := cam_g.project_ray_origin(_pos_puntero_pantalla)
+			var dir_g := cam_g.project_ray_normal(_pos_puntero_pantalla)
+			var res_ptg := controlador_gasolineras.buscar_punto_por_rayo(orig_g, dir_g)
+			if res_ptg.get("encontrado", false):
+				_punto_gasolinera_idx_zona = int(res_ptg["idx_zona"])
+				_punto_gasolinera_idx_pto = int(res_ptg["idx_pto"])
+				_arrastrando_punto_gasolinera = true
+				controlador_gasolineras.seleccionar_punto(_punto_gasolinera_idx_zona, _punto_gasolinera_idx_pto)
+				ui_editor.mostrar_notificacion("Punto #%d seleccionado. Arrastra para ajustar la base." % (_punto_gasolinera_idx_pto + 1))
+				return true
+		var idx_g := controlador_gasolineras.buscar_gasolinera_por_posicion(_pos_impacto_terreno)
+		if idx_g >= 0:
+			controlador_gasolineras.seleccionar_gasolinera(idx_g)
+			ui_editor.mostrar_notificacion("Gasolinera #%d seleccionada." % (idx_g + 1))
 			return true
 
 	if _categoria_activa == "vias":
@@ -1878,17 +2083,22 @@ func _ejecutar_accion_colocar() -> void:
 				var w_rio: float = ui_editor._ancho_rio if ui_editor else 8.0
 				match _subherramienta_activa:
 					"lago", "lago_agua":
+						var antes_ag = _capturar_estado_categoria("cuerpos_agua")
 						var lago := controlador_agua.crear_lago(_pos_impacto_terreno, r_lago, p_lago, true, true)
 						if lago:
+							_registrar_diff_categoria("Crear lago", "cuerpos_agua", antes_ag, _capturar_estado_categoria("cuerpos_agua"))
 							ui_editor.mostrar_notificacion("✓ Lago creado (Radio: %.0fm, Prof: %.1fm)" % [r_lago, p_lago])
 					"cuenca":
 						if controlador_agua.excavar_cuenca(_pos_impacto_terreno, r_lago, p_lago):
+							_marcar_cambios_sin_guardar()
 							ui_editor.mostrar_notificacion("✓ Cuenca excavada (Radio: %.0fm)" % r_lago)
 						else:
 							ui_editor.mostrar_notificacion("No se pudo excavar la cuenca en esta zona")
 					"rio", "rio_agua":
+						var antes_rio = _capturar_estado_categoria("cuerpos_agua")
 						var n_pts := controlador_agua.agregar_punto_rio(_pos_impacto_terreno, w_rio)
 						if n_pts >= 2:
+							_registrar_diff_categoria("Editar río", "cuerpos_agua", antes_rio, _capturar_estado_categoria("cuerpos_agua"))
 							ui_editor.mostrar_notificacion("✓ Tramo de río actualizado (%d puntos, ancho %.0fm)" % [n_pts, w_rio])
 						else:
 							ui_editor.mostrar_notificacion("Punto #1 del río fijado. Toca más puntos para trazarlo.")
@@ -1899,7 +2109,9 @@ func _ejecutar_accion_colocar() -> void:
 						else:
 							ui_editor.mostrar_notificacion("Toca sobre un lago o río para seleccionarlo")
 					"limpiar":
+						var antes_agb = _capturar_estado_categoria("cuerpos_agua")
 						if controlador_agua.borrar_agua_en_posicion(_pos_impacto_terreno):
+							_registrar_diff_categoria("Eliminar agua", "cuerpos_agua", antes_agb, _capturar_estado_categoria("cuerpos_agua"))
 							ui_editor.mostrar_notificacion("✓ Cuerpo de agua eliminado")
 						else:
 							ui_editor.mostrar_notificacion("Toca sobre un lago o río para eliminarlo")
@@ -1913,31 +2125,30 @@ func _ejecutar_accion_colocar() -> void:
 				else:
 					ui_editor.mostrar_notificacion("Selecciona un punto B más lejano")
 			else:
-				var snap_antes := controlador_terreno.capturar_snapshot_altura(_pos_impacto_terreno, controlador_terreno.radio_pincel)
 				controlador_terreno.comenzar_trazo(_pos_impacto_terreno)
 				controlador_terreno.aplicar_trazo(_pos_impacto_terreno, camara_editor.angulo_yaw)
 				controlador_terreno.finalizar_trazo()
-				var snap_despues := controlador_terreno.capturar_snapshot_altura(_pos_impacto_terreno, controlador_terreno.radio_pincel)
-				if not snap_antes.is_empty():
-					_undo_redo.create_action("Modificar terreno")
-					_undo_redo.add_do_method(func(): controlador_terreno.restaurar_snapshot_altura(snap_despues))
-					_undo_redo.add_undo_method(func(): controlador_terreno.restaurar_snapshot_altura(snap_antes))
-					_undo_redo.commit_action(false)
 				if controlador_carreteras and not controlador_carreteras._puntos_creados.is_empty():
 					controlador_carreteras.nivelar_terreno_bajo_carreteras()
 				ui_editor.mostrar_notificacion("Terreno modificado")
 		"vegetacion":
 			if controlador_objetos.modo_demolicion:
+				var antes_veg = _capturar_estado_categoria("objetos")
 				if controlador_objetos.demoler_en_posicion(_pos_impacto_terreno):
+					_registrar_diff_categoria("Demoler vegetación", "objetos", antes_veg, _capturar_estado_categoria("objetos"))
 					ui_editor.mostrar_notificacion("Elemento demolido")
 				else:
 					ui_editor.mostrar_notificacion("No se encontró ningún elemento en ese punto")
 			elif controlador_objetos.modo_pincel_dispersion:
+				var antes_disp = _capturar_estado_categoria("vegetacion_multimesh")
 				var cant = controlador_objetos.dispersar_vegetacion(_pos_impacto_terreno)
+				if cant > 0:
+					_registrar_diff_categoria("Dispersar vegetación", "vegetacion_multimesh", antes_disp, _capturar_estado_categoria("vegetacion_multimesh"))
 				ui_editor.mostrar_notificacion("Dispersados %d árboles con MultiMesh en el terreno." % cant)
 			else:
 				var obj = controlador_objetos.colocar_objeto(_pos_impacto_terreno)
 				if obj:
+					_registrar_objeto_colocado_undo(obj, "Colocar vegetación")
 					var nombre_item = controlador_objetos.id_objeto_seleccionado.replace("_", " ").capitalize()
 					ui_editor.mostrar_notificacion("¡%s colocado exitosamente!" % nombre_item)
 					if controlador_objetos.id_objeto_seleccionado in ["garaje_camiones", "garaje_doble", "garaje_terminal", "garaje_moderno"]:
@@ -1945,7 +2156,9 @@ func _ejecutar_accion_colocar() -> void:
 						ui_editor.mostrar_panel_variaciones_garaje(controlador_objetos.id_objeto_seleccionado)
 		"muros":
 			if controlador_muros:
+				var antes_m = _capturar_estado_categoria("muros")
 				controlador_muros.agregar_punto_muro(_pos_impacto_terreno)
+				_registrar_diff_categoria("Editar muro", "muros", antes_m, _capturar_estado_categoria("muros"))
 				ui_editor.mostrar_notificacion("Punto de muro colocado (toca el siguiente punto para extender)")
 		"parqueo":
 			if controlador_estacionamientos:
@@ -1955,13 +2168,17 @@ func _ejecutar_accion_colocar() -> void:
 					else:
 						ui_editor.mostrar_notificacion("Selecciona primero una esquina de estacionamiento")
 				elif _subherramienta_activa == "parqueo_borrar":
+					var antes_pb = _capturar_estado_categoria("estacionamientos")
 					if controlador_estacionamientos.borrar_estacionamiento_en_posicion(_pos_impacto_terreno):
+						_registrar_diff_categoria("Borrar estacionamiento", "estacionamientos", antes_pb, _capturar_estado_categoria("estacionamientos"))
 						ui_editor.mostrar_notificacion("Estacionamiento eliminado")
 					else:
 						ui_editor.mostrar_notificacion("Acerca el cursor al estacionamiento que deseas borrar")
 				else:
+					var antes_p = _capturar_estado_categoria("estacionamientos")
 					var tipo_p: int = ui_editor._parqueo_tipo_sel if ui_editor else 0
 					controlador_estacionamientos.crear_estacionamiento(_pos_impacto_terreno, tipo_p)
+					_registrar_diff_categoria("Crear estacionamiento", "estacionamientos", antes_p, _capturar_estado_categoria("estacionamientos"))
 					ui_editor.mostrar_notificacion("✓ Estacionamiento creado. Arrastra las 4 esferas amarillas para adaptarlo.")
 		"concreto":
 			if controlador_concreto:
@@ -1971,14 +2188,38 @@ func _ejecutar_accion_colocar() -> void:
 					else:
 						ui_editor.mostrar_notificacion("Selecciona primero una zona de concreto")
 				elif _subherramienta_activa == "concreto_borrar":
+					var antes_cb = _capturar_estado_categoria("zonas_concreto")
 					if controlador_concreto.borrar_zona_en_posicion(_pos_impacto_terreno):
+						_registrar_diff_categoria("Borrar concreto", "zonas_concreto", antes_cb, _capturar_estado_categoria("zonas_concreto"))
 						ui_editor.mostrar_notificacion("Zona de concreto eliminada")
 					else:
 						ui_editor.mostrar_notificacion("Toca la zona de concreto que deseas borrar")
 				else:
+					var antes_c = _capturar_estado_categoria("zonas_concreto")
 					var acab: int = ui_editor._concreto_acabado_sel if ui_editor else 0
 					controlador_concreto.crear_zona_concreto(_pos_impacto_terreno, acab)
+					_registrar_diff_categoria("Crear concreto", "zonas_concreto", antes_c, _capturar_estado_categoria("zonas_concreto"))
 					ui_editor.mostrar_notificacion("✓ Concreto creado con 8 puntos editables. Arrástralos o agrega más puntos.")
+		"gasolinera":
+			if controlador_gasolineras:
+				if _subherramienta_activa == "gasolinera_nivelar":
+					if controlador_gasolineras.nivelar_terreno_seleccionado():
+						ui_editor.mostrar_notificacion("✓ Terreno nivelado bajo la gasolinera")
+					else:
+						ui_editor.mostrar_notificacion("Selecciona primero una gasolinera")
+				elif _subherramienta_activa == "gasolinera_borrar":
+					var antes_gb = _capturar_estado_categoria("gasolineras")
+					if controlador_gasolineras.borrar_gasolinera_en_posicion(_pos_impacto_terreno):
+						_registrar_diff_categoria("Borrar gasolinera", "gasolineras", antes_gb, _capturar_estado_categoria("gasolineras"))
+						ui_editor.mostrar_notificacion("Gasolinera eliminada")
+					else:
+						ui_editor.mostrar_notificacion("Toca la gasolinera que deseas borrar")
+				else:
+					var antes_g = _capturar_estado_categoria("gasolineras")
+					var tipo_t: int = ui_editor._gasolinera_tipo_techo_sel if ui_editor else 0
+					controlador_gasolineras.crear_gasolinera(_pos_impacto_terreno, tipo_t)
+					_registrar_diff_categoria("Crear gasolinera", "gasolineras", antes_g, _capturar_estado_categoria("gasolineras"))
+					ui_editor.mostrar_notificacion("✓ Gasolinera creada. Ajusta los puntos de la base, bahías, surtidores, techo y colores.")
 		"ciudad":
 			if _subherramienta_activa == "auto_casas":
 				var sec_ac: String = ui_editor._auto_casas_seccion_ui if ui_editor else "01_Residencial"
@@ -2015,25 +2256,18 @@ func _ejecutar_accion_colocar() -> void:
 				else:
 					ui_editor.mostrar_notificacion("Acerca el pincel a una carretera para pintar zonas")
 			elif controlador_objetos.modo_demolicion:
+				var antes_dem = _capturar_estado_categoria("objetos")
 				var cant_d := controlador_objetos.demoler_en_radio(_pos_impacto_terreno, 6.0)
 				if cant_d > 0:
+					_registrar_diff_categoria("Demoler elementos", "objetos", antes_dem, _capturar_estado_categoria("objetos"))
 					ui_editor.mostrar_notificacion("Elementos demolidos (%d)" % cant_d)
 				else:
 					ui_editor.mostrar_notificacion("No se encontró ningún elemento en ese punto")
 			else:
 				var obj = controlador_objetos.colocar_objeto(_pos_impacto_terreno)
 				if obj:
-					_undo_redo.create_action("Colocar objeto")
-					_undo_redo.add_do_method(func():
-						if is_instance_valid(obj):
-							obj.visible = true
-					)
-					_undo_redo.add_undo_method(func():
-						if is_instance_valid(obj):
-							controlador_objetos._objetos_en_escena.erase(obj)
-							obj.queue_free()
-					)
-					_undo_redo.commit_action(false)
+					UIEditorHelpers.registrar_objeto_reciente(str(controlador_objetos.id_objeto_seleccionado))
+					_registrar_objeto_colocado_undo(obj, "Colocar objeto")
 					var nombre_item = controlador_objetos.id_objeto_seleccionado.replace("_", " ").capitalize()
 					ui_editor.mostrar_notificacion("¡%s colocado exitosamente!" % nombre_item)
 					if controlador_objetos.id_objeto_seleccionado in ["garaje_camiones", "garaje_doble", "garaje_terminal", "garaje_moderno"]:
@@ -2131,6 +2365,72 @@ func _ejecutar_accion_colocar() -> void:
 
 var _accum_telemetria: float = 0.0
 var _distancia_renderizado: float = 600.0
+const RUTA_CFG_EDITOR := "user://editor_config.cfg"
+var _config_editor: Dictionary = {
+	"escala_resolucion": 0.75,
+	"max_fps": 60,
+	"distancia_render": 600.0,
+	"sombras": false,
+	"msaa": 0,
+	"modo_ligero": true
+}
+
+func _cargar_config_editor() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(RUTA_CFG_EDITOR) == OK:
+		_config_editor["escala_resolucion"] = float(cfg.get_value("editor", "escala_resolucion", 0.75))
+		_config_editor["max_fps"] = int(cfg.get_value("editor", "max_fps", 60))
+		_config_editor["distancia_render"] = float(cfg.get_value("editor", "distancia_render", 600.0))
+		_config_editor["sombras"] = bool(cfg.get_value("editor", "sombras", false))
+		_config_editor["msaa"] = int(cfg.get_value("editor", "msaa", 0))
+		_config_editor["modo_ligero"] = bool(cfg.get_value("editor", "modo_ligero", true))
+	if ui_editor:
+		ui_editor.aplicar_estado_config_editor_ui(_config_editor)
+
+func _on_editor_config_cambiada(nueva_cfg: Dictionary) -> void:
+	_config_editor = nueva_cfg.duplicate()
+	var cfg := ConfigFile.new()
+	for k in _config_editor.keys():
+		cfg.set_value("editor", str(k), _config_editor[k])
+	cfg.save(RUTA_CFG_EDITOR)
+	_aplicar_config_rendimiento_editor()
+	if ui_editor:
+		ui_editor.mostrar_notificacion("✓ Ajustes del editor aplicados")
+
+func _aplicar_config_rendimiento_editor() -> void:
+	if modo_prueba and modo_prueba.en_prueba:
+		return
+	var vp := get_viewport()
+	if vp:
+		vp.scaling_3d_scale = clampf(float(_config_editor.get("escala_resolucion", 0.75)), 0.4, 1.0)
+		var msaa_idx := int(_config_editor.get("msaa", 0))
+		if msaa_idx == 1:
+			vp.msaa_3d = Viewport.MSAA_2X
+		elif msaa_idx == 2:
+			vp.msaa_3d = Viewport.MSAA_4X
+		else:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+	Engine.max_fps = int(_config_editor.get("max_fps", 60))
+	_aplicar_distancia_renderizado(float(_config_editor.get("distancia_render", 600.0)))
+	if controlador_sol_luna and is_instance_valid(controlador_sol_luna.luz_sol):
+		controlador_sol_luna.luz_sol.shadow_enabled = bool(_config_editor.get("sombras", false))
+	if is_instance_valid(world_env_editor):
+		var ligero := bool(_config_editor.get("modo_ligero", true))
+		if _env_editor:
+			_env_editor.glow_enabled = not ligero
+			_env_editor.volumetric_fog_enabled = false
+		world_env_editor.environment = _env_editor if (ligero or not _env_prueba) else _env_prueba
+
+func _restaurar_rendimiento_juego_prueba() -> void:
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm and sm.has_method("apply_all_settings"):
+		sm.apply_all_settings()
+		return
+	var vp := get_viewport()
+	if vp:
+		vp.scaling_3d_scale = 1.0
+		vp.msaa_3d = Viewport.MSAA_2X
+	Engine.max_fps = 0
 
 func _aplicar_distancia_renderizado(dist: float) -> void:
 	var d := clampf(dist, 250.0, 1500.0)
@@ -2153,7 +2453,7 @@ func _aplicar_distancia_renderizado(dist: float) -> void:
 
 
 func _process(delta: float) -> void:
-	if not modo_prueba.en_prueba:
+	if not modo_prueba.en_prueba and not _en_modo_multijugador:
 		_accum_telemetria += delta
 		if _accum_telemetria >= 0.25:
 			_accum_telemetria = 0.0
@@ -2167,13 +2467,15 @@ func _process(delta: float) -> void:
 # ── TRANSICIÓN DE MODO PRUEBA (TEST DE CONDUCCIÓN / EXPLORACIÓN) ─────
 
 func _on_iniciar_prueba() -> void:
+	var carga := UIEditorHelpers.crear_carga_sencilla(self, "PREPARANDO PRUEBA...")
+	await get_tree().process_frame
+	_validar_spawn_antes_de_jugar()
+	UIEditorHelpers.cerrar_carga_sencilla(carga)
 	# Activar el cielo completo con nubes/sol/luna y calidad realista solo durante la prueba del mapa
 	if is_instance_valid(world_env_editor) and _env_prueba:
 		world_env_editor.environment = _env_prueba
 	if controlador_sol_luna and is_instance_valid(controlador_sol_luna.luz_sol):
 		controlador_sol_luna.energia_maxima_sol = 1.45
-		controlador_sol_luna.luz_sol.shadow_enabled = true
-		controlador_sol_luna.luz_sol.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 		controlador_sol_luna.luz_sol.directional_shadow_max_distance = clampf(_distancia_renderizado * 0.30, 100.0, 220.0)
 	# Ocultar cámara, UI y marcadores del editor
 	if camara_editor:
@@ -2191,11 +2493,47 @@ func _on_iniciar_prueba() -> void:
 		controlador_spawn.visible = false
 	if is_instance_valid(controlador_carreteras):
 		controlador_carreteras.deseleccionar_todo()
+		controlador_carreteras.actualizar_cursor_via(Vector3.ZERO, false)
+		controlador_carreteras.establecer_visibilidad_manejadores_curva(false)
+	if is_instance_valid(controlador_gasolineras):
+		controlador_gasolineras.establecer_manejadores_visibles(false)
+		controlador_gasolineras.actualizar_cursor_gasolinera(Vector3.ZERO, false)
+	if is_instance_valid(controlador_concreto):
+		controlador_concreto.establecer_visibilidad_manejadores(false)
+		controlador_concreto.actualizar_cursor_concreto(Vector3.ZERO, false)
+	if is_instance_valid(controlador_estacionamientos):
+		controlador_estacionamientos.establecer_visibilidad_manejadores(false)
+		controlador_estacionamientos.actualizar_cursor_parqueo(Vector3.ZERO, false)
+	if is_instance_valid(controlador_terreno):
+		controlador_terreno.actualizar_cursor(Vector3.ZERO, false)
+	if is_instance_valid(controlador_objetos):
+		controlador_objetos.actualizar_cursor_objeto(Vector3.ZERO, false)
+	if is_instance_valid(controlador_muros):
+		controlador_muros.actualizar_cursor_muro(Vector3.ZERO, false)
+	if is_instance_valid(controlador_agua):
+		controlador_agua.actualizar_cursor_agua(Vector3.ZERO, false, "", 0.0)
 	
-	# Iniciar modo prueba en el punto de spawn configurado
+	# Iniciar modo prueba en el punto de spawn configurado (o modo multijugador WebRTC)
 	var spawn_xf = controlador_spawn.obtener_transform_spawn() if controlador_spawn else Transform3D.IDENTITY
 	var modo_sp = controlador_spawn.obtener_modo_nombre() if controlador_spawn else "vehiculo"
+	if bool(Engine.get_meta("nt_mp_modo_activo", false)) and multiplayer and multiplayer.has_multiplayer_peer():
+		_en_modo_multijugador = true
+		if camara_editor:
+			camara_editor.set_physics_process(false)
+		_restaurar_rendimiento_juego_prueba()
+		if controlador_objetos and controlador_objetos.has_method("aplicar_distancia_visibilidad"):
+			controlador_objetos.aplicar_distancia_visibilidad(380.0)
+		Engine.set_meta("nt_mp_spawn_pos", spawn_xf.origin)
+		if get_node_or_null("MultiplayerManager") == null:
+			var mp_script := load("res://codigo/nucleo/red/MultiplayerManager.gd")
+			if mp_script:
+				var mp_mgr := Node.new()
+				mp_mgr.name = "MultiplayerManager"
+				mp_mgr.set_script(mp_script)
+				add_child(mp_mgr)
+		return
 	modo_prueba.iniciar_prueba(self, spawn_xf, modo_sp)
+	_restaurar_rendimiento_juego_prueba()
 
 func _on_prueba_finalizada() -> void:
 	# Restaurar el cielo ligero de alto rendimiento para el Editor de Mapas
@@ -2206,6 +2544,7 @@ func _on_prueba_finalizada() -> void:
 		controlador_sol_luna.luz_sol.directional_shadow_max_distance = clampf(_distancia_renderizado * 0.25, 80.0, 220.0)
 	if is_instance_valid(world_env_editor) and _env_editor:
 		world_env_editor.environment = _env_editor
+	_aplicar_config_rendimiento_editor()
 	# Restaurar cámara, UI y marcadores del editor
 	if is_instance_valid(controlador_spawn):
 		controlador_spawn.visible = true
@@ -2224,6 +2563,15 @@ func _on_prueba_finalizada() -> void:
 	if ui_editor:
 		ui_editor.visible = true
 		ui_editor.mostrar_notificacion("Has vuelto al editor de mapas")
+	if is_instance_valid(controlador_gasolineras):
+		controlador_gasolineras.establecer_manejadores_visibles(_categoria_activa == "gasolinera")
+	if is_instance_valid(controlador_concreto):
+		controlador_concreto.establecer_visibilidad_manejadores(_categoria_activa == "concreto")
+	if is_instance_valid(controlador_estacionamientos):
+		controlador_estacionamientos.establecer_visibilidad_manejadores(_categoria_activa == "parqueo")
+	if is_instance_valid(controlador_carreteras):
+		controlador_carreteras.establecer_visibilidad_manejadores_curva(_categoria_activa == "vias")
+	_actualizar_visibilidad_cursores()
 
 # ── GUARDAR Y CARGAR MAPAS (PERSISTENCIA COMPLETA) ───────────────────
 
@@ -2247,9 +2595,85 @@ func _cargar_mapa_inicial_hub() -> void:
 			_nombre_mapa_actual = nombre_hub
 		if FileAccess.file_exists(ruta_hub):
 			cargar_mapa_desde_ruta(ruta_hub)
+	var accion_colab: String = str(Engine.get_meta("nt_editor_colab_accion", ""))
+	var codigo_colab: String = str(Engine.get_meta("nt_editor_colab_codigo", ""))
+	Engine.set_meta("nt_editor_colab_accion", "")
+	Engine.set_meta("nt_editor_colab_codigo", "")
+	if colab_manager and not accion_colab.is_empty():
+		if accion_colab == "crear":
+			colab_manager.crear_sesion_online(_nombre_mapa_actual)
+		elif accion_colab == "unirse" and not codigo_colab.is_empty():
+			colab_manager.unirse_sesion_online(codigo_colab)
+		elif accion_colab == "panel":
+			colab_manager.abrir_modal_colab()
 	if bool(Engine.get_meta("nt_jugar_directo", false)):
 		Engine.set_meta("nt_jugar_directo", false)
 		call_deferred("_on_iniciar_prueba")
+
+func serializar_estado_mapa_dict(dir_terreno: String = "") -> Dictionary:
+	return {
+		"formato": "NT_MAP",
+		"version": 2,
+		"nombre": _nombre_mapa_actual,
+		"autor": "EditorNuestraTierra",
+		"hora_dia": hora_actual_editor,
+		"terreno_dir": dir_terreno,
+		"terreno_regiones": controlador_terreno.serializar_regiones_online() if controlador_terreno else [],
+		"objetos": controlador_objetos.serializar_objetos(),
+		"vegetacion_multimesh": controlador_objetos.serializar_vegetacion_multimesh(),
+		"carreteras": controlador_carreteras.serializar_carreteras(),
+		"equipamiento_vias": controlador_equipamiento.serializar_equipamiento() if controlador_equipamiento else [],
+		"muros": controlador_muros.serializar_muros() if controlador_muros else [],
+		"estacionamientos": controlador_estacionamientos.serializar_estacionamientos() if controlador_estacionamientos else [],
+		"zonas_concreto": controlador_concreto.serializar_zonas() if controlador_concreto else [],
+		"gasolineras": controlador_gasolineras.serializar_gasolineras() if controlador_gasolineras else [],
+		"zonas_cs2": controlador_zonificacion.serializar_zonas() if controlador_zonificacion else [],
+		"cuerpos_agua": controlador_agua.serializar_aguas() if controlador_agua else [],
+		"spawn": controlador_spawn.serializar_spawn()
+	}
+
+func aplicar_estado_mapa_dict(datos: Dictionary, cargar_terreno_disco: bool = true, ruta_archivo: String = "") -> void:
+	if datos.has("nombre"):
+		_nombre_mapa_actual = str(datos["nombre"])
+	if cargar_terreno_disco:
+		var dir_terreno := str(datos.get("terreno_dir", ""))
+		if dir_terreno.is_empty() and not ruta_archivo.is_empty():
+			dir_terreno = ruta_archivo.get_basename() + "_terreno"
+		if controlador_terreno and not dir_terreno.is_empty():
+			controlador_terreno.cargar_terreno(dir_terreno)
+	if controlador_terreno and datos.has("terreno_regiones") and datos["terreno_regiones"] is Array:
+		controlador_terreno.asegurar_regiones_online(datos["terreno_regiones"])
+	if datos.has("carreteras"):
+		controlador_carreteras.deserializar_carreteras(datos["carreteras"])
+	if datos.has("equipamiento_vias") and controlador_equipamiento:
+		controlador_equipamiento.deserializar_equipamiento(datos["equipamiento_vias"])
+	if datos.has("muros") and controlador_muros and datos["muros"] is Array:
+		controlador_muros.deserializar_muros(datos["muros"])
+	if datos.has("estacionamientos") and controlador_estacionamientos and datos["estacionamientos"] is Array:
+		controlador_estacionamientos.deserializar_estacionamientos(datos["estacionamientos"])
+	if datos.has("zonas_concreto") and controlador_concreto and datos["zonas_concreto"] is Array:
+		controlador_concreto.deserializar_zonas(datos["zonas_concreto"])
+	if datos.has("gasolineras") and controlador_gasolineras and datos["gasolineras"] is Array:
+		controlador_gasolineras.deserializar_gasolineras(datos["gasolineras"])
+	if datos.has("zonas_cs2") and controlador_zonificacion and datos["zonas_cs2"] is Array:
+		controlador_zonificacion.deserializar_zonas(datos["zonas_cs2"])
+	if datos.has("objetos"):
+		controlador_objetos.deserializar_objetos(datos["objetos"])
+	if datos.has("vegetacion_multimesh") and datos["vegetacion_multimesh"] is Dictionary:
+		controlador_objetos.deserializar_vegetacion_multimesh(datos["vegetacion_multimesh"])
+	if datos.has("cuerpos_agua") and controlador_agua:
+		controlador_agua.deserializar_aguas(datos["cuerpos_agua"])
+	if datos.has("spawn"):
+		controlador_spawn.deserializar_spawn(datos["spawn"])
+		if cargar_terreno_disco and camara_editor and controlador_spawn:
+			camara_editor.enfocar_punto(controlador_spawn.obtener_posicion() + Vector3(0.0, 4.0, 0.0))
+	if datos.has("hora_dia"):
+		_cambiar_hora_dia(int(datos["hora_dia"]))
+	if not cargar_terreno_disco and datos.has("terreno_heights"):
+		if controlador_terreno and controlador_terreno.has_method("aplicar_alturas_online"):
+			controlador_terreno.aplicar_alturas_online(datos["terreno_heights"])
+	elif not cargar_terreno_disco and controlador_carreteras and not controlador_carreteras._puntos_creados.is_empty():
+		controlador_carreteras.nivelar_terreno_bajo_carreteras()
 
 func guardar_mapa() -> void:
 	var dir_mapas = "user://mapas"
@@ -2263,24 +2687,7 @@ func guardar_mapa() -> void:
 	if controlador_terreno:
 		terreno_ok = controlador_terreno.guardar_terreno(dir_terreno)
 
-	var datos := {
-		"formato": "NT_MAP",
-		"version": 2,
-		"nombre": _nombre_mapa_actual,
-		"autor": "EditorNuestraTierra",
-		"hora_dia": hora_actual_editor,
-		"terreno_dir": dir_terreno if terreno_ok else "",
-		"objetos": controlador_objetos.serializar_objetos(),
-		"vegetacion_multimesh": controlador_objetos.serializar_vegetacion_multimesh(),
-		"carreteras": controlador_carreteras.serializar_carreteras(),
-		"equipamiento_vias": controlador_equipamiento.serializar_equipamiento() if controlador_equipamiento else [],
-		"muros": controlador_muros.serializar_muros() if controlador_muros else [],
-		"estacionamientos": controlador_estacionamientos.serializar_estacionamientos() if controlador_estacionamientos else [],
-		"zonas_concreto": controlador_concreto.serializar_zonas() if controlador_concreto else [],
-		"zonas_cs2": controlador_zonificacion.serializar_zonas() if controlador_zonificacion else [],
-		"cuerpos_agua": controlador_agua.serializar_aguas() if controlador_agua else [],
-		"spawn": controlador_spawn.serializar_spawn()
-	}
+	var datos := serializar_estado_mapa_dict(dir_terreno if terreno_ok else "")
 	
 	var file = FileAccess.open_compressed(ruta_ntmap, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 	if not file:
@@ -2293,6 +2700,12 @@ func guardar_mapa() -> void:
 		if f_json:
 			f_json.store_string(JSON.stringify(datos, "  "))
 			f_json.close()
+		_cambios_sin_guardar = false
+		if ui_editor and ui_editor.has_method("actualizar_estado_guardado"):
+			ui_editor.actualizar_estado_guardado(false)
+		_guardar_miniatura_mapa(ruta_ntmap)
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.sincronizar_ahora("Guardó el mapa")
 		ui_editor.mostrar_notificacion("¡Mapa guardado en %s!" % ruta_ntmap.get_file())
 	else:
 		push_error("Error al abrir archivo para guardar mapa: %s (err=%d)" % [ruta_ntmap, FileAccess.get_open_error()])
@@ -2334,54 +2747,262 @@ func cargar_mapa_desde_ruta(ruta_archivo: String) -> void:
 		var datos = json.data
 		if datos is Dictionary:
 			_ruta_mapa_actual = ruta_archivo
-			if datos.has("nombre"):
-				_nombre_mapa_actual = str(datos["nombre"])
-			var dir_terreno := str(datos.get("terreno_dir", ""))
-			if dir_terreno.is_empty():
-				dir_terreno = ruta_archivo.get_basename() + "_terreno"
-			if controlador_terreno and not dir_terreno.is_empty():
-				controlador_terreno.cargar_terreno(dir_terreno)
-			if datos.has("carreteras"):
-				controlador_carreteras.deserializar_carreteras(datos["carreteras"])
-			if datos.has("equipamiento_vias") and controlador_equipamiento:
-				controlador_equipamiento.deserializar_equipamiento(datos["equipamiento_vias"])
-			if datos.has("muros") and controlador_muros and datos["muros"] is Array:
-				controlador_muros.deserializar_muros(datos["muros"])
-			if datos.has("estacionamientos") and controlador_estacionamientos and datos["estacionamientos"] is Array:
-				controlador_estacionamientos.deserializar_estacionamientos(datos["estacionamientos"])
-			if datos.has("zonas_concreto") and controlador_concreto and datos["zonas_concreto"] is Array:
-				controlador_concreto.deserializar_zonas(datos["zonas_concreto"])
-			if datos.has("zonas_cs2") and controlador_zonificacion and datos["zonas_cs2"] is Array:
-				controlador_zonificacion.deserializar_zonas(datos["zonas_cs2"])
-			if datos.has("objetos"):
-				controlador_objetos.deserializar_objetos(datos["objetos"])
-			if datos.has("vegetacion_multimesh") and datos["vegetacion_multimesh"] is Dictionary:
-				controlador_objetos.deserializar_vegetacion_multimesh(datos["vegetacion_multimesh"])
-			if datos.has("cuerpos_agua") and controlador_agua:
-				controlador_agua.deserializar_aguas(datos["cuerpos_agua"])
-			if datos.has("spawn"):
-				controlador_spawn.deserializar_spawn(datos["spawn"])
-				if camara_editor and controlador_spawn:
-					camara_editor.enfocar_punto(controlador_spawn.obtener_posicion() + Vector3(0.0, 4.0, 0.0))
-			if datos.has("hora_dia"):
-				_cambiar_hora_dia(int(datos["hora_dia"]))
+			aplicar_estado_mapa_dict(datos, true, ruta_archivo)
 			ui_editor.mostrar_notificacion("¡Mapa '%s' cargado!" % _nombre_mapa_actual)
 
 func _guardar_snapshot_vias() -> void:
-	if not controlador_carreteras:
+	if not controlador_carreteras or _ignorar_registro_undo:
 		return
-	var snap := {
+	var snap_antes := {
 		"vias": controlador_carreteras.serializar_carreteras(),
 		"equip": controlador_equipamiento.serializar_equipamiento() if controlador_equipamiento else []
 	}
-	_historial_vias_undo.append(snap)
-	if _historial_vias_undo.size() > 20:
-		_historial_vias_undo.pop_front()
-	_historial_vias_redo.clear()
+	call_deferred("_confirmar_snapshot_vias_undo", snap_antes)
+
+var _ignorar_registro_undo: bool = false
+var _cambios_sin_guardar: bool = false
+var _timer_autoguardado: Timer = null
+
+func _iniciar_autoguardado() -> void:
+	_timer_autoguardado = Timer.new()
+	_timer_autoguardado.wait_time = 120.0
+	_timer_autoguardado.one_shot = false
+	_timer_autoguardado.autostart = true
+	_timer_autoguardado.timeout.connect(func():
+		if _cambios_sin_guardar and not modo_prueba.en_prueba and not _en_modo_multijugador:
+			guardar_mapa()
+			if ui_editor:
+				ui_editor.mostrar_notificacion("Autoguardado completado")
+	)
+	add_child(_timer_autoguardado)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if _cambios_sin_guardar and not modo_prueba.en_prueba and not _en_modo_multijugador:
+			guardar_mapa()
+
+func _marcar_cambios_sin_guardar() -> void:
+	_cambios_sin_guardar = true
+	if ui_editor and ui_editor.has_method("actualizar_estado_guardado"):
+		ui_editor.actualizar_estado_guardado(true)
+
+func _guardar_miniatura_mapa(ruta_ntmap: String) -> void:
+	if not is_inside_tree() or not get_viewport():
+		return
+	var tex := get_viewport().get_texture()
+	if not tex:
+		return
+	var img := tex.get_image()
+	if img == null or img.is_empty():
+		return
+	img.resize(320, 180, Image.INTERPOLATE_BILINEAR)
+	img.save_jpg(ruta_ntmap.get_basename() + "_thumb.jpg", 0.78)
+
+func _validar_spawn_antes_de_jugar() -> void:
+	if not controlador_spawn or not controlador_terreno:
+		return
+	var pos_s: Vector3 = controlador_spawn.obtener_posicion()
+	var h_t: float = controlador_terreno.obtener_altura(pos_s)
+	if not is_nan(h_t) and pos_s.y < h_t + 0.15:
+		controlador_spawn.posicionar_spawn(Vector3(pos_s.x, h_t + 0.35, pos_s.z))
+		if ui_editor:
+			ui_editor.mostrar_notificacion("Spawn ajustado sobre el terreno")
+
+func _on_terreno_pintura_completada(snap_antes: Dictionary, snap_despues: Dictionary) -> void:
+	if _ignorar_registro_undo or snap_antes.is_empty():
+		return
+	_marcar_cambios_sin_guardar()
+	_undo_redo.create_action("Pintar terreno")
+	_undo_redo.add_do_method(func(): controlador_terreno.restaurar_snapshot_pintura(snap_despues))
+	_undo_redo.add_undo_method(func(): controlador_terreno.restaurar_snapshot_pintura(snap_antes))
+	_undo_redo.commit_action(false)
+
+func _confirmar_snapshot_vias_undo(snap_antes: Dictionary) -> void:
+	if not controlador_carreteras or _ignorar_registro_undo:
+		return
+	var snap_despues := {
+		"vias": controlador_carreteras.serializar_carreteras(),
+		"equip": controlador_equipamiento.serializar_equipamiento() if controlador_equipamiento else []
+	}
+	if JSON.stringify(snap_antes) == JSON.stringify(snap_despues):
+		return
+	_undo_redo.create_action("Editar vías")
+	_undo_redo.add_do_method(func():
+		_ignorar_registro_undo = true
+		controlador_carreteras.deserializar_carreteras(snap_despues["vias"])
+		if controlador_equipamiento:
+			controlador_equipamiento.deserializar_equipamiento(snap_despues["equip"])
+		_ignorar_registro_undo = false
+	)
+	_undo_redo.add_undo_method(func():
+		_ignorar_registro_undo = true
+		controlador_carreteras.deserializar_carreteras(snap_antes["vias"])
+		if controlador_equipamiento:
+			controlador_equipamiento.deserializar_equipamiento(snap_antes["equip"])
+		_ignorar_registro_undo = false
+	)
+	_undo_redo.commit_action(false)
+	_marcar_cambios_sin_guardar()
+	if colab_manager and colab_manager.sesion_activa:
+		colab_manager.notificar_cambio_categoria("vias", "Editó vías")
+
+func _on_terreno_trazo_completado(snap_antes: Dictionary, snap_despues: Dictionary) -> void:
+	if _ignorar_registro_undo or snap_antes.is_empty():
+		return
+	_undo_redo.create_action("Modificar terreno")
+	_undo_redo.add_do_method(func():
+		controlador_terreno.restaurar_snapshot_altura(snap_despues)
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.registrar_terreno_delta(snap_despues)
+	)
+	_undo_redo.add_undo_method(func():
+		controlador_terreno.restaurar_snapshot_altura(snap_antes)
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.registrar_terreno_delta(snap_antes)
+	)
+	_undo_redo.commit_action(false)
+	_marcar_cambios_sin_guardar()
+	if colab_manager and colab_manager.sesion_activa:
+		colab_manager.registrar_terreno_delta(snap_despues)
+		colab_manager.notificar_cambio_categoria("terreno", "Modificó terreno")
+
+func _registrar_objeto_colocado_undo(obj: Node3D, titulo: String) -> void:
+	if not is_instance_valid(obj) or _ignorar_registro_undo:
+		return
+	var antes = _capturar_estado_categoria("objetos")
+	# El objeto ya fue agregado, así que buscamos su diccionario serializado para poder recrearlo si otros sincronizaron
+	var item_dict: Dictionary = {}
+	if antes is Array and not antes.is_empty():
+		item_dict = antes[antes.size() - 1]
+	_undo_redo.create_action(titulo)
+	_undo_redo.add_do_method(func():
+		if is_instance_valid(obj):
+			obj.visible = true
+		elif not item_dict.is_empty():
+			var lista := controlador_objetos.serializar_objetos()
+			lista.append(item_dict)
+			controlador_objetos.deserializar_objetos(lista)
+	)
+	_undo_redo.add_undo_method(func():
+		if is_instance_valid(obj):
+			controlador_objetos._objetos_en_escena.erase(obj)
+			obj.queue_free()
+		elif not item_dict.is_empty():
+			var lista := controlador_objetos.serializar_objetos()
+			var clave := JSON.stringify(item_dict)
+			for i in range(lista.size() - 1, -1, -1):
+				if JSON.stringify(lista[i]) == clave:
+					lista.remove_at(i)
+					break
+			controlador_objetos.deserializar_objetos(lista)
+	)
+	_undo_redo.commit_action(false)
+	_marcar_cambios_sin_guardar()
+	if colab_manager and colab_manager.sesion_activa:
+		colab_manager.notificar_cambio_categoria("objetos", titulo)
+
+func _capturar_estado_categoria(cat: String) -> Variant:
+	match cat:
+		"objetos":
+			return controlador_objetos.serializar_objetos() if controlador_objetos else []
+		"vegetacion_multimesh":
+			return controlador_objetos.serializar_vegetacion_multimesh() if controlador_objetos else {}
+		"muros":
+			return controlador_muros.serializar_muros() if controlador_muros else []
+		"estacionamientos":
+			return controlador_estacionamientos.serializar_estacionamientos() if controlador_estacionamientos else []
+		"zonas_concreto":
+			return controlador_concreto.serializar_zonas() if controlador_concreto else []
+		"gasolineras":
+			return controlador_gasolineras.serializar_gasolineras() if controlador_gasolineras else []
+		"cuerpos_agua":
+			return controlador_agua.serializar_aguas() if controlador_agua else []
+	return []
+
+func _aplicar_estado_categoria(cat: String, estado) -> void:
+	match cat:
+		"objetos":
+			if controlador_objetos and estado is Array:
+				controlador_objetos.deserializar_objetos(estado)
+		"vegetacion_multimesh":
+			if controlador_objetos and estado is Dictionary:
+				controlador_objetos.deserializar_vegetacion_multimesh(estado)
+		"muros":
+			if controlador_muros and estado is Array:
+				controlador_muros.deserializar_muros(estado)
+		"estacionamientos":
+			if controlador_estacionamientos and estado is Array:
+				controlador_estacionamientos.deserializar_estacionamientos(estado)
+		"zonas_concreto":
+			if controlador_concreto and estado is Array:
+				controlador_concreto.deserializar_zonas(estado)
+		"gasolineras":
+			if controlador_gasolineras and estado is Array:
+				controlador_gasolineras.deserializar_gasolineras(estado)
+		"cuerpos_agua":
+			if controlador_agua and estado is Array:
+				controlador_agua.deserializar_aguas(estado)
+
+func _registrar_diff_categoria(titulo: String, cat: String, antes, despues) -> void:
+	if _ignorar_registro_undo:
+		return
+	if JSON.stringify(antes) == JSON.stringify(despues):
+		return
+	if antes is Array and despues is Array:
+		var claves_antes: Dictionary = {}
+		for it in antes:
+			claves_antes[JSON.stringify(it)] = true
+		var claves_desp: Dictionary = {}
+		for it in despues:
+			claves_desp[JSON.stringify(it)] = true
+		var agregados: Array = []
+		for it in despues:
+			if not claves_antes.has(JSON.stringify(it)):
+				agregados.append(it)
+		var eliminados: Array = []
+		for it in antes:
+			if not claves_desp.has(JSON.stringify(it)):
+				eliminados.append(it)
+		_undo_redo.create_action(titulo)
+		_undo_redo.add_do_method(func():
+			var actual = _capturar_estado_categoria(cat)
+			if actual is Array:
+				_aplicar_diff_array(cat, actual, eliminados, agregados)
+		)
+		_undo_redo.add_undo_method(func():
+			var actual = _capturar_estado_categoria(cat)
+			if actual is Array:
+				_aplicar_diff_array(cat, actual, agregados, eliminados)
+		)
+		_undo_redo.commit_action(false)
+	else:
+		_undo_redo.create_action(titulo)
+		_undo_redo.add_do_method(func(): _aplicar_estado_categoria(cat, despues))
+		_undo_redo.add_undo_method(func(): _aplicar_estado_categoria(cat, antes))
+		_undo_redo.commit_action(false)
+	_marcar_cambios_sin_guardar()
+	if colab_manager and colab_manager.sesion_activa:
+		colab_manager.notificar_cambio_categoria(cat, titulo)
+
+func _aplicar_diff_array(cat: String, actual: Array, quitar: Array, poner: Array) -> void:
+	var res := actual.duplicate()
+	for q in quitar:
+		var ck := JSON.stringify(q)
+		for i in range(res.size() - 1, -1, -1):
+			if JSON.stringify(res[i]) == ck:
+				res.remove_at(i)
+				break
+	for p in poner:
+		res.append(p)
+	_aplicar_estado_categoria(cat, res)
 
 func _deshacer_accion() -> void:
 	if _undo_redo.has_undo():
+		_ignorar_registro_undo = true
 		_undo_redo.undo()
+		_ignorar_registro_undo = false
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_local("Deshizo una acción")
 		ui_editor.mostrar_notificacion("Acción deshecha.")
 	elif not _historial_vias_undo.is_empty():
 		var actual := {
@@ -2393,14 +3014,22 @@ func _deshacer_accion() -> void:
 		controlador_carreteras.deserializar_carreteras(prev.get("vias", []))
 		if controlador_equipamiento:
 			controlador_equipamiento.deserializar_equipamiento(prev.get("equip", []))
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_local("Deshizo acción vial")
 		ui_editor.mostrar_notificacion("Acción vial deshecha.")
 	else:
 		controlador_carreteras.deshacer_ultimo_punto()
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_local("Deshizo punto de vía")
 		ui_editor.mostrar_notificacion("Último punto de vía deshecho.")
 
 func _rehacer_accion() -> void:
 	if _undo_redo.has_redo():
+		_ignorar_registro_undo = true
 		_undo_redo.redo()
+		_ignorar_registro_undo = false
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_local("Rehizo una acción")
 		ui_editor.mostrar_notificacion("Acción rehecha.")
 	elif not _historial_vias_redo.is_empty():
 		var actual := {
@@ -2412,6 +3041,8 @@ func _rehacer_accion() -> void:
 		controlador_carreteras.deserializar_carreteras(sig.get("vias", []))
 		if controlador_equipamiento:
 			controlador_equipamiento.deserializar_equipamiento(sig.get("equip", []))
+		if colab_manager and colab_manager.sesion_activa:
+			colab_manager.notificar_cambio_local("Rehizo acción vial")
 		ui_editor.mostrar_notificacion("Acción vial rehecha.")
 	else:
 		ui_editor.mostrar_notificacion("No hay acciones por rehacer.")

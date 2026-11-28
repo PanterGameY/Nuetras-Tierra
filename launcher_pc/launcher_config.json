@@ -1,0 +1,8 @@
+{
+  "game_name": "Nuestra Tierra 2.0",
+  "game_app_userdata_folder": "NuestraTierra2.0",
+  "game_exe_name": "NuestraTierra.exe",
+  "game_pck_name": "NuestraTierra.pck",
+  "manifest_url": "https://hndlwmvezampajbmpqae.supabase.co/storage/v1/object/public/releases/pc/manifest.json",
+  "default_version": "0.0.2"
+}

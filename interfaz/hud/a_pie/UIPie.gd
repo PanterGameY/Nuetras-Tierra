@@ -108,6 +108,13 @@ func _ready() -> void:
 	add_to_group("joystick")
 	add_to_group("zona_camara")
 
+	# Conectar Modo PC desde SettingsManager
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm:
+		if sm.has_signal("modo_pc_cambiado") and not sm.modo_pc_cambiado.is_connected(aplicar_modo_pc):
+			sm.modo_pc_cambiado.connect(aplicar_modo_pc)
+		aplicar_modo_pc(bool(sm.get("modo_pc")))
+
 	# delay to allow other nodes (jugador) to exist
 	await get_tree().process_frame
 	_asegurar_jugador_ref()
@@ -140,7 +147,26 @@ func _asegurar_jugador_ref() -> Node:
 		jugador = get_tree().get_first_node_in_group("jugador")
 	return jugador
 
+func aplicar_modo_pc(activo: bool) -> void:
+	if not controles:
+		return
+	if activo:
+		controles.visible = false
+		controles.process_mode = Node.PROCESS_MODE_DISABLED
+		_limpiar_estados_tactiles()
+	else:
+		controles.process_mode = Node.PROCESS_MODE_INHERIT
+		if visible:
+			controles.visible = true
+
 func _on_visibility_changed() -> void:
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm and bool(sm.get("modo_pc")):
+		if controles:
+			controles.visible = false
+			controles.process_mode = Node.PROCESS_MODE_DISABLED
+		_limpiar_estados_tactiles()
+		return
 	if not visible or (controles and not controles.visible):
 		_limpiar_estados_tactiles()
 		return

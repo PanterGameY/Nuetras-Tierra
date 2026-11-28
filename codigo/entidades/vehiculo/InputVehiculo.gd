@@ -15,6 +15,7 @@ var freno: float = 0.0
 var direccion: float = 0.0
 var freno_mano: bool = false
 var freno_motor: bool = false
+var plumillas: bool = false
 var embrague: float = 0.0 # Simulación de acople de torque
 
 # Transmisión

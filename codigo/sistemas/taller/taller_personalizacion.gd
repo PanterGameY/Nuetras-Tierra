@@ -40,6 +40,7 @@ var collision_node: CollisionShape3D = null
 var ui_layer: CanvasLayer = null
 var interaction_btn: Button = null
 var instruction_lbl: Label = null
+var _menu_inst_actual: Node = null
 
 # Sistema de cámara orbital táctil y de teclado
 var camera_pivot: Node3D = null
@@ -200,6 +201,8 @@ func _on_body_entered(body: Node3D) -> void:
 		current_node = current_node.get_parent()
 
 	if found_vehiculo:
+		if multiplayer and multiplayer.has_multiplayer_peer() and not found_vehiculo.is_multiplayer_authority():
+			return
 		vehiculo_dentro = found_vehiculo
 		if debug_taller:
 			print("[TallerPersonalizacion] ✔ Vehículo detectado: ", found_vehiculo.name)
@@ -268,22 +271,28 @@ func _crear_ui_interaccion_dinamica() -> void:
 		
 	interaction_btn.add_theme_font_size_override("font_size", 22)
 
-	# Estilo visual moderno
+	# Estilo visual Automotive Glassmorphism
 	var style_normal = StyleBoxFlat.new()
-	style_normal.bg_color = Color(0.05, 0.05, 0.07, 0.92)
+	style_normal.bg_color = Color(0.08, 0.09, 0.11, 0.85)
 	for side in ["left", "top", "right", "bottom"]:
-		style_normal.set("border_width_" + side, 3)
-	style_normal.border_color = Color(0.95, 0.8, 0.0, 1.0)
+		style_normal.set("border_width_" + side, 2)
+	style_normal.border_color = Color(0.88, 0.68, 0.28, 0.92)
 	for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-		style_normal.set("corner_radius_" + corner, 18)
+		style_normal.set("corner_radius_" + corner, 12)
+	style_normal.shadow_size = 5
+	style_normal.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
 
 	var style_hover = style_normal.duplicate()
-	style_hover.bg_color = Color(0.12, 0.12, 0.16, 0.95)
+	style_hover.bg_color = Color(0.12, 0.14, 0.17, 0.92)
+	style_hover.border_color = Color(0.95, 0.78, 0.35, 1.0)
+
+	var style_pressed = style_normal.duplicate()
+	style_pressed.bg_color = Color(0.88, 0.68, 0.28, 0.25)
 
 	interaction_btn.add_theme_stylebox_override("normal", style_normal)
 	interaction_btn.add_theme_stylebox_override("hover", style_hover)
-	interaction_btn.add_theme_stylebox_override("pressed", style_normal)
-	interaction_btn.add_theme_color_override("font_color", Color(0.95, 0.8, 0.0, 1.0))
+	interaction_btn.add_theme_stylebox_override("pressed", style_pressed)
+	interaction_btn.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.95))
 
 	interaction_btn.visible = false
 
@@ -338,6 +347,27 @@ func _mostrar_instruccion_bajar(visible_state: bool) -> void:
 	if instruction_lbl:
 		instruction_lbl.visible = visible_state
 
+func _buscar_jugador_local() -> Node:
+	if not get_tree():
+		return null
+	if multiplayer and multiplayer.has_multiplayer_peer():
+		var local_id := multiplayer.get_unique_id()
+		if get_tree().get_root():
+			var mp_jug := get_tree().get_root().find_child("Jugador_" + str(local_id), true, false)
+			if mp_jug:
+				return mp_jug
+		for n in get_tree().get_nodes_in_group("jugador"):
+			if is_instance_valid(n) and n.is_multiplayer_authority():
+				return n
+	var jug = get_tree().get_first_node_in_group("jugador")
+	if not jug and vehiculo_dentro and is_instance_valid(vehiculo_dentro):
+		jug = vehiculo_dentro.get("jugador_ref")
+	if not jug and get_tree().get_root():
+		jug = get_tree().get_root().find_child("Jugador", true, false)
+		if not jug:
+			jug = get_tree().get_root().find_child("Jugador3D", true, false)
+	return jug
+
 func abrir_taller() -> void:
 	if not is_instance_valid(vehiculo_dentro) or editando:
 		return
@@ -346,15 +376,7 @@ func abrir_taller() -> void:
 	_mostrar_letrero(false)
 
 	# Ocultar y desactivar jugador/personaje
-	var jugador = null
-	if get_tree():
-		jugador = get_tree().get_first_node_in_group("jugador")
-	if not jugador and vehiculo_dentro:
-		jugador = vehiculo_dentro.get("jugador_ref")
-	if not jugador and get_tree() and get_tree().get_root():
-		jugador = get_tree().get_root().find_child("Jugador", true, false)
-		if not jugador:
-			jugador = get_tree().get_root().find_child("Jugador3D", true, false)
+	var jugador = _buscar_jugador_local()
 			
 	if jugador and is_instance_valid(jugador):
 		jugador.visible = false
@@ -518,15 +540,25 @@ func _gui_input(event: InputEvent) -> void:
 	if ResourceLoader.exists(menu_path):
 		var menu_scene = load(menu_path)
 		if menu_scene:
+			if is_instance_valid(_menu_inst_actual):
+				_menu_inst_actual.queue_free()
 			var menu_inst = menu_scene.instantiate()
+			_menu_inst_actual = menu_inst
 			if ui_layer:
 				ui_layer.add_child(menu_inst)
 			else:
 				add_child(menu_inst)
 				
 			if menu_inst is Control:
-				# Allow touches to pass through empty areas so the TallerZonaCamara can receive touch input
-				menu_inst.mouse_filter = Control.MOUSE_FILTER_PASS
+				# Ignore empty areas so TallerZonaCamara (sibling behind in CanvasLayer) receives drag/wheel input
+				menu_inst.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				menu_inst.modulate.a = 0.0
+				menu_inst.scale = Vector2(0.92, 0.92)
+				menu_inst.pivot_offset = menu_inst.size * 0.5
+				var tw := create_tween()
+				tw.set_parallel(true)
+				tw.tween_property(menu_inst, "modulate:a", 1.0, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+				tw.tween_property(menu_inst, "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 				
 			if menu_inst.has_method("configurar_taller"):
 				menu_inst.configurar_taller(self, customizer)
@@ -588,31 +620,27 @@ func cerrar_taller() -> void:
 		if zc:
 			zc.queue_free()
 
-	# Restaurar controles de conducción
-	var iv = get_node_or_null("/root/InputVehiculo")
-	if iv:
-		if "conduciendo" in iv:
-			iv.conduciendo = true
-		if "freno_mano" in iv:
-			iv.freno_mano = false
+	# Liberar el menú de personalización si sigue instanciado
+	if is_instance_valid(_menu_inst_actual):
+		_menu_inst_actual.queue_free()
+	_menu_inst_actual = null
 
 	# Detectar si el jugador está conduciendo
 	var jugador_conduciendo = false
-	var jugador = null
-	if get_tree():
-		jugador = get_tree().get_first_node_in_group("jugador")
-	if not jugador and vehiculo_dentro and is_instance_valid(vehiculo_dentro):
-		jugador = vehiculo_dentro.get("jugador_ref")
-	if not jugador and get_tree() and get_tree().get_root():
-		jugador = get_tree().get_root().find_child("Jugador", true, false)
-		if not jugador:
-			jugador = get_tree().get_root().find_child("Jugador3D", true, false)
-			
+	var jugador = _buscar_jugador_local()
 	if jugador and is_instance_valid(jugador):
 		jugador_conduciendo = jugador.get("_conduciendo") == true or jugador.get("conduciendo") == true
-		# Mostrar y activar jugador/personaje nuevamente
-		jugador.visible = true
+		# Mostrar y activar jugador/personaje solo si no está conduciendo
+		jugador.visible = not jugador_conduciendo
 		jugador.process_mode = PROCESS_MODE_INHERIT
+
+	# Restaurar controles de conducción según el estado real del jugador
+	var iv = get_node_or_null("/root/InputVehiculo")
+	if iv:
+		if "conduciendo" in iv:
+			iv.conduciendo = jugador_conduciendo
+		if "freno_mano" in iv:
+			iv.freno_mano = false
 
 	# Mostrar de nuevo la UI estándar del vehículo solo si está conduciendo
 	if vehiculo_dentro and is_instance_valid(vehiculo_dentro):

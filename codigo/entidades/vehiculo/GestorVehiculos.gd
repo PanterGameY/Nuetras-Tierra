@@ -10,6 +10,8 @@ var vehiculo_actual: Node3D = null
 func subir_jugador_a_vehiculo(jugador: Node3D, vehiculo: Node3D) -> void:
 	if not is_instance_valid(jugador) or not is_instance_valid(vehiculo):
 		return
+	if jugador.get_meta("llevando_pistola_gasolina", false):
+		return
 	vehiculo_actual = vehiculo
 	if jugador.has_method("ocultar_interfaz_pie"):
 		jugador.ocultar_interfaz_pie()

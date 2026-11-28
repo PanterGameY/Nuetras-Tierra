@@ -627,6 +627,7 @@ func reemplazar_objeto_en_sitio(obj_antiguo: Node3D, nuevo_id: String) -> Node3D
 		_nivelar_terreno_para_zona(nuevo_obj, nuevo_id)
 	nuevo_obj.set_meta("radio_huella", _obtener_radio_huella(nuevo_obj))
 	_objetos_en_escena.append(nuevo_obj)
+	_aplicar_visibilidad_nodo(nuevo_obj)
 	if era_sel:
 		seleccionar_objeto_en_escena(nuevo_obj)
 	_recrear_preview_fantasma()
@@ -892,6 +893,11 @@ func aplicar_distancia_visibilidad(dist: float) -> void:
 			_aplicar_visibilidad_nodo(obj)
 
 func _aplicar_visibilidad_nodo(raiz: Node) -> void:
+	var es_prop_pequeno := false
+	if raiz is Node3D and raiz.has_meta("radio_huella"):
+		es_prop_pequeno = float(raiz.get_meta("radio_huella")) <= 3.0
+	var dist_efectiva := minf(distancia_visibilidad, 220.0) if es_prop_pequeno else distancia_visibilidad
+	var es_movil := OS.has_feature("android") or OS.has_feature("ios")
 	var pila: Array[Node] = [raiz]
 	while not pila.is_empty():
 		var cur: Node = pila.pop_back()
@@ -899,9 +905,11 @@ func _aplicar_visibilidad_nodo(raiz: Node) -> void:
 			pila.append(ch)
 		if cur is GeometryInstance3D:
 			var gi := cur as GeometryInstance3D
-			gi.visibility_range_end = distancia_visibilidad
+			gi.visibility_range_end = dist_efectiva
 			gi.visibility_range_end_margin = 20.0
 			gi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+			if es_movil and es_prop_pequeno:
+				gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 func _obtener_radio_huella(obj: Node3D) -> float:
 	if not is_instance_valid(obj):

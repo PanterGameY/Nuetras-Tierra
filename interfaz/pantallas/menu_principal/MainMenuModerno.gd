@@ -26,6 +26,7 @@ const ESCENA_MISIONES := "res://interfaz/pantallas/misiones/MisionesMenu.tscn"
 const ESCENA_CONFIG := "res://interfaz/pantallas/configuraciones/configuraciones.tscn"
 const ESCENA_PERFIL := "res://interfaz/pantallas/perfil/Perfil_Menu.tscn"
 const ESCENA_EDITOR_MAPAS := "res://mundo/editor_mapas/HubEditorMapas.tscn"
+const SCRIPT_COMUNIDAD_MODAL := preload("res://interfaz/pantallas/menu_principal/ComunidadModal.gd")
 const MENU_MUSIC_PATH := "res://recursos/Musica/Aire-de-son.mp3"
 
 # ── Tokens de diseño (diseño.md) ───────────────────────────────────────
@@ -49,6 +50,8 @@ var _audio_player_menu: AudioStreamPlayer = null
 var _toast_actual: PanelContainer = null
 static var _bienvenida_mostrada: bool = false
 var _ad_view = null
+var _comunidad_modal: Control = null
+var _timer_presencia: Timer = null
 
 @onready var fondo_3d: TextureRect = $Fondo3D
 @onready var camera_menu: Camera3D = null
@@ -58,7 +61,6 @@ var _ad_view = null
 @onready var perfil_panel: PanelContainer = $PerfilPanel
 @onready var bottom_dock: CenterContainer = $BottomDock
 @onready var hint_chip: PanelContainer = $HintChip
-@onready var watermark: Label = $Watermark
 
 @onready var barra_divisas: BarraDivisas = $TopBar/TopRightEconomy
 
@@ -67,6 +69,7 @@ var _ad_view = null
 @onready var btn_pase_elite: Button = $LeftNav/VBox/BtnPaseElite
 @onready var punto_pase: Panel = $LeftNav/VBox/BtnPaseElite/PuntoPase
 @onready var btn_misiones: Button = $LeftNav/VBox/BtnMisiones
+@onready var btn_comunidad: Button = $LeftNav/VBox/BtnComunidad
 @onready var btn_soporte: Button = $LeftNav/VBox/BtnSoporte
 
 @onready var avatar_perfil: TextureRect = $PerfilPanel/VBox/HBoxAvatar/AvatarMarco/Lienzo/Avatar
@@ -78,9 +81,8 @@ var _ad_view = null
 @onready var barra_xp: ProgressBar = $PerfilPanel/VBox/VBoxProgreso/BarraXp
 @onready var btn_ver_perfil: Button = $PerfilPanel/VBox/BtnVerPerfil
 
-@onready var btn_jugar: Button = $BottomDock/DockBar/Contenido/BtnJugar
 @onready var btn_multijugador: Button = $BottomDock/DockBar/Contenido/BtnMultijugador
-@onready var btn_garage: Button = $BottomDock/DockBar/Contenido/IconCluster/BtnGarage
+@onready var btn_editor_mapas: Button = $BottomDock/DockBar/Contenido/BtnEditorMapas
 @onready var btn_config: Button = $BottomDock/DockBar/Contenido/IconCluster/BtnConfig
 @onready var btn_salir: Button = $BottomDock/DockBar/Contenido/IconCluster/BtnSalir
 
@@ -113,6 +115,101 @@ func _ready() -> void:
 
 	_start_menu_music()
 	_iniciar_anuncio_menu()
+	_cargar_vehiculo_seleccionado_en_fondo()
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_signal("perfil_cargado") and not sb.perfil_cargado.is_connected(_on_perfil_nube_cargado):
+		sb.perfil_cargado.connect(_on_perfil_nube_cargado)
+	_iniciar_presencia_ligera()
+
+func _on_perfil_nube_cargado(_perfil: Dictionary) -> void:
+	_cargar_vehiculo_seleccionado_en_fondo()
+
+const CATALOGO_VEHICULOS_MENU := {
+	"T800_A": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T800_Alargada": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"Mespark": "res://modelos3d/vehiculos/automoviles/Mespark/mespark.tscn",
+	"Duster": "res://modelos3d/vehiculos/automoviles/Duster/duster.tscn",
+	"ToyotaHiace": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Hiage": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Pardo": "res://modelos3d/vehiculos/automoviles/Pardo/pardo.tscn",
+	"T800": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"800_Modular": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T680": "res://modelos3d/vehiculos/tractomulas/cabezotes/T680/T680.tscn",
+	"Kodiak": "res://modelos3d/vehiculos/tractomulas/cabezotes/KODIAK/kodiak.tscn",
+	"NPR": "res://modelos3d/vehiculos/NPR/npr.tscn",
+	"Sprinter": "res://modelos3d/vehiculos/automoviles/sprinter/sprinter_repartidor.tscn",
+	"Marcopolo": "res://modelos3d/vehiculos/Buses/MarcopoloG8-1200/MarcopoloG8-1200.tscn"
+}
+
+func _cargar_vehiculo_seleccionado_en_fondo() -> void:
+	var bodega := get_node_or_null("Node3D/SubViewport2/Bodega")
+	if not bodega:
+		return
+
+	var id_vehiculo := "T800_A"
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du:
+		if "guardado_player_vehiculo_nombre" in du and str(du.guardado_player_vehiculo_nombre) != "":
+			id_vehiculo = str(du.guardado_player_vehiculo_nombre)
+		elif "vehiculo_actual" in du and str(du.vehiculo_actual) != "":
+			id_vehiculo = str(du.vehiculo_actual)
+
+	if not CATALOGO_VEHICULOS_MENU.has(id_vehiculo):
+		for k in CATALOGO_VEHICULOS_MENU.keys():
+			if k.to_lower() in id_vehiculo.to_lower() or id_vehiculo.to_lower() in k.to_lower():
+				id_vehiculo = k
+				break
+		if not CATALOGO_VEHICULOS_MENU.has(id_vehiculo):
+			id_vehiculo = "T800_A"
+
+	var vehiculo_actual_nodo: Node3D = bodega.get_node_or_null("VehiculoMenuSeleccionado")
+	if not vehiculo_actual_nodo:
+		vehiculo_actual_nodo = bodega.get_node_or_null("T800_Alargada")
+		if not vehiculo_actual_nodo:
+			vehiculo_actual_nodo = bodega.find_child("*T800*", true, false) as Node3D
+
+	var spawn_xform := Transform3D.IDENTITY
+	if vehiculo_actual_nodo:
+		spawn_xform = vehiculo_actual_nodo.transform
+		var ya_coincide := vehiculo_actual_nodo.has_meta("modelo_id") and str(vehiculo_actual_nodo.get_meta("modelo_id")) == id_vehiculo
+		var es_t800_default := (id_vehiculo == "T800_A" or id_vehiculo == "T800_Alargada" or id_vehiculo == "T800") and ("T800" in vehiculo_actual_nodo.name)
+		if not ya_coincide and not es_t800_default:
+			vehiculo_actual_nodo.queue_free()
+			vehiculo_actual_nodo = null
+
+	if not vehiculo_actual_nodo:
+		var ruta: String = CATALOGO_VEHICULOS_MENU.get(id_vehiculo, CATALOGO_VEHICULOS_MENU["T800_A"])
+		if ResourceLoader.exists(ruta):
+			var ps := load(ruta) as PackedScene
+			if ps:
+				vehiculo_actual_nodo = ps.instantiate() as Node3D
+				if vehiculo_actual_nodo:
+					vehiculo_actual_nodo.name = "VehiculoMenuSeleccionado"
+					bodega.add_child(vehiculo_actual_nodo)
+					vehiculo_actual_nodo.transform = spawn_xform
+
+	if not vehiculo_actual_nodo:
+		return
+
+	if vehiculo_actual_nodo is RigidBody3D:
+		vehiculo_actual_nodo.freeze = true
+		vehiculo_actual_nodo.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	elif "freeze" in vehiculo_actual_nodo:
+		vehiculo_actual_nodo.set("freeze", true)
+
+	vehiculo_actual_nodo.set_meta("modelo_id", id_vehiculo)
+	var cust: Node = vehiculo_actual_nodo.get_node_or_null("CustomizerComponent")
+	if not cust:
+		cust = vehiculo_actual_nodo.find_child("CustomizerComponent", true, false)
+	if not cust:
+		var cust_script := load("res://codigo/sistemas/taller/customizer_component.gd")
+		if cust_script:
+			cust = Node.new()
+			cust.set_script(cust_script)
+			cust.name = "CustomizerComponent"
+			vehiculo_actual_nodo.add_child(cust)
+	if cust and cust.has_method("cargar_personalizacion"):
+		cust.cargar_personalizacion()
 
 
 func _exit_tree() -> void:
@@ -180,29 +277,23 @@ func _estilizar_controles() -> void:
 		_conectar_hover(btn, _icono_de(btn), _label_de(btn), TINTE_NEUTRO, TINTE_AMBER)
 		_preparar_boton(btn, 1.01)
 
-	_aplicar_estilo_primario(btn_jugar)
-	_conectar_hover(
-		btn_jugar, _icono_de(btn_jugar), _label_de(btn_jugar), TINTE_TINTA, TINTE_TINTA_HOVER
-	)
-	_preparar_boton(btn_jugar, 1.02)
-
-	_aplicar_estilo_secundario(btn_multijugador)
-	_conectar_hover(
-		btn_multijugador, _icono_de(btn_multijugador), _label_de(btn_multijugador),
-		TINTE_NEUTRO, TINTE_AMBER
-	)
-	_preparar_boton(btn_multijugador, 1.02)
-
-	for btn in [btn_garage, btn_config]:
+	for btn in [btn_multijugador, btn_editor_mapas]:
 		if btn:
-			_aplicar_estilo_icono(btn, false)
-			_conectar_hover(btn, _icono_de(btn), null, TINTE_NEUTRO, TINTE_AMBER)
-			_preparar_boton(btn, 1.06)
+			_aplicar_estilo_secundario(btn, btn == btn_multijugador)
+			_conectar_hover(
+				btn, _icono_de(btn), _label_de(btn), TINTE_NEUTRO, TINTE_AMBER
+			)
+			_preparar_boton(btn, 1.02)
+
+	if btn_config:
+		_aplicar_estilo_icono(btn_config, false)
+		_conectar_hover(btn_config, _icono_de(btn_config), _label_de(btn_config), TINTE_NEUTRO, TINTE_AMBER)
+		_preparar_boton(btn_config, 1.02)
 
 	if btn_salir:
 		_aplicar_estilo_icono(btn_salir, true)
-		_conectar_hover(btn_salir, _icono_de(btn_salir), null, TINTE_PELIGRO, TINTE_PELIGRO_HOVER)
-		_preparar_boton(btn_salir, 1.06)
+		_conectar_hover(btn_salir, _icono_de(btn_salir), _label_de(btn_salir), TINTE_PELIGRO, TINTE_PELIGRO_HOVER)
+		_preparar_boton(btn_salir, 1.02)
 
 	_aplicar_estilo_perfil(btn_ver_perfil)
 	_conectar_hover(btn_ver_perfil, null, null, TINTE_NEUTRO, TINTE_AMBER)
@@ -210,12 +301,12 @@ func _estilizar_controles() -> void:
 
 
 func _botones_nav() -> Array:
-	return [btn_tienda, btn_garaje, btn_pase_elite, btn_misiones, btn_soporte]
+	return [btn_tienda, btn_garaje, btn_pase_elite, btn_misiones, btn_comunidad, btn_soporte]
 
 
 func _todos_los_botones() -> Array:
 	var lista := _botones_nav()
-	for btn in [btn_jugar, btn_multijugador, btn_garage, btn_config, btn_salir, btn_ver_perfil]:
+	for btn in [btn_multijugador, btn_editor_mapas, btn_config, btn_salir, btn_ver_perfil]:
 		if btn != null:
 			lista.append(btn)
 	return lista
@@ -280,11 +371,12 @@ func _aplicar_estilo_primario(btn: Button) -> void:
 	btn.add_theme_font_size_override("font_size", 30)
 
 
-func _aplicar_estilo_secundario(btn: Button) -> void:
-	var transparente := Color(1.0, 1.0, 1.0, 0.0)
-	var normal := _crear_estilo(Color(1.0, 1.0, 1.0, 0.03), transparente, 12, 1, 0)
-	var hover := _crear_estilo(Color(1.0, 1.0, 1.0, 0.09), C_BORDER_FROST, 12, 1, 0)
-	var pressed := _crear_estilo(Color(0.88, 0.68, 0.28, 0.16), C_AMBER, 12, 1, 0)
+func _aplicar_estilo_secundario(btn: Button, destacado: bool = false) -> void:
+	var borde_normal := Color(0.88, 0.68, 0.28, 0.42) if destacado else Color(0.78, 0.81, 0.85, 0.16)
+	var fondo_normal := Color(0.09, 0.10, 0.12, 0.86) if destacado else Color(0.08, 0.09, 0.11, 0.78)
+	var normal := _crear_estilo(fondo_normal, borde_normal, 12, 1, 4)
+	var hover := _crear_estilo(Color(0.13, 0.15, 0.18, 0.94), C_AMBER if destacado else C_BORDER_BRIGHT, 12, 1, 6)
+	var pressed := _crear_estilo(Color(0.88, 0.68, 0.28, 0.18), C_AMBER, 12, 1, 8)
 
 	var focus := hover.duplicate() as StyleBoxFlat
 	focus.border_color = C_AMBER
@@ -325,13 +417,13 @@ func _aplicar_estilo_icono(btn: Button, peligro: bool) -> void:
 	var transparente := Color(1.0, 1.0, 1.0, 0.0)
 
 	if peligro:
-		normal = _crear_estilo(Color(0.78, 0.28, 0.26, 0.07), transparente, 10, 1, 0)
-		hover = _crear_estilo(Color(0.78, 0.28, 0.26, 0.2), Color(0.78, 0.28, 0.26, 0.75), 10, 1, 6)
-		pressed = _crear_estilo(Color(0.78, 0.28, 0.26, 0.32), C_CRIMSON, 10, 1, 8)
+		normal = _crear_estilo(Color(0.78, 0.28, 0.26, 0.10), Color(0.78, 0.28, 0.26, 0.35), 10, 1, 4)
+		hover = _crear_estilo(Color(0.78, 0.28, 0.26, 0.24), Color(0.78, 0.28, 0.26, 0.80), 10, 1, 6)
+		pressed = _crear_estilo(Color(0.78, 0.28, 0.26, 0.36), C_CRIMSON, 10, 1, 8)
 	else:
-		normal = _crear_estilo(Color(1.0, 1.0, 1.0, 0.03), transparente, 10, 1, 0)
-		hover = _crear_estilo(Color(1.0, 1.0, 1.0, 0.09), C_BORDER_FROST, 10, 1, 0)
-		pressed = _crear_estilo(Color(0.88, 0.68, 0.28, 0.18), C_AMBER, 10, 1, 0)
+		normal = _crear_estilo(Color(0.08, 0.09, 0.11, 0.78), Color(0.78, 0.81, 0.85, 0.16), 10, 1, 4)
+		hover = _crear_estilo(Color(0.13, 0.15, 0.18, 0.92), C_BORDER_BRIGHT, 10, 1, 6)
+		pressed = _crear_estilo(Color(0.88, 0.68, 0.28, 0.18), C_AMBER, 10, 1, 8)
 
 	var focus := hover.duplicate() as StyleBoxFlat
 	if not peligro:
@@ -451,7 +543,6 @@ func _animar_entrada() -> void:
 		[perfil_panel, Vector2(26.0, 0.0)],
 		[bottom_dock, Vector2(0.0, 24.0)],
 		[hint_chip, Vector2(0.0, 12.0)],
-		[watermark, Vector2(0.0, 8.0)],
 	]
 
 	var tw: Tween = create_tween()
@@ -651,36 +742,8 @@ func _on_fondo_gui_input(event: InputEvent) -> void:
 # ═══════════════════════════════════════════════════════════════════════
 
 func _conectar_botones() -> void:
-	if btn_jugar: btn_jugar.pressed.connect(_on_btn_jugar_pressed)
 	if btn_multijugador: btn_multijugador.pressed.connect(_on_multijugador_pressed)
-	# Botón interactivo para acceder al Editor de Mapas
-	# Botón interactivo para acceder al Editor de Mapas
-	var dock_box = btn_jugar.get_parent() if btn_jugar else find_child("DockBar", true, false)
-	if dock_box and not dock_box.has_node("BtnEditorMapas"):
-		var btn_ed := Button.new()
-		btn_ed.name = "BtnEditorMapas"
-		btn_ed.text = "🗺️ MAPAS"
-		btn_ed.custom_minimum_size = Vector2(240, 96)
-		btn_ed.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		btn_ed.add_theme_font_size_override("font_size", 22)
-		if FONT:
-			btn_ed.add_theme_font_override("font", FONT)
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0.09, 0.10, 0.12, 0.94)
-		sb.border_color = Color(0.88, 0.68, 0.28, 0.95)
-		sb.set_border_width_all(2)
-		sb.set_corner_radius_all(14)
-		sb.shadow_size = 8
-		sb.shadow_color = Color(0, 0, 0, 0.5)
-		btn_ed.add_theme_stylebox_override("normal", sb)
-		var sb_p := sb.duplicate()
-		sb_p.bg_color = Color(0.88, 0.68, 0.28, 0.95)
-		btn_ed.add_theme_stylebox_override("pressed", sb_p)
-		btn_ed.pressed.connect(_on_editor_mapas_pressed)
-		dock_box.add_child(btn_ed)
-		if btn_multijugador:
-			dock_box.move_child(btn_ed, btn_multijugador.get_index() + 1)
-	if btn_garage: btn_garage.pressed.connect(_on_garage_pressed)
+	if btn_editor_mapas: btn_editor_mapas.pressed.connect(_on_editor_mapas_pressed)
 	if btn_config: btn_config.pressed.connect(_on_config_pressed)
 	if btn_salir: btn_salir.pressed.connect(_on_salir_pressed)
 
@@ -688,17 +751,9 @@ func _conectar_botones() -> void:
 	if btn_garaje: btn_garaje.pressed.connect(_on_garaje_nav_pressed)
 	if btn_pase_elite: btn_pase_elite.pressed.connect(_on_pase_elite_pressed)
 	if btn_misiones: btn_misiones.pressed.connect(_on_misiones_pressed)
+	if btn_comunidad: btn_comunidad.pressed.connect(_on_comunidad_pressed)
 	if btn_soporte: btn_soporte.pressed.connect(_on_soporte_pressed)
 	if btn_ver_perfil: btn_ver_perfil.pressed.connect(_on_ver_perfil_pressed)
-
-
-func _on_btn_jugar_pressed() -> void:
-	if DatosUsuario:
-		DatosUsuario.next_scene = ESCENA_JUEGO_PRINCIPAL
-	if ResourceLoader.exists(ESCENA_CARGA):
-		get_tree().change_scene_to_file(ESCENA_CARGA)
-	else:
-		get_tree().change_scene_to_file(ESCENA_JUEGO_PRINCIPAL)
 
 
 func _on_editor_mapas_pressed() -> void:
@@ -762,22 +817,46 @@ func _on_garaje_nav_pressed() -> void:
 
 func _on_pase_elite_pressed() -> void:
 	if ResourceLoader.exists(ESCENA_PASE_ELITE):
-		if DatosUsuario:
-			DatosUsuario.cambiar_escena(ESCENA_PASE_ELITE)
-		else:
-			get_tree().change_scene_to_file(ESCENA_PASE_ELITE)
+		get_tree().change_scene_to_file(ESCENA_PASE_ELITE)
 	else:
 		_mostrar_toast("PASE ELITE NO DISPONIBLE")
 
 
 func _on_misiones_pressed() -> void:
-	if ResourceLoader.exists(ESCENA_MISIONES):
+	var ruta_ruleta := "res://interfaz/pantallas/ruleta/RuletaPremios.tscn"
+	if ResourceLoader.exists(ruta_ruleta):
 		if DatosUsuario:
-			DatosUsuario.cambiar_escena(ESCENA_MISIONES)
+			DatosUsuario.cambiar_escena(ruta_ruleta)
 		else:
-			get_tree().change_scene_to_file(ESCENA_MISIONES)
+			get_tree().change_scene_to_file(ruta_ruleta)
 	else:
-		_mostrar_toast("RUTAS: MODULO EN PREPARACION")
+		_mostrar_toast("RULETA NO DISPONIBLE")
+
+
+func _on_comunidad_pressed() -> void:
+	if not is_instance_valid(_comunidad_modal):
+		_comunidad_modal = Control.new()
+		_comunidad_modal.name = "ComunidadModal"
+		_comunidad_modal.set_script(SCRIPT_COMUNIDAD_MODAL)
+		add_child(_comunidad_modal)
+	if _comunidad_modal.has_method("abrir"):
+		_comunidad_modal.abrir()
+
+
+func _iniciar_presencia_ligera() -> void:
+	var sb := get_node_or_null("/root/SupabaseManager")
+	if sb and sb.has_method("actualizar_presencia"):
+		sb.actualizar_presencia()
+	_timer_presencia = Timer.new()
+	_timer_presencia.wait_time = 60.0
+	_timer_presencia.one_shot = false
+	_timer_presencia.autostart = true
+	_timer_presencia.timeout.connect(func() -> void:
+		var supa := get_node_or_null("/root/SupabaseManager")
+		if supa and supa.has_method("actualizar_presencia"):
+			supa.actualizar_presencia()
+	)
+	add_child(_timer_presencia)
 
 
 func _on_soporte_pressed() -> void:

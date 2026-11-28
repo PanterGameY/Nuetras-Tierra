@@ -7,6 +7,7 @@ signal auth_error(mensaje: String)
 signal sesion_refrescada(exito: bool)
 signal perfil_cargado(perfil: Dictionary)
 signal perfil_guardado(ok: bool)
+signal comunidad_actualizada(jugadores: Array, ok: bool)
 
 const SUPABASE_URL := "https://hndlwmvezampajbmpqae.supabase.co"
 const SUPABASE_KEY := "sb_publishable_Cw95N8YDQNhc4zDGTE__Yg_C_Xj0IP4"
@@ -484,6 +485,118 @@ func guardar_perfil(campos: Dictionary = {}) -> void:
 		perfil_guardado.emit(status >= 200 and status < 300)
 	)
 	http.request(url, headers, HTTPClient.METHOD_PATCH, JSON.stringify(payload))
+
+func actualizar_presencia() -> void:
+	if not esta_autenticado():
+		return
+	var url := "%s/rest/v1/perfiles?id=eq.%s" % [SUPABASE_URL, user_id.uri_encode()]
+	var headers := [
+		"apikey: " + SUPABASE_KEY,
+		"Authorization: Bearer " + access_token,
+		"Content-Type: application/json",
+		"Prefer: return=minimal"
+	]
+	var payload := {
+		"actualizado_en": Time.get_datetime_string_from_system(true)
+	}
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	http.request_completed.connect(func(_res: int, status: int, _hdrs: PackedStringArray, _resp_body: PackedByteArray):
+		http.queue_free()
+		if status == 401 and not refresh_token.is_empty():
+			refrescar_sesion()
+	)
+	http.request(url, headers, HTTPClient.METHOD_PATCH, JSON.stringify(payload))
+
+func obtener_jugadores_conectados(minutos_ventana: int = 3) -> void:
+	_consultar_jugadores_conectados_interno(minutos_ventana, esta_autenticado())
+
+func _consultar_jugadores_conectados_interno(minutos_ventana: int, usar_token_usuario: bool) -> void:
+	var url := "%s/rest/v1/perfiles?select=id,nombre,nivel,discord_usuario,proveedor,avatar_url,actualizado_en&order=actualizado_en.desc&limit=50" % SUPABASE_URL
+	var bearer := access_token if (usar_token_usuario and esta_autenticado()) else SUPABASE_KEY
+	var headers := [
+		"apikey: " + SUPABASE_KEY,
+		"Authorization: Bearer " + bearer
+	]
+	var http := HTTPRequest.new()
+	http.timeout = 8.0
+	add_child(http)
+	http.request_completed.connect(func(_res: int, status: int, hdrs: PackedStringArray, resp_body: PackedByteArray):
+		http.queue_free()
+		if status == 401 and usar_token_usuario:
+			if not refresh_token.is_empty():
+				refrescar_sesion()
+			_consultar_jugadores_conectados_interno(minutos_ventana, false)
+			return
+		if status < 200 or status >= 300:
+			comunidad_actualizada.emit([], false)
+			return
+		var json = JSON.parse_string(resp_body.get_string_from_utf8())
+		if not (json is Array):
+			comunidad_actualizada.emit([], false)
+			return
+		var ref_unix := _extraer_unix_header_date(hdrs)
+		if ref_unix <= 0:
+			ref_unix = int(Time.get_unix_time_from_system())
+		var ventana_seg := maxi(minutos_ventana, 1) * 60
+		var activos: Array = []
+		for item in json:
+			if not (item is Dictionary):
+				continue
+			var ts_str := str(item.get("actualizado_en", "")).strip_edges()
+			if ts_str.is_empty():
+				continue
+			var item_unix := _iso_a_unix(ts_str)
+			if item_unix <= 0:
+				continue
+			# Acepta activos dentro de la ventana respecto al reloj del servidor (o futuros si el cliente tenía reloj adelantado)
+			if (ref_unix - item_unix) <= ventana_seg:
+				activos.append(item)
+		comunidad_actualizada.emit(activos, true)
+	)
+	http.request(url, headers, HTTPClient.METHOD_GET)
+
+func _extraer_unix_header_date(hdrs: PackedStringArray) -> int:
+	for h in hdrs:
+		var lower := h.to_lower()
+		if lower.begins_with("date:"):
+			var val := h.substr(5).strip_edges()
+			return _http_date_a_unix(val)
+	return 0
+
+func _http_date_a_unix(date_str: String) -> int:
+	# Ej: "Wed, 25 Nov 2026 04:16:23 GMT"
+	var partes := date_str.replace(",", "").split(" ", false)
+	if partes.size() < 5:
+		return 0
+	var meses := {
+		"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+		"Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
+	}
+	var dia := int(partes[1])
+	var mes := int(meses.get(partes[2], 0))
+	var anio := int(partes[3])
+	var hms := partes[4].split(":")
+	if mes == 0 or hms.size() < 3:
+		return 0
+	var dt := {
+		"year": anio, "month": mes, "day": dia,
+		"hour": int(hms[0]), "minute": int(hms[1]), "second": int(hms[2])
+	}
+	return int(Time.get_unix_time_from_datetime_dict(dt))
+
+func _iso_a_unix(iso_str: String) -> int:
+	var limpia := iso_str.strip_edges()
+	var idx_dot := limpia.find(".")
+	if idx_dot != -1:
+		limpia = limpia.substr(0, idx_dot)
+	var idx_plus := limpia.find("+")
+	if idx_plus != -1:
+		limpia = limpia.substr(0, idx_plus)
+	if limpia.ends_with("Z"):
+		limpia = limpia.substr(0, limpia.length() - 1)
+	return int(Time.get_unix_time_from_datetime_string(limpia))
 
 func _sincronizar_perfil_a_datos_usuario(p: Dictionary) -> void:
 	if not has_node("/root/DatosUsuario"):

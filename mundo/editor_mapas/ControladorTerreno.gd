@@ -5,6 +5,8 @@ extends Node3D
 ## Permite modificar elevaciones (elevar, bajar, aplanar, suavizar) y texturizar el terreno móvil.
 
 signal terreno_modificado()
+signal trazo_completado_con_undo(snap_antes: Dictionary, snap_despues: Dictionary)
+signal pintura_completada_con_undo(snap_antes: Dictionary, snap_despues: Dictionary)
 
 enum ModoTerreno {
 	ELEVAR,
@@ -319,8 +321,8 @@ func _inicializar_terreno() -> void:
 	terrain = Terrain3D.new()
 	terrain.name = "Terrain3D"
 	terrain.free_editor_textures = false
-	terrain.mesh_lods = 5
-	terrain.mesh_size = 32
+	terrain.mesh_lods = 7
+	terrain.mesh_size = 48
 	
 	# Usar material con shader liviano para prevenir fallos de compilación SPIR-V en GPU móvil/Intel
 	var mat := Terrain3DMaterial.new()
@@ -353,7 +355,9 @@ func _inicializar_terreno() -> void:
 	# Si no hay data preexistente, crear únicamente un cuadro plano de terreno en (0, 0)
 	if terrain.data and terrain.data.get_region_count() == 0:
 		terrain.data.add_region_blank(Vector2i(0, 0), false)
+	if terrain.data:
 		terrain.data.update_maps(3, true, true)
+		terrain.data.calc_height_range()
 	
 	# Nota: En tiempo de ejecución (fuera del editor de Godot), operamos directamente
 	# sobre terrain.data para evitar errores de EditorUndoRedoManager (_store_undo).
@@ -365,15 +369,13 @@ func _inicializar_terreno() -> void:
 func aplicar_distancia_renderizado(dist: float, cam: Camera3D = null) -> void:
 	if not is_instance_valid(terrain):
 		return
-	var lods := 5
+	var lods := 7
 	if dist <= 350.0:
-		lods = 4
-	elif dist <= 650.0:
-		lods = 5
-	elif dist <= 1050.0:
 		lods = 6
-	else:
+	elif dist <= 850.0:
 		lods = 7
+	else:
+		lods = 8
 	terrain.mesh_lods = lods
 	if is_instance_valid(cam) and terrain.has_method("set_camera"):
 		terrain.set_camera(cam)
@@ -821,7 +823,15 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 				if d_sq_3d > radio_sq:
 					continue
 				var dist_norm: float = sqrt(d_sq_3d) / radio
+				var k_p := Vector2(wx, wz)
 				var era_auto: bool = bool(data.get_control_auto(pt))
+				if not _trazo_ctrl_antes.has(k_p):
+					_trazo_ctrl_antes[k_p] = [
+						era_auto,
+						int(data.get_control_base_id(pt)),
+						int(data.get_control_overlay_id(pt)),
+						float(data.get_control_blend(pt))
+					]
 				data.set_control_auto(pt, false)
 				var base_actual: int = int(data.get_control_base_id(pt))
 				var overlay_actual: int = int(data.get_control_overlay_id(pt))
@@ -862,6 +872,12 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 					else:
 						data.set_control_overlay_id(pt, tex_id)
 						data.set_control_blend(pt, clampf(nuevo_blend, 0.0, 1.0))
+				_trazo_ctrl_despues[k_p] = [
+					bool(data.get_control_auto(pt)),
+					int(data.get_control_base_id(pt)),
+					int(data.get_control_overlay_id(pt)),
+					float(data.get_control_blend(pt))
+				]
 		var ahora_ms: int = Time.get_ticks_msec()
 		if ahora_ms - _ultimo_update_maps_ms >= 33:
 			_ultimo_update_maps_ms = ahora_ms
@@ -898,7 +914,13 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 					var peso: float = _calcular_peso_perfil(sqrt(d_sq) / radio) * fuerza_pincel
 					muestras_suavizado.append([pt, lerpf(h0, suma / float(cnt), clampf(peso, 0.0, 1.0))])
 			for m in muestras_suavizado:
-				data.set_height(m[0], m[1])
+				var p_m: Vector3 = m[0]
+				var k_m := Vector2(p_m.x, p_m.z)
+				if not _trazo_snap_antes.has(k_m):
+					var h_orig: float = data.get_height(p_m)
+					_trazo_snap_antes[k_m] = 0.0 if is_nan(h_orig) else h_orig
+				_trazo_snap_despues[k_m] = float(m[1])
+				data.set_height(p_m, m[1])
 		else:
 			for ix in range(-pasos_r, pasos_r + 1):
 				var wx: float = cx + ix * paso
@@ -924,6 +946,10 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 							h_nueva = h_actual - peso * 1.2
 						ModoTerreno.APLANAR:
 							h_nueva = lerpf(h_actual, altura_objetivo, clampf(peso, 0.0, 1.0))
+					var k_pt := Vector2(wx, wz)
+					if not _trazo_snap_antes.has(k_pt):
+						_trazo_snap_antes[k_pt] = h_actual
+					_trazo_snap_despues[k_pt] = h_nueva
 					data.set_height(pt, h_nueva)
 		var ahora_h_ms: int = Time.get_ticks_msec()
 		if ahora_h_ms - _ultimo_update_maps_ms >= 33:
@@ -931,11 +957,19 @@ func _aplicar_pincel_en_tiempo_real(pos_mundo: Vector3) -> void:
 			data.update_maps(0, true, false)
 
 var bloqueado_en_prueba: bool = false
+var _trazo_snap_antes: Dictionary = {}
+var _trazo_snap_despues: Dictionary = {}
+var _trazo_ctrl_antes: Dictionary = {}
+var _trazo_ctrl_despues: Dictionary = {}
 
 func comenzar_trazo(pos_mundo: Vector3) -> void:
 	if bloqueado_en_prueba or modo_actual == ModoTerreno.LOTES:
 		return
 	_trazo_activo = true
+	_trazo_snap_antes.clear()
+	_trazo_snap_despues.clear()
+	_trazo_ctrl_antes.clear()
+	_trazo_ctrl_despues.clear()
 	_ultimo_update_maps_ms = 0
 	_aplicar_pincel_en_tiempo_real(pos_mundo)
 	terreno_modificado.emit()
@@ -952,6 +986,14 @@ func finalizar_trazo() -> void:
 	_trazo_activo = false
 	if terrain and terrain.data:
 		terrain.data.update_maps(3, true, true) # 3 = Terrain3DRegion.MapType.Max + mipmaps
+	if not _trazo_snap_antes.is_empty():
+		trazo_completado_con_undo.emit(_trazo_snap_antes.duplicate(), _trazo_snap_despues.duplicate())
+		_trazo_snap_antes.clear()
+		_trazo_snap_despues.clear()
+	if not _trazo_ctrl_antes.is_empty():
+		pintura_completada_con_undo.emit(_trazo_ctrl_antes.duplicate(), _trazo_ctrl_despues.duplicate())
+		_trazo_ctrl_antes.clear()
+		_trazo_ctrl_despues.clear()
 	terreno_modificado.emit()
 
 
@@ -1102,6 +1144,8 @@ func _aplicar_rampa(p_a: Vector3, p_b: Vector3) -> bool:
 	var min_xz := Vector3(minf(p_a.x, p_b.x) - pad, 0.0, minf(p_a.z, p_b.z) - pad).snapped(Vector3(vs, 0.0, vs))
 	var max_xz := Vector3(maxf(p_a.x, p_b.x) + pad, 0.0, maxf(p_a.z, p_b.z) + pad).snapped(Vector3(vs, 0.0, vs)) + Vector3(vs, 0.0, vs)
 	var mod := false
+	var r_antes: Dictionary = {}
+	var r_despues: Dictionary = {}
 	var x := min_xz.x
 	while x <= max_xz.x:
 		var z := min_xz.z
@@ -1122,6 +1166,8 @@ func _aplicar_rampa(p_a: Vector3, p_b: Vector3) -> bool:
 							var s := f * f * (3.0 - 2.0 * f)
 							desired = lerpf(h_ramp, curr_h, s)
 						if absf(curr_h - desired) > 0.015:
+							r_antes[p2] = curr_h
+							r_despues[p2] = desired
 							data.set_height(wp, desired)
 							mod = true
 			z += vs
@@ -1129,6 +1175,7 @@ func _aplicar_rampa(p_a: Vector3, p_b: Vector3) -> bool:
 	if mod:
 		data.update_maps(0)
 		data.calc_height_range()
+		trazo_completado_con_undo.emit(r_antes, r_despues)
 		terreno_modificado.emit()
 	return mod
 
@@ -1160,9 +1207,139 @@ func restaurar_snapshot_altura(snap: Dictionary) -> void:
 	var data := terrain.data
 	for k in snap.keys():
 		var p2: Vector2 = k
-		data.set_height(Vector3(p2.x, 0.0, p2.y), float(snap[k]))
+		var wp := Vector3(p2.x, 0.0, p2.y)
+		if _asegurar_region_en(data, wp):
+			data.set_height(wp, float(snap[k]))
 	data.update_maps(0)
 	data.calc_height_range()
+	terreno_modificado.emit()
+
+func serializar_snapshot_altura(snap: Dictionary) -> Array:
+	var arr: Array = []
+	for k in snap.keys():
+		var p2: Vector2 = k
+		arr.append([snappedf(p2.x, 0.01), snappedf(p2.y, 0.01), snappedf(float(snap[k]), 0.001)])
+	return arr
+
+func deserializar_snapshot_altura(arr: Array) -> Dictionary:
+	var snap: Dictionary = {}
+	for item in arr:
+		if item is Array and item.size() >= 3:
+			snap[Vector2(float(item[0]), float(item[1]))] = float(item[2])
+	return snap
+
+
+func serializar_regiones_online() -> Array:
+	var res: Array = []
+	if not terrain or not terrain.data:
+		return res
+	for loc in terrain.data.get_region_locations():
+		res.append([int(loc.x), int(loc.y)])
+	return res
+
+
+func asegurar_regiones_online(coords: Array) -> void:
+	if not terrain or not terrain.data or coords.is_empty():
+		return
+	var agrego := false
+	for item in coords:
+		if item is Array and item.size() >= 2:
+			var coord := Vector2i(int(item[0]), int(item[1]))
+			if not terrain.data.has_region(coord):
+				terrain.data.add_region_blank(coord, false)
+				agrego = true
+	if agrego:
+		terrain.data.update_maps(3, true, true)
+		terrain.data.calc_height_range()
+		terreno_modificado.emit()
+
+
+func serializar_alturas_modificadas_online(max_puntos: int = 5000) -> Dictionary:
+	var out: Array = []
+	if not terrain or not terrain.data:
+		return {"step": 1.0, "pts": out}
+	var data := terrain.data
+	var r_size: float = float(terrain.region_size) if "region_size" in terrain else 1024.0
+	var vs: float = terrain.vertex_spacing if terrain.vertex_spacing > 0.0 else 1.0
+	var locs: Array = data.get_region_locations()
+	var paso := vs * 8.0 if locs.size() > 2 else vs * 6.0
+	for loc in locs:
+		var x0 := float(loc.x) * r_size
+		var z0 := float(loc.y) * r_size
+		var x := x0
+		while x < x0 + r_size:
+			var z := z0
+			while z < z0 + r_size:
+				var h := data.get_height(Vector3(x, 0.0, z))
+				if not is_nan(h) and absf(h) > 0.08:
+					out.append([snappedf(x, 0.1), snappedf(z, 0.1), snappedf(h, 0.05)])
+					if out.size() >= max_puntos:
+						return {"step": paso, "pts": out}
+				z += paso
+			x += paso
+	return {"step": paso, "pts": out}
+
+
+func aplicar_alturas_online(payload) -> void:
+	if not terrain or not terrain.data:
+		return
+	if payload is Array:
+		restaurar_snapshot_altura(deserializar_snapshot_altura(payload))
+		return
+	if not (payload is Dictionary):
+		return
+	var step := float(payload.get("step", 1.0))
+	var pts = payload.get("pts", [])
+	if not (pts is Array) or pts.is_empty():
+		return
+	var vs: float = terrain.vertex_spacing if terrain.vertex_spacing > 0.0 else 1.0
+	if step <= vs + 0.01:
+		restaurar_snapshot_altura(deserializar_snapshot_altura(pts))
+		return
+	var grid: Dictionary = {}
+	for it in pts:
+		if it is Array and it.size() >= 3:
+			var gx := int(round(float(it[0]) / step))
+			var gz := int(round(float(it[1]) / step))
+			grid[Vector2i(gx, gz)] = float(it[2])
+	var data := terrain.data
+	var pasos_sub := int(round(step / vs))
+	for k in grid.keys():
+		var g0: Vector2i = k
+		var h00 := float(grid.get(g0, 0.0))
+		var h10 := float(grid.get(g0 + Vector2i(1, 0), h00))
+		var h01 := float(grid.get(g0 + Vector2i(0, 1), h00))
+		var h11 := float(grid.get(g0 + Vector2i(1, 1), (h10 + h01) * 0.5))
+		var wx0 := float(g0.x) * step
+		var wz0 := float(g0.y) * step
+		for ix in range(pasos_sub):
+			var tx := float(ix) / float(pasos_sub)
+			for iz in range(pasos_sub):
+				var tz := float(iz) / float(pasos_sub)
+				var h_interp := lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
+				var wp := Vector3(wx0 + float(ix) * vs, 0.0, wz0 + float(iz) * vs)
+				if _asegurar_region_en(data, wp):
+					data.set_height(wp, h_interp)
+	data.update_maps(0)
+	data.calc_height_range()
+	terreno_modificado.emit()
+
+func restaurar_snapshot_pintura(snap: Dictionary) -> void:
+	if snap.is_empty() or not terrain or not terrain.data:
+		return
+	var data := terrain.data
+	for k in snap.keys():
+		var p2: Vector2 = k
+		var vals: Array = snap[k]
+		if vals.size() < 4:
+			continue
+		var wp := Vector3(p2.x, 0.0, p2.y)
+		if _asegurar_region_en(data, wp):
+			data.set_control_auto(wp, bool(vals[0]))
+			data.set_control_base_id(wp, int(vals[1]))
+			data.set_control_overlay_id(wp, int(vals[2]))
+			data.set_control_blend(wp, float(vals[3]))
+	data.update_maps(1, true, false)
 	terreno_modificado.emit()
 
 func obtener_altura(pos_mundo: Vector3) -> float:
@@ -1220,10 +1397,16 @@ func guardar_terreno(dir_terreno: String) -> bool:
 func cargar_terreno(dir_terreno: String) -> bool:
 	if not terrain or not terrain.data or not _tiene_regiones_terreno(dir_terreno):
 		return false
-	if str(get_meta("ultimo_dir_terreno_cargado", "")) == dir_terreno:
+	if str(get_meta("ultimo_dir_terreno_cargado", "")) == dir_terreno and terrain.data.get_region_count() > 0:
+		terrain.data.calc_height_range()
 		return true
 	terrain.data.load_directory(dir_terreno)
 	terrain.data.update_maps(3, true, true)
+	terrain.data.calc_height_range()
+	if is_inside_tree() and get_viewport():
+		var cam_act := get_viewport().get_camera_3d()
+		if is_instance_valid(cam_act) and terrain.has_method("set_camera"):
+			terrain.set_camera(cam_act)
 	set_meta("ultimo_dir_terreno_cargado", dir_terreno)
 	terreno_modificado.emit()
 	return true

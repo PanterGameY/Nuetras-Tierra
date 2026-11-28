@@ -2,13 +2,20 @@ extends Node
 
 const SAVE_PATH = "user://settings.cfg"
 
+signal modo_pc_cambiado(activo: bool)
+
 var last_scene_path: String = ""
 var _instancia_ui: Node = null
 var current_sombras: int = 2
+var modo_pc: bool = false
 
 func change_to_settings() -> void:
 	if _instancia_ui and is_instance_valid(_instancia_ui):
 		_instancia_ui.visible = true
+		if _instancia_ui.has_method("_load_settings"):
+			_instancia_ui.call("_load_settings")
+		if _instancia_ui.has_method("_actualizar_ui_completa"):
+			_instancia_ui.call("_actualizar_ui_completa")
 		return
 
 	var path = "res://interfaz/pantallas/configuraciones/configuraciones.tscn"
@@ -28,9 +35,41 @@ func return_from_settings() -> void:
 		_instancia_ui.visible = false
 
 func _ready() -> void:
+	_adaptar_ventana_pc()
 	# Aplicar configuraciones al arrancar el juego
 	apply_all_settings()
 	get_tree().node_added.connect(_on_node_added)
+	if get_tree().has_signal("scene_changed"):
+		get_tree().scene_changed.connect(_on_scene_changed)
+
+func _es_modo_editor_mapas() -> bool:
+	var tree := get_tree()
+	if not tree:
+		return false
+	var escena := tree.current_scene
+	if not is_instance_valid(escena):
+		return false
+	# EditorMapas tiene su propia configuración (user://editor_config.cfg) cuando está editando.
+	# Cuando está en modo prueba o multijugador, debe usar las configuraciones del juego.
+	if "modo_prueba" in escena and escena.get("modo_prueba") != null:
+		var mp = escena.get("modo_prueba")
+		var en_prueba := bool(mp.get("en_prueba")) if mp else false
+		var en_mp := bool(escena.get("_en_modo_multijugador")) if "_en_modo_multijugador" in escena else false
+		return not en_prueba and not en_mp
+	return false
+
+func _on_scene_changed() -> void:
+	if _es_modo_editor_mapas():
+		return
+	call_deferred("apply_all_settings")
+
+func _adaptar_ventana_pc() -> void:
+	if DisplayServer.get_name() == "headless" or Engine.is_embedded_in_editor():
+		return
+	if OS.get_name() in ["Windows", "Linux", "macOS"]:
+		var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+		if usable.size.x > 0 and usable.size.y > 0:
+			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 
 func apply_all_settings() -> void:
 	var cfg = ConfigFile.new()
@@ -41,8 +80,10 @@ func apply_all_settings() -> void:
 		apply_preset(1)
 		return
 
-	_apply_graphics(cfg)
 	_apply_audio(cfg)
+	_apply_controls(cfg)
+	if not _es_modo_editor_mapas():
+		_apply_graphics(cfg)
 	print("[SettingsManager] Configuraciones aplicadas correctamente.")
 
 func apply_preset(preset_idx: int) -> void:
@@ -172,10 +213,11 @@ func _apply_graphics(cfg: ConfigFile) -> void:
 	for l in all_lights:
 		_configurar_luz_sombras(l, sombras)
 
-	# Render scale & FSR
-	var render_scale = 1.0 if es_compat else (cfg.get_value("graficos", "render_scale", 75) / 100.0)
+	# Render scale & FSR (40% - 100%)
+	var render_pct: float = clampf(float(cfg.get_value("graficos", "render_scale", 75)), 40.0, 100.0)
+	var render_scale := render_pct / 100.0
 	var method = ProjectSettings.get_setting("rendering/renderer/rendering_method")
-	if not es_compat and method == "forward_plus":
+	if not es_compat and method == "forward_plus" and render_pct >= 60.0:
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
 	else:
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
@@ -190,9 +232,7 @@ func _apply_graphics(cfg: ConfigFile) -> void:
 	# Modificar Environment (SSAO, Glow, SDFGI) en tiempo real
 	var env = vp.find_world_3d().environment if vp.find_world_3d() else null
 	if env:
-		env.ssao_enabled = cfg.get_value("graficos", "ssao_enabled", true)
-		env.glow_enabled = cfg.get_value("graficos", "glow_enabled", true)
-		env.sdfgi_enabled = cfg.get_value("graficos", "sdfgi_enabled", false)
+		_apply_environment_settings(env, cfg)
 
 	# Notificar a los optimizadores de ciudad activos
 	var optimizers = get_tree().get_nodes_in_group("city_optimizer")
@@ -256,13 +296,70 @@ func _find_all_lights(node: Node, result: Array) -> void:
 func _find_directional_lights(node: Node, result: Array) -> void:
 	_find_all_lights(node, result)
 
+func _apply_environment_settings(env: Environment, cfg: ConfigFile) -> void:
+	if not env:
+		return
+	env.ssao_enabled = bool(cfg.get_value("graficos", "ssao_enabled", false))
+	env.glow_enabled = bool(cfg.get_value("graficos", "glow_enabled", false))
+	env.sdfgi_enabled = bool(cfg.get_value("graficos", "sdfgi_enabled", false))
+
+func _apply_controls(cfg: ConfigFile) -> void:
+	var sv: int = int(cfg.get_value("controles", "sensibilidad_volante", 150))
+	var s_dir: float = float(cfg.get_value("controles", "suavizado_direccion", 10.0))
+	var r_vol: float = float(cfg.get_value("controles", "retorno_volante", 3.5))
+	var s_ped: float = float(cfg.get_value("controles", "suavizado_pedales", 3.5))
+
+	_apply_volante_sensitivity_recursive(get_tree().root, float(sv) / 100.0)
+
+	var input_veh = get_node_or_null("/root/InputVehiculo")
+	if input_veh:
+		input_veh.suavizado_direccion = s_dir
+		input_veh.retorno_volante = r_vol
+		input_veh.suavizado_pedales = s_ped
+
+	modo_pc = bool(cfg.get_value("controles", "modo_pc", false))
+	modo_pc_cambiado.emit(modo_pc)
+	_aplicar_modo_pc_en_arbol(get_tree().root, modo_pc)
+
+func _aplicar_modo_pc_en_arbol(node: Node, activo: bool) -> void:
+	if not is_instance_valid(node):
+		return
+	if node.has_method("aplicar_modo_pc"):
+		node.call("aplicar_modo_pc", activo)
+	for child in node.get_children():
+		_aplicar_modo_pc_en_arbol(child, activo)
+
+func _apply_volante_sensitivity_recursive(node: Node, s: float) -> void:
+	for child in node.get_children():
+		var scr = child.get_script()
+		if scr and typeof(scr) == TYPE_OBJECT:
+			var path = str(scr.resource_path)
+			if path.find("volante") != -1:
+				child.set("sensibilidad", s)
+		_apply_volante_sensitivity_recursive(child, s)
+
 func _on_node_added(node: Node) -> void:
 	if node is SubViewport and RenderingServer.get_current_rendering_method() == "gl_compatibility":
 		node.msaa_3d = Viewport.MSAA_DISABLED
 		node.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		node.scaling_3d_scale = 1.0
+
+	var scr = node.get_script()
+	if scr and typeof(scr) == TYPE_OBJECT and str(scr.resource_path).find("volante") != -1:
+		var cfg_v := ConfigFile.new()
+		if cfg_v.load(SAVE_PATH) == OK:
+			node.set("sensibilidad", float(cfg_v.get_value("controles", "sensibilidad_volante", 150)) / 100.0)
+
+	if node.has_method("aplicar_modo_pc"):
+		node.call_deferred("aplicar_modo_pc", modo_pc)
+
+	if _es_modo_editor_mapas():
+		return
+
 	if node is Light3D:
 		_configurar_luz_sombras(node, current_sombras)
+	if node is WorldEnvironment:
+		call_deferred("_aplicar_env_nodo", node)
 	if node.name == "CieloSistema" or node.has_method("clima_despejado"):
 		var cfg = ConfigFile.new()
 		if cfg.load(SAVE_PATH) == OK:
@@ -271,6 +368,17 @@ func _on_node_added(node: Node) -> void:
 				node.perfil_calidad = cielo_calidad
 	if node.has_method("aplicar_configuracion_sombras"):
 		node.call("aplicar_configuracion_sombras", current_sombras)
+
+func _aplicar_env_nodo(node: Node) -> void:
+	if not is_instance_valid(node) or not (node is WorldEnvironment):
+		return
+	if _es_modo_editor_mapas():
+		return
+	var we := node as WorldEnvironment
+	if we.environment:
+		var cfg := ConfigFile.new()
+		if cfg.load(SAVE_PATH) == OK:
+			_apply_environment_settings(we.environment, cfg)
 
 func _find_cielo_sistema(node: Node) -> Node:
 	if node.name == "CieloSistema" or node.has_method("clima_despejado"):

@@ -246,7 +246,7 @@ func _ready() -> void:
 	# Optimizar mallas internas, sombras e iluminación del vehículo
 	_optimizar_mallas_e_iluminacion(self)
 
-	if multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
+	if multiplayer and multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
 		# Desactivar cámaras y UI para vehículos remotos
 		if ui_vehiculo:
 			ui_vehiculo.queue_free()
@@ -322,6 +322,13 @@ func _optimizar_mallas_e_iluminacion(raiz: Node) -> void:
 	_conectar_deteccion()
 	_conectar_gamemanger()
 
+	# Sistema optimizado de daño visual por shader (sin modificación de vértices)
+	if get_node_or_null("SistemaDanoColision") == null:
+		var dano_scr: Script = preload("res://codigo/entidades/vehiculo/SistemaDanoColision.gd")
+		var dano_nodo: Node = dano_scr.new()
+		dano_nodo.name = "SistemaDanoColision"
+		add_child(dano_nodo)
+
 	# Cachear materiales sucios (optimización móvil)
 	_cachear_materiales_sucios.call_deferred()
 
@@ -345,7 +352,7 @@ func _exit_tree() -> void:
 # ═══════════════════════════════════════════════════════════════════════
 
 func _physics_process(delta: float) -> void:
-	if multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
+	if multiplayer and multiplayer.has_multiplayer_peer() and not is_multiplayer_authority():
 		global_position = global_position.lerp(_pos_objetivo, delta * 20.0)
 		global_rotation.x = lerp_angle(global_rotation.x, _rot_objetivo.x, delta * 20.0)
 		global_rotation.y = lerp_angle(global_rotation.y, _rot_objetivo.y, delta * 20.0)
@@ -379,7 +386,7 @@ func _physics_process(delta: float) -> void:
 
 	_vel_previa = vel_vec
 	
-	if multiplayer.has_multiplayer_peer() and is_multiplayer_authority():
+	if multiplayer and multiplayer.has_multiplayer_peer() and is_multiplayer_authority():
 		actualizar_transform_vehiculo.rpc(global_position, global_rotation, linear_velocity, angular_velocity)
 
 

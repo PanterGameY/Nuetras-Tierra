@@ -103,6 +103,11 @@ var salida_offset_lateral: float = 2.2 # Más ancho debido al cabezote
 
 func _ready() -> void:
 	add_to_group("vehiculo")
+	if get_node_or_null("SistemaDanoColision") == null:
+		var dano_scr: Script = preload("res://codigo/entidades/vehiculo/SistemaDanoColision.gd")
+		var dano_nodo: Node = dano_scr.new()
+		dano_nodo.name = "SistemaDanoColision"
+		add_child(dano_nodo)
 	# Localización de nodos internos y componentes bajo la raíz del chasis
 	motor = get_node_or_null("Motor")
 	spring_arm = find_child("SpringArm3D", true, false) as SpringArm3D
@@ -168,6 +173,9 @@ func _ready() -> void:
 	_sonido_choque.name = "SonidoChoqueVehiculo"
 	add_child(_sonido_choque)
 	_sonido_choque.configurar(self)
+	_inicializar_plumillas()
+	_inicializar_capo()
+	_inicializar_mangueras()
 
 func _buscar_ruedas_recursivo(node: Node) -> void:
 	for child in node.get_children():
@@ -208,6 +216,10 @@ func _aplicar_fisica_aire(delta: float, ruedas_suelo: int) -> void:
 		apply_torque(-global_transform.basis.x.normalized() * (torque_cabeceo_aire_pesado * factor_aire))
 
 func _physics_process(delta: float) -> void:
+	_actualizar_plumillas(delta)
+	_actualizar_punto_capo()
+	_actualizar_punto_mangueras()
+	_actualizar_malla_mangueras()
 	if not es_autoridad_local():
 		_activar_luces(activo)
 		return
@@ -441,6 +453,9 @@ func subir_jugador(p_jugador: Node3D) -> void:
 
 	_alternar_sistemas(true)
 	_activar_luces(true)
+	if motor and "sonidos_nodo" in motor and is_instance_valid(motor.sonidos_nodo):
+		if iv and iv.get("motor_encendido") == true and motor.sonidos_nodo.has_method("encender_motor"):
+			motor.sonidos_nodo.call("encender_motor")
 
 	# Vinculación de la cámara del jugador al SpringArm del coche
 	p_jugador.process_mode = Node.PROCESS_MODE_INHERIT
@@ -488,10 +503,12 @@ func bajar_jugador() -> void:
 		if dash_clear:
 			dash_clear.set("vehicle", null)
 
-	if motor and "sonidos_nodo" in motor and is_instance_valid(motor.sonidos_nodo):
-		if motor.sonidos_nodo.has_method("detener_todos_los_sonidos"):
-			motor.sonidos_nodo.call("detener_todos_los_sonidos")
-	_alternar_sistemas(false)
+	var motor_sigue_encendido: bool = (iv != null and iv.get("motor_encendido") == true)
+	if not motor_sigue_encendido:
+		if motor and "sonidos_nodo" in motor and is_instance_valid(motor.sonidos_nodo):
+			if motor.sonidos_nodo.has_method("detener_todos_los_sonidos"):
+				motor.sonidos_nodo.call("detener_todos_los_sonidos")
+	_alternar_sistemas(motor_sigue_encendido)
 	_activar_luces(false)
 
 	if camera_manager and camera_manager.has_method("desactivar_camaras"):
@@ -609,3 +626,488 @@ func _get_gv() -> Node:
 	if is_inside_tree():
 		_gv_cache = get_node_or_null("/root/GestorVehiculos")
 	return _gv_cache
+
+
+# ════════════════════════════════════════════════════════════════════
+# LIMPIAPARABRISAS (PLUMILLAS)
+# ════════════════════════════════════════════════════════════════════
+
+var _plumilla_izq: Node3D = null
+var _plumilla_der: Node3D = null
+var _plumilla_izq_base_quat: Quaternion = Quaternion.IDENTITY
+var _plumilla_der_base_quat: Quaternion = Quaternion.IDENTITY
+var _plumillas_encendidas: bool = false
+var _plumilla_fase: float = 0.0
+
+
+func _inicializar_plumillas() -> void:
+	_plumilla_izq = find_child("Limpiaparabrisas_Izq", true, false) as Node3D
+	_plumilla_der = find_child("Limpiaparabrisas_Der", true, false) as Node3D
+	if _plumilla_izq:
+		_plumilla_izq_base_quat = _plumilla_izq.quaternion
+	if _plumilla_der:
+		_plumilla_der_base_quat = _plumilla_der.quaternion
+
+
+func set_plumillas(estado: bool) -> void:
+	_plumillas_encendidas = estado
+
+
+func _actualizar_plumillas(delta: float) -> void:
+	if not is_instance_valid(_plumilla_izq) and not is_instance_valid(_plumilla_der):
+		return
+	var iv := _get_iv()
+	var encendidas: bool = _plumillas_encendidas or (activo and iv != null and iv.get("plumillas") == true)
+	if encendidas:
+		_plumilla_fase = wrapf(_plumilla_fase + delta * 3.8, 0.0, TAU)
+	else:
+		if absf(_plumilla_fase) > 0.01:
+			_plumilla_fase = move_toward(_plumilla_fase, 0.0, delta * 5.0)
+		else:
+			_plumilla_fase = 0.0
+
+	var ang := (0.5 - 0.5 * cos(_plumilla_fase)) * deg_to_rad(72.0)
+	if is_instance_valid(_plumilla_izq):
+		_plumilla_izq.quaternion = _plumilla_izq_base_quat * Quaternion(Vector3.BACK, -ang)
+	if is_instance_valid(_plumilla_der):
+		_plumilla_der.quaternion = _plumilla_der_base_quat * Quaternion(Vector3.BACK, ang)
+
+
+# ════════════════════════════════════════════════════════════════════
+# CAPÓ ABATIBLE CON PUNTO 3D INTERACTIVO
+# ════════════════════════════════════════════════════════════════════
+
+var _capo_pivot: Node3D = null
+var _capo_anim: AnimationPlayer = null
+var _capo_abierto: bool = false
+var _sprite_capo: Sprite3D = null
+var _label_capo: Label3D = null
+var _canvas_capo: CanvasLayer = null
+var _btn_capo: Button = null
+
+
+func _inicializar_capo() -> void:
+	_capo_pivot = find_child("Capo_Pivot", true, false) as Node3D
+	_capo_anim = find_child("AnimationPlayer", true, false) as AnimationPlayer
+	if not is_instance_valid(_capo_pivot):
+		return
+
+	_sprite_capo = Sprite3D.new()
+	_sprite_capo.name = "Punto3DCapo"
+	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in range(64):
+		for x in range(64):
+			var d := Vector2(x - 31.5, y - 31.5).length()
+			if d <= 26.0 and d >= 18.0:
+				img.set_pixel(x, y, Color(0.88, 0.68, 0.28, 0.95))
+			elif d < 18.0:
+				img.set_pixel(x, y, Color(0.06, 0.07, 0.08, 0.88))
+	_sprite_capo.texture = ImageTexture.create_from_image(img)
+	_sprite_capo.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_sprite_capo.pixel_size = 0.0062
+	_sprite_capo.no_depth_test = true
+	_sprite_capo.render_priority = 5
+	_sprite_capo.position = Vector3(0.0, 0.85, 0.15)
+	_sprite_capo.visible = false
+	_capo_pivot.add_child(_sprite_capo)
+
+	_label_capo = Label3D.new()
+	_label_capo.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_label_capo.pixel_size = 0.0032
+	_label_capo.no_depth_test = true
+	_label_capo.render_priority = 6
+	_label_capo.position = Vector3(0.0, 0.30, 0.0)
+	_label_capo.font_size = 28
+	_label_capo.outline_size = 6
+	_label_capo.modulate = Color(0.88, 0.68, 0.28)
+	_label_capo.outline_modulate = Color(0.06, 0.07, 0.08, 0.95)
+	if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf"):
+		_label_capo.font = load("res://recursos/fonts/Moderniz.otf")
+	_label_capo.text = "ABRIR CAPO"
+	_sprite_capo.add_child(_label_capo)
+
+	# Hitbox en capa 2 para $InteraccionRay del jugador (sin colisión física)
+	var sb := StaticBody3D.new()
+	sb.name = "HitboxCapo"
+	sb.collision_layer = 2
+	sb.collision_mask = 0
+	sb.position = Vector3(0.0, 0.85, 0.35)
+	add_collision_exception_with(sb)
+	var script_inter := GDScript.new()
+	script_inter.source_code = """extends StaticBody3D
+var _cb: Callable
+func interactuar() -> void:
+	if _cb.is_valid():
+		_cb.call()
+"""
+	script_inter.reload()
+	sb.set_script(script_inter)
+	sb.set("_cb", Callable(self, "alternar_capo"))
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(1.5, 1.1, 1.4)
+	cs.shape = box
+	sb.add_child(cs)
+	_capo_pivot.add_child(sb)
+
+	_canvas_capo = CanvasLayer.new()
+	_canvas_capo.name = "CanvasCapo3D"
+	_canvas_capo.layer = 124
+	add_child(_canvas_capo)
+
+	_btn_capo = Button.new()
+	_btn_capo.custom_minimum_size = Vector2(190, 190)
+	_btn_capo.size = Vector2(190, 190)
+	_btn_capo.flat = true
+	_btn_capo.focus_mode = Control.FOCUS_NONE
+	_btn_capo.visible = false
+	_btn_capo.pressed.connect(alternar_capo)
+	_canvas_capo.add_child(_btn_capo)
+
+
+func alternar_capo() -> void:
+	if not is_instance_valid(_capo_pivot):
+		return
+	_capo_abierto = not _capo_abierto
+	if is_instance_valid(_label_capo):
+		_label_capo.text = "CERRAR CAPO" if _capo_abierto else "ABRIR CAPO"
+
+	if is_instance_valid(_capo_anim):
+		if _capo_abierto and _capo_anim.has_animation("Anim_Abrir_Capo"):
+			_capo_anim.play("Anim_Abrir_Capo")
+		elif not _capo_abierto and _capo_anim.has_animation("Anim_Cerrar_Capo"):
+			_capo_anim.play("Anim_Cerrar_Capo")
+		elif _capo_anim.has_animation("Anim_Abrir_Capo"):
+			_capo_anim.play_backwards("Anim_Abrir_Capo")
+		else:
+			_animar_capo_tween()
+	else:
+		_animar_capo_tween()
+
+	_aplicar_rebote_suspension_capo(_capo_abierto)
+
+func _animar_capo_tween() -> void:
+	var destino_x := 65.0 if _capo_abierto else 0.0
+	var trans := Tween.TRANS_BACK if _capo_abierto else Tween.TRANS_BOUNCE
+	create_tween().tween_property(_capo_pivot, "rotation_degrees:x", destino_x, 0.95).set_ease(Tween.EASE_OUT).set_trans(trans)
+
+func _aplicar_rebote_suspension_capo(abriendo: bool) -> void:
+	if not is_inside_tree():
+		return
+	# Pequeno impulso en la parte delantera del chasis al llegar al tope/cierre del capo
+	var punto_frontal := global_transform.basis * Vector3(0.0, 0.2, 2.5)
+	var fuerza_y := 1800.0 if abriendo else -3200.0
+	var retardo := 0.72 if abriendo else 0.68
+	get_tree().create_timer(retardo).timeout.connect(func() -> void:
+		if is_instance_valid(self) and is_inside_tree():
+			apply_impulse(Vector3(0.0, fuerza_y, 0.0), punto_frontal)
+	)
+
+
+func _actualizar_punto_capo() -> void:
+	if not is_instance_valid(_sprite_capo) or not is_instance_valid(_btn_capo):
+		return
+	var tree := get_tree()
+	if not tree:
+		return
+	var j := tree.get_first_node_in_group("jugador") as Node3D
+	if not is_instance_valid(j):
+		j = tree.get_first_node_in_group("player") as Node3D
+
+	var mostrar := (not activo) and is_instance_valid(j) and (_sprite_capo.global_position.distance_to(j.global_position) <= 4.5)
+	_sprite_capo.visible = mostrar
+	if mostrar:
+		var cam := get_viewport().get_camera_3d()
+		if is_instance_valid(cam) and not cam.is_position_behind(_sprite_capo.global_position):
+			var sp := cam.unproject_position(_sprite_capo.global_position)
+			_btn_capo.global_position = sp - _btn_capo.size * 0.5
+			_btn_capo.visible = true
+		else:
+			_btn_capo.visible = false
+	else:
+		_btn_capo.visible = false
+
+
+# ─── Sistema Interactivo de Mangueras de Aire y Eléctrica (Camión <-> Tráiler) ───
+var _mangueras_colgadas: Node3D = null
+var _punto_mangueras_camion: Node3D = null
+var _enganche_camion: Node = null
+var _trailer_mangueras: Node3D = null
+var _mangueras_conectadas: bool = false
+var _mangueras_dinamicas_root: Node3D = null
+var _mangueras_meshes: Array[MeshInstance3D] = []
+var _mangueras_conectores_trailer: Array[MeshInstance3D] = []
+var _placa_trailer_mangueras: MeshInstance3D = null
+var _sprite_mangueras: Sprite3D = null
+var _label_mangueras: Label3D = null
+var _canvas_mangueras: CanvasLayer = null
+var _btn_mangueras: Button = null
+
+
+func _inicializar_mangueras() -> void:
+	_mangueras_colgadas = find_child("Mangueras_Colgadas_T800", true, false) as Node3D
+	_punto_mangueras_camion = find_child("Punto_Mangueras_T800", true, false) as Node3D
+	if not is_instance_valid(_punto_mangueras_camion):
+		_punto_mangueras_camion = Marker3D.new()
+		_punto_mangueras_camion.name = "Punto_Mangueras_T800"
+		_punto_mangueras_camion.position = Vector3(0.0, 1.94, -1.68)
+		add_child(_punto_mangueras_camion)
+
+	_enganche_camion = find_child("Enganche", true, false)
+	if is_instance_valid(_enganche_camion):
+		if _enganche_camion.has_signal("enganche_desconectado"):
+			_enganche_camion.connect("enganche_desconectado", func(_camion, _remolque) -> void:
+				if _mangueras_conectadas:
+					_mangueras_conectadas = false
+					_trailer_mangueras = null
+					_aplicar_estado_mangueras()
+			)
+
+	# Punto 3D interactivo junto al soporte de mangueras
+	_sprite_mangueras = Sprite3D.new()
+	_sprite_mangueras.name = "Punto3DMangueras"
+	_sprite_mangueras.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_sprite_mangueras.no_depth_test = true
+	_sprite_mangueras.pixel_size = 0.008
+	_sprite_mangueras.visible = false
+	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in range(64):
+		for x in range(64):
+			var d := Vector2(x - 31.5, y - 31.5).length()
+			if d <= 28.0:
+				if d >= 22.0:
+					img.set_pixel(x, y, Color(0.88, 0.68, 0.28, 0.95))
+				else:
+					img.set_pixel(x, y, Color(0.06, 0.07, 0.09, 0.88))
+	_sprite_mangueras.texture = ImageTexture.create_from_image(img)
+	add_child(_sprite_mangueras)
+	_sprite_mangueras.global_position = _punto_mangueras_camion.global_position + Vector3(0.0, 0.35, 0.0)
+
+	_label_mangueras = Label3D.new()
+	_label_mangueras.text = "CONECTAR MANGUERAS"
+	_label_mangueras.font_size = 34
+	_label_mangueras.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_label_mangueras.no_depth_test = true
+	_label_mangueras.modulate = Color(0.96, 0.88, 0.65, 1.0)
+	_label_mangueras.outline_size = 8
+	_label_mangueras.position = Vector3(0.0, 0.36, 0.0)
+	_sprite_mangueras.add_child(_label_mangueras)
+
+	_canvas_mangueras = CanvasLayer.new()
+	_canvas_mangueras.layer = 18
+	add_child(_canvas_mangueras)
+
+	_btn_mangueras = Button.new()
+	_btn_mangueras.text = ""
+	_btn_mangueras.custom_minimum_size = Vector2(210, 56)
+	_btn_mangueras.visible = false
+	_btn_mangueras.flat = true
+	_btn_mangueras.pressed.connect(alternar_mangueras)
+	_canvas_mangueras.add_child(_btn_mangueras)
+
+	# Contenedor de mangueras dinamicas 3D (Roja, Negra, Azul)
+	_mangueras_dinamicas_root = Node3D.new()
+	_mangueras_dinamicas_root.name = "ManguerasDinamicasRoot"
+	_mangueras_dinamicas_root.top_level = true
+	_mangueras_dinamicas_root.visible = false
+	add_child(_mangueras_dinamicas_root)
+
+	var colores := [
+		Color(0.78, 0.06, 0.05), # Roja - Emergencia
+		Color(0.05, 0.05, 0.06), # Negra - Electrica 7 vias
+		Color(0.05, 0.28, 0.82), # Azul - Servicio
+	]
+	for i in range(3):
+		var mi := MeshInstance3D.new()
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = colores[i]
+		mat.roughness = 0.38 if i != 1 else 0.65
+		mat.metallic = 0.05
+		mi.material_override = mat
+		_mangueras_dinamicas_root.add_child(mi)
+		_mangueras_meshes.append(mi)
+
+		var con := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.026
+		cyl.bottom_radius = 0.026
+		cyl.height = 0.055
+		cyl.radial_segments = 12
+		con.mesh = cyl
+		var mat_c := StandardMaterial3D.new()
+		mat_c.albedo_color = colores[i]
+		mat_c.roughness = 0.35
+		con.material_override = mat_c
+		_mangueras_dinamicas_root.add_child(con)
+		_mangueras_conectores_trailer.append(con)
+
+	_placa_trailer_mangueras = MeshInstance3D.new()
+	var box_p := BoxMesh.new()
+	box_p.size = Vector3(0.32, 0.08, 0.04)
+	_placa_trailer_mangueras.mesh = box_p
+	var mat_alum := StandardMaterial3D.new()
+	mat_alum.albedo_color = Color(0.72, 0.74, 0.78)
+	mat_alum.metallic = 0.88
+	mat_alum.roughness = 0.30
+	_placa_trailer_mangueras.material_override = mat_alum
+	_mangueras_dinamicas_root.add_child(_placa_trailer_mangueras)
+
+
+func _obtener_trailer_para_mangueras() -> Node3D:
+	if is_instance_valid(_enganche_camion):
+		var conectado: bool = _enganche_camion.get("conectado") == true
+		var rem = _enganche_camion.get("enganche_remoto")
+		if conectado and is_instance_valid(rem):
+			return rem.get_parent() as Node3D
+	return null
+
+
+func alternar_mangueras() -> void:
+	var trailer := _obtener_trailer_para_mangueras()
+	if not _mangueras_conectadas and not is_instance_valid(trailer):
+		return
+	_mangueras_conectadas = not _mangueras_conectadas
+	_trailer_mangueras = trailer if _mangueras_conectadas else null
+	_aplicar_estado_mangueras()
+
+
+func _aplicar_estado_mangueras() -> void:
+	if is_instance_valid(_label_mangueras):
+		_label_mangueras.text = "DESCONECTAR MANGUERAS" if _mangueras_conectadas else "CONECTAR MANGUERAS"
+	if is_instance_valid(_mangueras_colgadas):
+		_mangueras_colgadas.visible = not _mangueras_conectadas
+	if is_instance_valid(_mangueras_dinamicas_root):
+		_mangueras_dinamicas_root.visible = _mangueras_conectadas and is_instance_valid(_trailer_mangueras)
+	if _mangueras_conectadas:
+		_actualizar_malla_mangueras()
+
+
+func _actualizar_punto_mangueras() -> void:
+	if not is_instance_valid(_sprite_mangueras) or not is_instance_valid(_btn_mangueras) or not is_instance_valid(_punto_mangueras_camion):
+		return
+	_sprite_mangueras.global_position = _punto_mangueras_camion.global_position + Vector3(0.0, 0.32, 0.0)
+
+	var trailer := _obtener_trailer_para_mangueras()
+	if _mangueras_conectadas and not is_instance_valid(trailer):
+		_mangueras_conectadas = false
+		_trailer_mangueras = null
+		_aplicar_estado_mangueras()
+
+	var tree := get_tree()
+	if not tree:
+		return
+	var j := tree.get_first_node_in_group("jugador") as Node3D
+	if not is_instance_valid(j):
+		j = tree.get_first_node_in_group("player") as Node3D
+
+	var hay_objetivo := is_instance_valid(trailer) or _mangueras_conectadas
+	var mostrar := (not activo) and hay_objetivo and is_instance_valid(j) and (_punto_mangueras_camion.global_position.distance_to(j.global_position) <= 2.6)
+	_sprite_mangueras.visible = mostrar
+
+	# Evitar saturacion visual: ocultar el punto de conducir mientras el jugador esta en la zona de mangueras
+	if is_instance_valid(icono_entrada) and not activo:
+		if mostrar:
+			icono_entrada.visible = false
+		elif icono_entrada.get("_activo") == true:
+			icono_entrada.visible = true
+	if mostrar:
+		var cam := get_viewport().get_camera_3d()
+		if is_instance_valid(cam) and not cam.is_position_behind(_sprite_mangueras.global_position):
+			var sp := cam.unproject_position(_sprite_mangueras.global_position)
+			_btn_mangueras.global_position = sp - _btn_mangueras.size * 0.5
+			_btn_mangueras.visible = true
+		else:
+			_btn_mangueras.visible = false
+	else:
+		_btn_mangueras.visible = false
+
+
+func _actualizar_malla_mangueras() -> void:
+	if not _mangueras_conectadas or not is_instance_valid(_trailer_mangueras) or not is_instance_valid(_punto_mangueras_camion):
+		return
+	if _mangueras_meshes.size() < 3:
+		return
+
+	var punto_rem := _trailer_mangueras.find_child("PuntoMangueras", true, false) as Node3D
+	var eng_rem := _trailer_mangueras.find_child("Enganche", true, false) as Node3D
+	var base_trailer_pos: Vector3
+	var basis_trailer: Basis = _trailer_mangueras.global_transform.basis.orthonormalized()
+	if is_instance_valid(punto_rem):
+		base_trailer_pos = punto_rem.global_position
+	elif is_instance_valid(eng_rem):
+		base_trailer_pos = eng_rem.global_position + basis_trailer.y * 0.48 + basis_trailer.z * 0.95
+	else:
+		base_trailer_pos = _trailer_mangueras.global_position + basis_trailer.y * 1.65 - basis_trailer.z * 3.5
+
+	if is_instance_valid(_placa_trailer_mangueras):
+		_placa_trailer_mangueras.global_transform = Transform3D(basis_trailer, base_trailer_pos)
+
+	var basis_camion := global_transform.basis.orthonormalized()
+	var offsets_x: Array[float] = [-0.11, 0.0, 0.11]
+	for i in range(3):
+		var p_ini: Vector3 = _punto_mangueras_camion.global_position + basis_camion.x * offsets_x[i]
+		var p_fin: Vector3 = base_trailer_pos + basis_trailer.x * offsets_x[i]
+		if i < _mangueras_conectores_trailer.size() and is_instance_valid(_mangueras_conectores_trailer[i]):
+			var b_con: Basis = Basis(basis_trailer.x, basis_trailer.z, -basis_trailer.y)
+			_mangueras_conectores_trailer[i].global_transform = Transform3D(b_con, p_fin - basis_trailer.z * 0.03)
+		_mangueras_meshes[i].mesh = _construir_malla_espiral(p_ini, p_fin, 9, 0.028, 0.011, 0.36)
+
+
+func _construir_malla_espiral(p_ini: Vector3, p_fin: Vector3, vueltas: int, radio_espiral: float, grosor: float, caida: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pasos := vueltas * 6
+	var segs := 6
+	var puntos: Array[Vector3] = []
+	var dir := (p_fin - p_ini).normalized()
+	var lado := dir.cross(Vector3.UP)
+	if lado.length_squared() < 0.001:
+		lado = Vector3.RIGHT
+	lado = lado.normalized()
+	var arriba := lado.cross(dir).normalized()
+
+	for k in range(pasos + 1):
+		var t := float(k) / float(pasos)
+		var base := p_ini.lerp(p_fin, t)
+		var seno := sin(t * PI)
+		base.y -= caida * seno
+		var ang := t * float(vueltas) * TAU
+		var amp := radio_espiral * seno
+		puntos.append(base + (lado * cos(ang) + arriba * sin(ang)) * amp)
+
+	var anillos: Array = []
+	for k in range(puntos.size()):
+		var tang: Vector3
+		if k == 0:
+			tang = (puntos[1] - puntos[0]).normalized()
+		elif k == puntos.size() - 1:
+			tang = (puntos[k] - puntos[k - 1]).normalized()
+		else:
+			tang = (puntos[k + 1] - puntos[k - 1]).normalized()
+		var u := tang.cross(Vector3.UP)
+		if u.length_squared() < 0.001:
+			u = tang.cross(Vector3.RIGHT)
+		u = u.normalized()
+		var v := u.cross(tang).normalized()
+		var anillo: Array[Vector3] = []
+		for s in range(segs):
+			var a := float(s) / float(segs) * TAU
+			anillo.append(puntos[k] + (u * cos(a) + v * sin(a)) * grosor)
+		anillos.append(anillo)
+
+	for k in range(anillos.size() - 1):
+		var r0: Array[Vector3] = anillos[k]
+		var r1: Array[Vector3] = anillos[k + 1]
+		for s in range(segs):
+			var sn := (s + 1) % segs
+			st.add_vertex(r0[s])
+			st.add_vertex(r0[sn])
+			st.add_vertex(r1[sn])
+			st.add_vertex(r0[s])
+			st.add_vertex(r1[sn])
+			st.add_vertex(r1[s])
+
+	st.generate_normals()
+	return st.commit()

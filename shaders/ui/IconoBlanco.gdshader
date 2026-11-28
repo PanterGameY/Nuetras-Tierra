@@ -1,6 +1,11 @@
 shader_type canvas_item;
 
 uniform vec4 icon_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+varying vec4 v_modulate;
+
+void vertex() {
+	v_modulate = COLOR;
+}
 
 void fragment() {
 	vec4 tex = texture(TEXTURE, UV);
@@ -13,5 +18,5 @@ void fragment() {
 		alpha = 1.0 - ((tex.r + tex.g + tex.b) / 3.0);
 	}
 	
-	COLOR = vec4(icon_color.rgb * COLOR.rgb, alpha * COLOR.a);
+	COLOR = vec4(icon_color.rgb * v_modulate.rgb, alpha * v_modulate.a);
 }

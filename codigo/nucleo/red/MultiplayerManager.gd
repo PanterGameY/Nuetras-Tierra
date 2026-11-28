@@ -20,6 +20,51 @@ const SPAWN_OFFSETS_X: Array[float] = [0.0, 8.0, -8.0, 16.0, -16.0]
 
 var _slots_ocupados: Dictionary = {} # peer_id (int) -> slot_index (0..4)
 var _peers_spawneados: Dictionary = {} # peer_id (int) -> bool
+var _vehiculos_peers: Dictionary = {} # peer_id (int) -> String (modelo_id)
+var _personalizacion_vehiculos: Dictionary = {} # peer_id (int) -> Dictionary
+var _trailers_activos: Dictionary = {} # peer_id (int) -> Dictionary {ruta, pos, rot_y}
+
+const CATALOGO_VEHICULOS_MP := {
+	"T800_A": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T800_Alargada": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T800": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"800_Modular": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T680": "res://modelos3d/vehiculos/tractomulas/cabezotes/T680/T680.tscn",
+	"Kodiak": "res://modelos3d/vehiculos/tractomulas/cabezotes/KODIAK/kodiak.tscn",
+	"NPR": "res://modelos3d/vehiculos/NPR/npr.tscn",
+	"Marcopolo": "res://modelos3d/vehiculos/Buses/MarcopoloG8-1200/MarcopoloG8-1200.tscn",
+	"Duster": "res://modelos3d/vehiculos/automoviles/Duster/duster.tscn",
+	"Mespark": "res://modelos3d/vehiculos/automoviles/Mespark/mespark.tscn",
+	"ToyotaHiace": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Hiage": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Pardo": "res://modelos3d/vehiculos/automoviles/Pardo/pardo.tscn",
+	"Sprinter": "res://modelos3d/vehiculos/automoviles/sprinter/sprinter_repartidor.tscn"
+}
+
+func _obtener_vehiculo_local_id() -> String:
+	var du := get_node_or_null("/root/DatosUsuario")
+	var id_veh := "T800_A"
+	if du:
+		if "guardado_player_vehiculo_nombre" in du and str(du.guardado_player_vehiculo_nombre) != "":
+			id_veh = str(du.guardado_player_vehiculo_nombre)
+		elif "vehiculo_actual" in du and str(du.vehiculo_actual) != "":
+			id_veh = str(du.vehiculo_actual)
+	if not CATALOGO_VEHICULOS_MP.has(id_veh):
+		for k in CATALOGO_VEHICULOS_MP.keys():
+			if k.to_lower() in id_veh.to_lower() or id_veh.to_lower() in k.to_lower():
+				return k
+		return "T800_A"
+	return id_veh
+
+func _resolver_ruta_vehiculo(modelo_id: String) -> String:
+	var clave := modelo_id if modelo_id != "" else "T800_A"
+	if not CATALOGO_VEHICULOS_MP.has(clave):
+		for k in CATALOGO_VEHICULOS_MP.keys():
+			if k.to_lower() in clave.to_lower() or clave.to_lower() in k.to_lower():
+				clave = k
+				break
+	var ruta: String = CATALOGO_VEHICULOS_MP.get(clave, VEHICLE_SCENE)
+	return ruta if ResourceLoader.exists(ruta) else VEHICLE_SCENE_FALLBACK
 
 var _contenedor_jugadores: Node3D = null
 var _contenedor_vehiculos: Node3D = null
@@ -133,8 +178,9 @@ func _enviar_peer_listo() -> void:
 	var red = get_node_or_null("/root/RedManager")
 	if red and red.has_method("registrar_nombre_jugador"):
 		red.registrar_nombre_jugador.rpc(mi_id, mi_nombre)
-	print("[MultiplayerManager] Cliente (ID: %d) enviando peer_listo al Host..." % mi_id)
-	peer_listo.rpc_id(1, mi_nombre)
+	var mi_modelo := _obtener_vehiculo_local_id()
+	print("[MultiplayerManager] Cliente (ID: %d) enviando peer_listo al Host (vehículo: %s)..." % [mi_id, mi_modelo])
+	peer_listo.rpc_id(1, mi_nombre, mi_modelo)
 
 func _on_timer_handshake_timeout() -> void:
 	var mi_id = multiplayer.get_unique_id()
@@ -145,8 +191,8 @@ func _on_timer_handshake_timeout() -> void:
 		return
 
 	_intentos_handshake += 1
-	if _intentos_handshake <= 8:
-		print("[MultiplayerManager] Reintentando peer_listo hacia el Host (intento %d/8)..." % _intentos_handshake)
+	if _intentos_handshake <= 25:
+		print("[MultiplayerManager] Reintentando peer_listo hacia el Host (intento %d/25)..." % _intentos_handshake)
 		_enviar_peer_listo()
 	else:
 		if _timer_handshake_cliente:
@@ -176,8 +222,16 @@ func _obtener_slot_para_peer(peer_id: int) -> int:
 func _obtener_posiciones_slot(slot_idx: int) -> Dictionary:
 	var raiz = get_parent()
 	var idx_clamped = clampi(slot_idx, 0, MAX_JUGADORES - 1)
-	var p_pos = BASE_PLAYER_POS + Vector3(SPAWN_OFFSETS_X[idx_clamped], 0.0, 0.0)
-	var v_pos = BASE_VEHICLE_POS + Vector3(SPAWN_OFFSETS_X[idx_clamped], 0.0, 0.0)
+	var base_p := BASE_PLAYER_POS
+	var base_v := BASE_VEHICLE_POS
+	if Engine.has_meta("nt_mp_spawn_pos"):
+		var custom_spawn: Variant = Engine.get_meta("nt_mp_spawn_pos")
+		if custom_spawn is Vector3:
+			base_p = custom_spawn + Vector3(0.0, 0.25, 0.0)
+			base_v = custom_spawn + Vector3(3.6, 0.35, -2.5)
+
+	var p_pos = base_p + Vector3(SPAWN_OFFSETS_X[idx_clamped], 0.0, 0.0)
+	var v_pos = base_v + Vector3(SPAWN_OFFSETS_X[idx_clamped], 0.0, 0.0)
 
 	if raiz:
 		var marker_p = raiz.get_node_or_null("PuntosSpawn/PuntosJugadores/SpawnJugador" + str(idx_clamped + 1)) as Node3D
@@ -195,16 +249,22 @@ func _obtener_posiciones_slot(slot_idx: int) -> Dictionary:
 func _ajustar_pos_sobre_suelo(raiz: Node, pos: Vector3, margen_y: float) -> Vector3:
 	if not (raiz is Node3D):
 		return pos
+	var out := pos
+	var ctrl_terr := raiz.find_child("ControladorTerreno", true, false)
+	if ctrl_terr and "terrain" in ctrl_terr and is_instance_valid(ctrl_terr.terrain) and ctrl_terr.terrain.data:
+		var h_terr: float = ctrl_terr.terrain.data.get_height(pos)
+		if not is_nan(h_terr) and not is_inf(h_terr):
+			out.y = maxf(out.y, h_terr + margen_y)
 	var mundo := (raiz as Node3D).get_world_3d()
 	if not mundo or not mundo.direct_space_state:
-		return pos
+		return out
 	var space := mundo.direct_space_state
 	var excl: Array[RID] = []
-	var y_origen: float = maxf(pos.y + 25.0, 40.0)
+	var y_origen: float = maxf(out.y + 25.0, 40.0)
 	for _i in range(6):
 		var q := PhysicsRayQueryParameters3D.create(
-			Vector3(pos.x, y_origen, pos.z),
-			Vector3(pos.x, pos.y - 25.0, pos.z),
+			Vector3(out.x, y_origen, out.z),
+			Vector3(out.x, out.y - 25.0, out.z),
 			1,
 			excl
 		)
@@ -218,12 +278,11 @@ func _ajustar_pos_sobre_suelo(raiz: Node, pos: Vector3, margen_y: float) -> Vect
 			continue
 		var norm: Vector3 = res["normal"]
 		if norm.y >= 0.45:
-			var out := pos
-			out.y = maxf(pos.y, (res["position"] as Vector3).y + margen_y)
+			out.y = maxf(out.y, (res["position"] as Vector3).y + margen_y)
 			return out
 		excl.append(res["rid"])
 		y_origen = (res["position"] as Vector3).y - 0.05
-	return pos
+	return out
 
 func _asignar_y_spawnear_peer(peer_id: int) -> void:
 	if not multiplayer.is_server():
@@ -238,20 +297,25 @@ func _asignar_y_spawnear_peer(peer_id: int) -> void:
 
 	var coords = _obtener_posiciones_slot(slot)
 	var nombre = _obtener_nombre_jugador(peer_id)
+	if not _vehiculos_peers.has(peer_id) and peer_id == multiplayer.get_unique_id():
+		_vehiculos_peers[peer_id] = _obtener_vehiculo_local_id()
+	var modelo_veh: String = str(_vehiculos_peers.get(peer_id, "T800_A"))
 	_peers_spawneados[peer_id] = true
 
-	print("[MultiplayerManager] Spawneando peer %d (%s) en slot %d..." % [peer_id, nombre, slot])
-	spawn_entidad.rpc("vehicle", peer_id, coords.vehicle_pos, nombre)
-	spawn_entidad.rpc("player", peer_id, coords.player_pos, nombre)
+	print("[MultiplayerManager] Spawneando peer %d (%s, %s) en slot %d..." % [peer_id, nombre, modelo_veh, slot])
+	spawn_entidad.rpc("vehicle", peer_id, coords.vehicle_pos, nombre, modelo_veh)
+	spawn_entidad.rpc("player", peer_id, coords.player_pos, nombre, "")
 	_actualizar_hud_multijugador()
 
 @rpc("any_peer", "call_remote", "reliable")
-func peer_listo(nombre_cliente: String = "") -> void:
+func peer_listo(nombre_cliente: String = "", modelo_vehiculo: String = "") -> void:
 	if not multiplayer.is_server():
 		return
 	var peer_id = multiplayer.get_remote_sender_id()
 	if peer_id <= 0:
 		return
+	if modelo_vehiculo.strip_edges() != "":
+		_vehiculos_peers[peer_id] = modelo_vehiculo.strip_edges()
 
 	print("[MultiplayerManager] Host recibió peer_listo de peer: ", peer_id, " (", nombre_cliente, ")")
 
@@ -280,9 +344,25 @@ func peer_listo(nombre_cliente: String = "") -> void:
 		var v_node = _buscar_entidad("Vehiculo_" + str(existing_peer))
 		var p_nombre = _obtener_nombre_jugador(int(existing_peer))
 		if v_node:
-			spawn_entidad.rpc_id(peer_id, "vehicle", int(existing_peer), v_node.global_position, p_nombre)
+			spawn_entidad.rpc_id(peer_id, "vehicle", int(existing_peer), v_node.global_position, p_nombre, str(_vehiculos_peers.get(int(existing_peer), "T800_A")))
 		if p_node:
-			spawn_entidad.rpc_id(peer_id, "player", int(existing_peer), p_node.global_position, p_nombre)
+			spawn_entidad.rpc_id(peer_id, "player", int(existing_peer), p_node.global_position, p_nombre, "")
+		if _personalizacion_vehiculos.has(int(existing_peer)):
+			var pdata: Dictionary = _personalizacion_vehiculos[int(existing_peer)]
+			sincronizar_personalizacion_vehiculo.rpc_id(
+				peer_id,
+				int(existing_peer),
+				str(pdata.get("color_hex", "ffffff")),
+				float(pdata.get("metallic", 0.3)),
+				float(pdata.get("roughness", 0.35)),
+				bool(pdata.get("neon_on", false)),
+				str(pdata.get("neon_hex", "0066ff")),
+				float(pdata.get("neon_intensity", 1.2))
+			)
+		var t_node = _buscar_entidad("Trailer_" + str(existing_peer))
+		if t_node and _trailers_activos.has(int(existing_peer)):
+			var td: Dictionary = _trailers_activos[int(existing_peer)]
+			spawn_trailer_red.rpc_id(peer_id, int(existing_peer), str(td.get("ruta", "")), t_node.global_position, t_node.rotation.y)
 
 	# 3. Spawnear al nuevo cliente en todos los peers
 	_asignar_y_spawnear_peer(peer_id)
@@ -292,7 +372,7 @@ func peer_listo(nombre_cliente: String = "") -> void:
 	_actualizar_visibilidad_sincronizadores()
 
 @rpc("authority", "call_local", "reliable")
-func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: String = "") -> void:
+func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: String = "", modelo_vehiculo: String = "") -> void:
 	var nombre_mostrar = nombre_jugador if nombre_jugador != "" else _obtener_nombre_jugador(peer_id)
 
 	if type == "player":
@@ -300,12 +380,18 @@ func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: Str
 		if _buscar_entidad(node_name) != null:
 			return
 
-		var scene = load(PLAYER_SCENE) as PackedScene
-		if not scene:
-			push_error("[MultiplayerManager] No se encontró PLAYER_SCENE: " + PLAYER_SCENE)
-			return
+		var es_local := (peer_id == multiplayer.get_unique_id())
+		var player: Node3D = null
 
-		var player = scene.instantiate()
+		if es_local:
+			var scene = load(PLAYER_SCENE) as PackedScene
+			if not scene:
+				push_error("[MultiplayerManager] No se encontró PLAYER_SCENE: " + PLAYER_SCENE)
+				return
+			player = scene.instantiate()
+		else:
+			player = _crear_capsula_jugador_remoto(peer_id)
+
 		player.name = node_name
 		# CRÍTICO: Asignar autoridad ANTES de add_child() para que jugador3D._ready() detecte si es local o remoto
 		player.set_multiplayer_authority(peer_id)
@@ -319,13 +405,13 @@ func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: Str
 			".:_anim_actual": SceneReplicationConfig.REPLICATION_MODE_ON_CHANGE
 		})
 
-		if peer_id != multiplayer.get_unique_id():
+		if not es_local:
 			_agregar_etiqueta_nombre_3d(player, nombre_mostrar, Vector3(0, 2.15, 0))
 
 		var parent_target: Node = _contenedor_jugadores if is_instance_valid(_contenedor_jugadores) else get_parent()
 		parent_target.add_child(player, true)
 
-		if peer_id == multiplayer.get_unique_id():
+		if es_local:
 			if _timer_handshake_cliente:
 				_timer_handshake_cliente.stop()
 			_activar_camara_deferred.call_deferred(player)
@@ -335,7 +421,8 @@ func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: Str
 		if _buscar_entidad(node_name) != null:
 			return
 
-		var ruta_veh = VEHICLE_SCENE if ResourceLoader.exists(VEHICLE_SCENE) else VEHICLE_SCENE_FALLBACK
+		var modelo_resuelto := modelo_vehiculo if modelo_vehiculo != "" else (_obtener_vehiculo_local_id() if peer_id == multiplayer.get_unique_id() else "T800_A")
+		var ruta_veh := _resolver_ruta_vehiculo(modelo_resuelto)
 		var scene = load(ruta_veh) as PackedScene
 		if not scene:
 			push_error("[MultiplayerManager] No se encontró escena de vehículo: " + ruta_veh)
@@ -343,6 +430,7 @@ func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: Str
 
 		var vehicle = scene.instantiate()
 		vehicle.name = node_name
+		vehicle.set_meta("modelo_id", modelo_resuelto)
 		# CRÍTICO: Asignar autoridad ANTES de add_child()
 		vehicle.set_multiplayer_authority(peer_id)
 		vehicle.position = pos
@@ -365,6 +453,20 @@ func spawn_entidad(type: String, peer_id: int, pos: Vector3, nombre_jugador: Str
 		var parent_target: Node = _contenedor_vehiculos if is_instance_valid(_contenedor_vehiculos) else get_parent()
 		parent_target.add_child(vehicle, true)
 
+		if _personalizacion_vehiculos.has(peer_id):
+			var pdata: Dictionary = _personalizacion_vehiculos[peer_id]
+			sincronizar_personalizacion_vehiculo(
+				peer_id,
+				str(pdata.get("color_hex", "ffffff")),
+				float(pdata.get("metallic", 0.3)),
+				float(pdata.get("roughness", 0.35)),
+				bool(pdata.get("neon_on", false)),
+				str(pdata.get("neon_hex", "0066ff")),
+				float(pdata.get("neon_intensity", 1.2))
+			)
+		elif peer_id == multiplayer.get_unique_id():
+			_enviar_personalizacion_guardada_deferred.call_deferred(peer_id)
+
 	_actualizar_hud_multijugador()
 
 func _buscar_entidad(nombre: String) -> Node3D:
@@ -376,6 +478,42 @@ func _buscar_entidad(nombre: String) -> Node3D:
 		return get_parent().get_node(nombre) as Node3D
 	return null
 
+func _crear_capsula_jugador_remoto(_peer_id: int) -> CharacterBody3D:
+	var cuerpo := CharacterBody3D.new()
+	var script_remoto := load("res://codigo/nucleo/red/JugadorCapsulaRemota.gd")
+	if script_remoto:
+		cuerpo.set_script(script_remoto)
+	cuerpo.collision_layer = 2
+	cuerpo.collision_mask = 1
+
+	var col := CollisionShape3D.new()
+	var shape := CapsuleShape3D.new()
+	shape.radius = 0.32
+	shape.height = 1.76
+	col.shape = shape
+	col.position = Vector3(0.0, 0.88, 0.0)
+	cuerpo.add_child(col)
+
+	var glb_path := "res://modelos3d/personajes/Jugador/jugador_voxel_remoto.glb"
+	var escena_voxel := load(glb_path) as PackedScene if ResourceLoader.exists(glb_path) else null
+	if escena_voxel:
+		var modelo := escena_voxel.instantiate() as Node3D
+		modelo.name = "ModeloVoxel"
+		# Igual que Modelo en Jugador.tscn (Transform3D -1..): Blender -Y exporta a +Z en glTF,
+		# mientras jugador3D.gd orienta el movimiento hacia -Z (atan2(-dir.x, -dir.z)).
+		modelo.rotation.y = PI
+		cuerpo.add_child(modelo)
+	else:
+		var malla := MeshInstance3D.new()
+		var capsula := CapsuleMesh.new()
+		capsula.radius = 0.35
+		capsula.height = 1.75
+		malla.mesh = capsula
+		malla.position = Vector3(0.0, 0.875, 0.0)
+		cuerpo.add_child(malla)
+
+	return cuerpo
+
 func _activar_camara_deferred(player_node: Node) -> void:
 	if not is_instance_valid(player_node):
 		return
@@ -383,6 +521,22 @@ func _activar_camara_deferred(player_node: Node) -> void:
 	if cam:
 		cam.cull_mask = cam.cull_mask & ~2
 		cam.make_current()
+	var raiz := get_parent()
+	if is_instance_valid(raiz):
+		var ctrl_terr := raiz.find_child("ControladorTerreno", true, false)
+		if ctrl_terr:
+			if "bloqueado_en_prueba" in ctrl_terr:
+				ctrl_terr.bloqueado_en_prueba = true
+			if "terrain" in ctrl_terr and is_instance_valid(ctrl_terr.terrain):
+				var t = ctrl_terr.terrain
+				t.collision_mode = 1
+				t.collision_radius = 96
+				t.collision_target = player_node
+				if cam:
+					t.set_camera(cam)
+					t.set_clipmap_target(cam)
+			if cam and ctrl_terr.has_method("aplicar_distancia_renderizado"):
+				ctrl_terr.aplicar_distancia_renderizado(450.0, cam)
 	_limpiar_nodos_default()
 
 func _on_peer_connected(peer_id: int) -> void:
@@ -405,13 +559,125 @@ func despawn_entidades_peer(peer_id: int) -> void:
 	var vehicle = _buscar_entidad("Vehiculo_" + str(peer_id))
 	if vehicle:
 		vehicle.queue_free()
+	var trailer = _buscar_entidad("Trailer_" + str(peer_id))
+	if trailer:
+		trailer.queue_free()
+	_personalizacion_vehiculos.erase(peer_id)
+	_trailers_activos.erase(peer_id)
 	_actualizar_hud_multijugador()
+
+func _enviar_personalizacion_guardada_deferred(peer_id: int) -> void:
+	var veh := _buscar_entidad("Vehiculo_" + str(peer_id))
+	if veh:
+		var cust := veh.get_node_or_null("CustomizerComponent")
+		if not cust:
+			cust = veh.find_child("CustomizerComponent", true, false)
+		if not cust:
+			var cust_script := load("res://codigo/sistemas/taller/customizer_component.gd")
+			if cust_script:
+				cust = Node.new()
+				cust.set_script(cust_script)
+				cust.name = "CustomizerComponent"
+				veh.add_child(cust)
+		if cust and cust.has_method("cargar_personalizacion"):
+			cust.cargar_personalizacion()
+
+	var du = get_node_or_null("/root/DatosUsuario")
+	if not du or not ("vehiculos_personalizados" in du):
+		return
+	var id_veh := _obtener_vehiculo_local_id()
+	var dicts = du.get("vehiculos_personalizados")
+	if not (dicts is Dictionary) or not dicts.has(id_veh):
+		return
+	var d: Dictionary = dicts[id_veh]
+	var cols: Array = d.get("colores_slots", [])
+	var mets: Array = d.get("metallic_slots", [])
+	var roughs: Array = d.get("roughness_slots", [])
+	var c_hex := str(cols[0]) if cols.size() > 0 else "ffffff"
+	var met := float(mets[0]) if mets.size() > 0 else 0.3
+	var rough := float(roughs[0]) if roughs.size() > 0 else 0.35
+	var n_on := bool(d.get("neon_enabled", false))
+	var n_hex := str(d.get("neon_color", "0066ff"))
+	var n_int := float(d.get("neon_intensity", 1.2))
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		sincronizar_personalizacion_vehiculo.rpc(peer_id, c_hex, met, rough, n_on, n_hex, n_int)
+	else:
+		sincronizar_personalizacion_vehiculo(peer_id, c_hex, met, rough, n_on, n_hex, n_int)
+
+@rpc("any_peer", "call_local", "reliable")
+func sincronizar_personalizacion_vehiculo(peer_id: int, color_hex: String, metallic: float, roughness: float, neon_on: bool, neon_hex: String, neon_intensity: float) -> void:
+	_personalizacion_vehiculos[peer_id] = {
+		"color_hex": color_hex,
+		"metallic": metallic,
+		"roughness": roughness,
+		"neon_on": neon_on,
+		"neon_hex": neon_hex,
+		"neon_intensity": neon_intensity
+	}
+	var veh := _buscar_entidad("Vehiculo_" + str(peer_id))
+	if not veh:
+		return
+	var comp := veh.find_child("CustomizerComponent", true, false) as CustomizerComponent
+	if not comp:
+		comp = CustomizerComponent.new()
+		comp.name = "CustomizerComponent"
+		veh.add_child(comp)
+		comp.detectar_materiales_personalizables()
+	if comp.materiales_detectados.is_empty():
+		comp.detectar_materiales_personalizables()
+	comp.aplicar_pintura(Color.html(color_hex), metallic, roughness, 0.5)
+	comp.aplicar_neon(neon_on, Color.html(neon_hex), neon_intensity)
+
+@rpc("any_peer", "call_local", "reliable")
+func solicitar_spawn_trailer(peer_id: int, ruta_trailer: String = "") -> void:
+	if not multiplayer.is_server():
+		return
+	var remitente := multiplayer.get_remote_sender_id()
+	var id_real := remitente if remitente > 0 else peer_id
+	var veh := _buscar_entidad("Vehiculo_" + str(id_real)) as Node3D
+	if not veh:
+		return
+	var ruta := ruta_trailer
+	if ruta.is_empty() or not ResourceLoader.exists(ruta):
+		ruta = TrailerFactory.RUTA_CHASIS_DEFECTO
+	var atras := veh.global_transform.basis.z.normalized()
+	var pos := veh.global_position + atras * 9.5 + Vector3(0.0, 0.35, 0.0)
+	var rot_y := veh.rotation.y
+	spawn_trailer_red.rpc(id_real, ruta, pos, rot_y)
+
+@rpc("authority", "call_local", "reliable")
+func spawn_trailer_red(peer_id: int, ruta_trailer: String, pos: Vector3, rot_y: float) -> void:
+	var node_name := "Trailer_" + str(peer_id)
+	var previo := _buscar_entidad(node_name)
+	if previo:
+		previo.queue_free()
+	var ruta := ruta_trailer if (ruta_trailer != "" and ResourceLoader.exists(ruta_trailer)) else TrailerFactory.RUTA_CHASIS_DEFECTO
+	var trailer := TrailerFactory.crear_trailer(ruta, "rin_t2_cromo", pos, Vector3(0.0, rot_y, 0.0))
+	if not trailer and ruta != TrailerFactory.RUTA_CHASIS_DEFECTO:
+		trailer = TrailerFactory.crear_trailer(TrailerFactory.RUTA_CHASIS_DEFECTO, "rin_t2_cromo", pos, Vector3(0.0, rot_y, 0.0))
+	if not trailer:
+		return
+	trailer.name = node_name
+	trailer.set_multiplayer_authority(peer_id)
+	trailer.position = pos
+	trailer.rotation = Vector3(0.0, rot_y, 0.0)
+	_trailers_activos[peer_id] = {"ruta": ruta, "pos": pos, "rot_y": rot_y}
+	_add_synchronizer(trailer, peer_id, {
+		".:global_position": SceneReplicationConfig.REPLICATION_MODE_ALWAYS,
+		".:global_rotation": SceneReplicationConfig.REPLICATION_MODE_ALWAYS,
+		".:linear_velocity": SceneReplicationConfig.REPLICATION_MODE_ALWAYS,
+		".:angular_velocity": SceneReplicationConfig.REPLICATION_MODE_ALWAYS
+	})
+	var parent_target: Node = _contenedor_vehiculos if is_instance_valid(_contenedor_vehiculos) else get_parent()
+	parent_target.add_child(trailer, true)
+	_actualizar_visibilidad_sincronizadores()
 
 func _add_synchronizer(node: Node, authority: int, properties: Dictionary) -> void:
 	var sync = MultiplayerSynchronizer.new()
 	sync.name = "Sync"
 	sync.set_multiplayer_authority(authority)
-	sync.replication_interval = 0.033 # ~30 Hz de red fluido sin saturar ancho de banda móvil
+	sync.replication_interval = 0.05 # 20 Hz fluido sin saturar CPU ni canal WebRTC
+	sync.delta_interval = 0.05
 	var replication_config = SceneReplicationConfig.new()
 	for prop in properties.keys():
 		var mode = properties[prop]
@@ -509,7 +775,7 @@ func _crear_hud_multijugador(raiz: Node) -> void:
 	raiz.add_child.call_deferred(_hud_mp_canvas)
 
 func _actualizar_hud_multijugador() -> void:
-	if not is_instance_valid(_lbl_estado_sala):
+	if not is_instance_valid(_lbl_estado_sala) or not is_inside_tree() or not multiplayer:
 		return
 	var net = get_node_or_null("/root/Network")
 	var rol = "HOST" if (multiplayer.has_multiplayer_peer() and multiplayer.is_server()) else "CLIENTE"

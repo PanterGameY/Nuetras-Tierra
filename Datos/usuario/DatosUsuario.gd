@@ -60,6 +60,9 @@ var pase_elite_activo : bool = false
 var pase_elite_desde : String = ""
 var pase_elite_ultimo_reclamo : String = ""
 var pase_elite_dias_reclamados : int = 0
+var pases_mapa : int = 0
+var stocks_editor_online : int = 0
+var slots_colab_por_mapa : Dictionary = {}
 var trabajos_legales_desbloqueados : bool = false
 var licencia_automovil : bool = false
 var licencia_camion : bool = false
@@ -243,6 +246,9 @@ func _ejecutar_guardado_disco() -> bool:
 	cfg.set_value("usuario", "pase_elite_desde", pase_elite_desde)
 	cfg.set_value("usuario", "pase_elite_ultimo_reclamo", pase_elite_ultimo_reclamo)
 	cfg.set_value("usuario", "pase_elite_dias_reclamados", pase_elite_dias_reclamados)
+	cfg.set_value("usuario", "pases_mapa", pases_mapa)
+	cfg.set_value("usuario", "stocks_editor_online", stocks_editor_online)
+	cfg.set_value("usuario", "slots_colab_por_mapa", slots_colab_por_mapa)
 	cfg.set_value("usuario", "trabajos_legales_desbloqueados", trabajos_legales_desbloqueados)
 	cfg.set_value("usuario", "licencia_automovil", licencia_automovil)
 	cfg.set_value("usuario", "licencia_camion", licencia_camion)
@@ -302,6 +308,10 @@ func load_local() -> bool:
 			pase_elite_dias_reclamados = int(
 				cfg.get_value("usuario", "pase_elite_dias_reclamados", 0)
 			)
+			pases_mapa = int(cfg.get_value("usuario", "pases_mapa", 0))
+			stocks_editor_online = int(cfg.get_value("usuario", "stocks_editor_online", 0))
+			var slots_raw = cfg.get_value("usuario", "slots_colab_por_mapa", {})
+			slots_colab_por_mapa = slots_raw if slots_raw is Dictionary else {}
 			trabajos_legales_desbloqueados = bool(cfg.get_value("usuario", "trabajos_legales_desbloqueados", false))
 			licencia_automovil = bool(cfg.get_value("usuario", "licencia_automovil", false))
 			licencia_camion = bool(cfg.get_value("usuario", "licencia_camion", false))
@@ -1178,3 +1188,38 @@ func otorgar_licencia(categoria: String) -> void:
 			mision_licencia_completada = true
 			trabajos_legales_desbloqueados = true
 	save_local()
+
+func comprar_stock_editor_online(precio_esmeraldas: int = 100) -> bool:
+	if esmeraldas < precio_esmeraldas:
+		return false
+	esmeraldas -= precio_esmeraldas
+	stocks_editor_online += 1
+	save_local()
+	return true
+
+func consumir_stock_editor_online() -> bool:
+	if stocks_editor_online <= 0:
+		return false
+	stocks_editor_online -= 1
+	save_local()
+	return true
+
+func _normalizar_clave_mapa(nombre_mapa: String) -> String:
+	var k := nombre_mapa.strip_edges().to_lower()
+	return k if not k.is_empty() else "mapa_guardado"
+
+func obtener_slots_mapa(nombre_mapa: String) -> int:
+	var k := _normalizar_clave_mapa(nombre_mapa)
+	return clampi(int(slots_colab_por_mapa.get(k, 0)), 0, 6)
+
+func comprar_slot_mapa(nombre_mapa: String, precio_esmeraldas: int = 100, max_slots: int = 6) -> bool:
+	var k := _normalizar_clave_mapa(nombre_mapa)
+	var actual := obtener_slots_mapa(k)
+	if actual >= max_slots:
+		return false
+	if esmeraldas < precio_esmeraldas:
+		return false
+	esmeraldas -= precio_esmeraldas
+	slots_colab_por_mapa[k] = actual + 1
+	save_local()
+	return true

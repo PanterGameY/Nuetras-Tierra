@@ -63,7 +63,6 @@ func _ready() -> void:
 	print("[escena_carga] Cargando destino de forma asincrona: ", target_scene)
 	_actualizar_destino_badge()
 	_mejorar_entorno_natural()
-	_solicitar_convoy_asincrono()
 	_configurar_entrada()
 	_iniciar_carga_threaded()
 
@@ -83,36 +82,10 @@ func _mejorar_entorno_natural() -> void:
 					n.material_override = mat_cesped
 			for h in n.get_children():
 				cola.append(h)
-	if escena_3d and ResourceLoader.exists(RUTA_ROBLE):
-		var roble_ps := load(RUTA_ROBLE) as PackedScene
-		if roble_ps:
-			var arboles_root := Node3D.new()
-			arboles_root.name = "RoblesEntorno"
-			escena_3d.add_child(arboles_root)
-			var puntos: Array[Vector4] = [
-				Vector4(-13.5, 0.0, -32.0, 1.2), Vector4(-16.0, 0.0, -18.0, 1.05),
-				Vector4(-13.0, 0.0, -4.0, 1.25), Vector4(-15.5, 0.0, 12.0, 1.1),
-				Vector4(-12.5, 0.0, 26.0, 1.15), Vector4(13.5, 0.0, -30.0, 1.15),
-				Vector4(16.0, 0.0, -14.0, 1.3), Vector4(13.0, 0.0, 2.0, 1.1),
-				Vector4(15.5, 0.0, 16.0, 1.05), Vector4(12.8, 0.0, 28.0, 1.2),
-			]
-			for i in range(puntos.size()):
-				var p: Vector4 = puntos[i]
-				var r := roble_ps.instantiate() as Node3D
-				if r:
-					r.position = Vector3(p.x, p.y, p.z)
-					r.rotation.y = float(i) * 1.17
-					r.scale = Vector3.ONE * p.w
-					arboles_root.add_child(r)
 
 func _solicitar_convoy_asincrono() -> void:
-	if not truck_mover:
-		return
-	for ruta in [RUTA_T800_SHOWCASE, RUTA_CARPADO_SHOWCASE]:
-		if ResourceLoader.exists(ruta):
-			var st := ResourceLoader.load_threaded_get_status(ruta)
-			if st == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE or st == ResourceLoader.THREAD_LOAD_FAILED:
-				ResourceLoader.load_threaded_request(ruta)
+	# Desactivado para no cargar T800_A + Carpado en paralelo con la escena destino y ahorrar RAM/VRAM
+	return
 
 func _actualizar_carga_convoy() -> void:
 	if not truck_mover:
@@ -268,6 +241,7 @@ func _process(delta: float) -> void:
 			progreso_real = 1.0
 			if not recurso_cargado:
 				recurso_cargado = ResourceLoader.load_threaded_get(target_scene) as PackedScene
+				_solicitar_convoy_asincrono()
 		ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
 			if recurso_cargado == null and ResourceLoader.exists(target_scene):
 				push_warning("[escena_carga] Procediendo con carga directa.")
@@ -410,14 +384,17 @@ func _finalizar_y_entrar() -> void:
 	var datos := get_node_or_null("/root/DatosUsuario")
 	if datos and "next_scene" in datos:
 		datos.next_scene = ""
-	if datos and "escenas_precargadas" in datos and recurso_cargado:
-		if target_scene.contains("MainMenuModerno") or target_scene.contains("Perfil_Menu"):
-			datos.escenas_precargadas[target_scene] = recurso_cargado
 
 	if fade_overlay:
 		var fade_tween := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 		fade_tween.tween_property(fade_overlay, "modulate:a", 1.0, 0.32)
 		await fade_tween.finished
+
+	# Liberar el SubViewport 3D antes de instanciar la escena destino para evitar picos de VRAM/RAM
+	var svc := get_node_or_null("SubViewportContainer")
+	if svc:
+		svc.queue_free()
+		await get_tree().process_frame
 
 	if recurso_cargado:
 		get_tree().change_scene_to_packed(recurso_cargado)

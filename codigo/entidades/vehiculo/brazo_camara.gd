@@ -2,7 +2,7 @@ extends Node3D
 
 @export var objetivo: Node3D
 @export var sensibilidad_rotacion: float = 0.15
-@export var sensibilidad_zoom: float = 0.05
+@export var sensibilidad_zoom: float = 0.02
 @export var limite_pitch: Vector2 = Vector2(-45.0, 25.0)
 
 var yaw: float = 0.0
@@ -35,6 +35,8 @@ func _ready() -> void:
 		if objetivo and objetivo.has_method("get_rid"):
 			spring_arm.add_excluded_object(objetivo.get_rid())
 
+var _factor_remolque: float = 0.0
+
 func _physics_process(delta: float) -> void:
 	if not objetivo or not is_instance_valid(objetivo):
 		return
@@ -44,15 +46,18 @@ func _physics_process(delta: float) -> void:
 		_check_timer = 0.0
 		_verificar_remolque()
 
-	var target_pos: Vector3 = objetivo.global_position
-	if _remolque_actual and is_instance_valid(_remolque_actual):
-		target_pos = target_pos.lerp(_remolque_actual.global_position, 0.40)
+	var tiene_remolque := _remolque_actual != null and is_instance_valid(_remolque_actual)
+	_factor_remolque = lerpf(_factor_remolque, 0.25 if tiene_remolque else 0.0, clampf(2.2 * delta, 0.0, 1.0))
 
-	global_position = global_position.lerp(target_pos, 1.0 - exp(-15.0 * delta))
+	var target_pos: Vector3 = objetivo.global_position
+	if tiene_remolque and _factor_remolque > 0.001:
+		target_pos = target_pos.lerp(_remolque_actual.global_position, _factor_remolque)
+
+	global_position = global_position.lerp(target_pos, 1.0 - exp(-12.0 * delta))
 
 	if spring_arm:
 		var target_len = _base_spring_length + _extra_length_trailer
-		spring_arm.spring_length = lerpf(spring_arm.spring_length, target_len, clamp(6.0 * delta, 0.0, 1.0))
+		spring_arm.spring_length = lerpf(spring_arm.spring_length, target_len, clamp(2.5 * delta, 0.0, 1.0))
 
 func _verificar_remolque() -> void:
 	var remolque: RigidBody3D = null

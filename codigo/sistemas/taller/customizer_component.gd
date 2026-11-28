@@ -58,6 +58,19 @@ func detectar_materiales_personalizables() -> void:
 	var parent = get_parent()
 	if parent:
 		_detectar_materiales_recursivo(parent)
+	# Priorizar el material de carrocería en el slot 0 para que aplicar_pintura siempre pinte la carrocería
+	for i in range(materiales_detectados.size()):
+		var mat: Material = materiales_detectados[i]
+		var m_name := mat.resource_name.to_lower() if mat.resource_name != null else ""
+		var m_path := mat.resource_path.to_lower() if mat.resource_path != null else ""
+		var s_path := ""
+		if mat is ShaderMaterial and mat.shader and mat.shader.resource_path != null:
+			s_path = mat.shader.resource_path.to_lower()
+		if "carroceria" in m_name or "carroceria" in m_path or "carroceria" in s_path or "paint" in m_name:
+			if i != 0:
+				materiales_detectados.remove_at(i)
+				materiales_detectados.insert(0, mat)
+			break
 
 func _detectar_materiales_recursivo(nodo: Node) -> void:
 	if not nodo:
@@ -96,6 +109,16 @@ func _registrar_material(mat: Material, mesh: MeshInstance3D, index: int) -> voi
 func aplicar_color_slot(slot_idx: int, color: Color, metallic: float, roughness: float, specular: float) -> void:
 	if slot_idx < 0 or slot_idx >= materiales_detectados.size():
 		return
+	if slot_idx == 0:
+		color_actual = color
+		metallic_actual = metallic
+		roughness_actual = roughness
+		specular_actual = specular
+	elif slot_idx == 1:
+		color_sec_actual = color
+		metallic_sec_actual = metallic
+		roughness_sec_actual = roughness
+		specular_sec_actual = specular
 	var mat_original = materiales_detectados[slot_idx]
 	var lista_meshes: Array = meshes_materiales_mapeo.get(mat_original, [])
 	var mat_duplicado: Material = null
@@ -115,14 +138,20 @@ func aplicar_color_slot(slot_idx: int, color: Color, metallic: float, roughness:
 			mat_actual.roughness = roughness
 			mat_actual.metallic_specular = specular
 		elif mat_actual is ShaderMaterial:
-			if mat_actual.get_shader_parameter("albedo") != null:
-				mat_actual.set_shader_parameter("albedo", color)
-			elif mat_actual.get_shader_parameter("paint_color") != null:
-				mat_actual.set_shader_parameter("paint_color", color)
-			if mat_actual.get_shader_parameter("metallic") != null:
+			var uniform_names: Array = []
+			if mat_actual.shader:
+				for u in mat_actual.shader.get_shader_uniform_list():
+					uniform_names.append(u.get("name", ""))
+			for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+				if param in uniform_names or mat_actual.get_shader_parameter(param) != null:
+					mat_actual.set_shader_parameter(param, color)
+					break
+			if "metallic" in uniform_names or mat_actual.get_shader_parameter("metallic") != null:
 				mat_actual.set_shader_parameter("metallic", metallic)
-			if mat_actual.get_shader_parameter("roughness") != null:
+			if "roughness" in uniform_names or mat_actual.get_shader_parameter("roughness") != null:
 				mat_actual.set_shader_parameter("roughness", roughness)
+			if "specular_strength" in uniform_names or mat_actual.get_shader_parameter("specular_strength") != null:
+				mat_actual.set_shader_parameter("specular_strength", specular)
 		if index == -1:
 			mesh.material_override = mat_actual
 		else:
@@ -152,11 +181,50 @@ func aplicar_camber_ruedas(val: float) -> void:
 					if "camber_deg" in llanta:
 						llanta.camber_deg = val
 
+var _neon_shader_mat: ShaderMaterial = null
+const RUTA_SHADER_NEON := "res://shaders/vehiculos/neon_underglow.gdshader"
+
+func _obtener_y_suelo_vehiculo(parent: Node3D) -> float:
+	var inv_parent := parent.global_transform.affine_inverse()
+	var min_y := INF
+	var cola: Array[Node] = [parent]
+	while not cola.is_empty():
+		var n: Node = cola.pop_back()
+		if n is MeshInstance3D and n.mesh and n.name != "NeonUnderglowPlane":
+			var mesh_node := n as MeshInstance3D
+			var local_xform: Transform3D = inv_parent * mesh_node.global_transform
+			var m_aabb: AABB = local_xform * mesh_node.mesh.get_aabb()
+			min_y = minf(min_y, m_aabb.position.y)
+		for h in n.get_children():
+			cola.append(h)
+	return (min_y + 0.012) if min_y < INF else 0.012
+
+func _calcular_bounds_vehiculo(parent: Node3D) -> AABB:
+	var inv_parent := parent.global_transform.affine_inverse()
+	var combined := AABB()
+	var has_bounds := false
+	if meshes_detectados.is_empty():
+		detectar_meshes_personalizables()
+	for m in meshes_detectados:
+		var mesh_node := m as MeshInstance3D
+		if not is_instance_valid(mesh_node) or not mesh_node.mesh:
+			continue
+		var local_xform: Transform3D = inv_parent * mesh_node.global_transform
+		var m_aabb: AABB = local_xform * mesh_node.mesh.get_aabb()
+		if not has_bounds:
+			combined = m_aabb
+			has_bounds = true
+		else:
+			combined = combined.merge(m_aabb)
+	if not has_bounds:
+		return AABB(Vector3(-1.0, 0.25, -2.4), Vector3(2.0, 2.0, 4.8))
+	return combined
+
 func aplicar_neon(enabled: bool, color: Color, intensity: float) -> void:
 	neon_enabled_actual = enabled
 	neon_color_actual = color
 	neon_intensity_actual = intensity
-	var parent = get_parent()
+	var parent = get_parent() as Node3D
 	if not parent:
 		return
 	if not enabled:
@@ -171,19 +239,29 @@ func aplicar_neon(enabled: bool, color: Color, intensity: float) -> void:
 			neon_node = Node3D.new()
 			neon_node.name = "UnderglowNeon"
 			parent.add_child(neon_node)
-			var posiciones = [Vector3(-1.0, -0.4, 2.0), Vector3(1.0, -0.4, 2.0), Vector3(-1.0, -0.4, -2.0), Vector3(1.0, -0.4, -2.0)]
-			for i in range(posiciones.size()):
-				var light = OmniLight3D.new()
-				light.name = "NeonLight_%d" % i
-				light.omni_range = 5.0
-				light.omni_attenuation = 1.2
-				light.shadow_enabled = false
-				neon_node.add_child(light)
-				light.position = posiciones[i]
-	for light in neon_node.get_children():
-		if light is OmniLight3D:
-			light.light_color = color
-			light.light_energy = intensity * 4.0
+
+			var bounds := _calcular_bounds_vehiculo(parent)
+			var cx := bounds.get_center().x
+			var cz := bounds.get_center().z
+			var area_w := clampf(bounds.size.x * 0.85, 1.3, 2.5)
+			var area_l := clampf(bounds.size.z * 0.85, 2.6, 8.2)
+			var floor_y := _obtener_y_suelo_vehiculo(parent)
+
+			var area_light := AreaLight3D.new()
+			area_light.name = "NeonAreaLight"
+			area_light.rotation_degrees = Vector3(-90.0, 0.0, 0.0)
+			area_light.position = Vector3(cx, floor_y + 0.35, cz)
+			area_light.area_size = Vector2(area_w, area_l)
+			area_light.area_range = 2.6
+			area_light.area_attenuation = 1.25
+			area_light.area_normalize_energy = false
+			area_light.shadow_enabled = false
+			neon_node.add_child(area_light)
+
+	for child in neon_node.get_children():
+		if child is AreaLight3D:
+			child.light_color = color
+			child.light_energy = 0.8 + intensity * 2.2
 
 func aplicar_placa(texto: String, ciudad: String, es_publica: bool) -> void:
 	plate_text_actual = texto
@@ -213,7 +291,9 @@ func _actualizar_placas_recursivo(nodo: Node, texto: String, ciudad: String, es_
 
 func aplicar_skin(textura_path: String) -> void:
 	skin_actual_path = textura_path
-	var tex = load(textura_path) if textura_path != "" else null
+	if textura_path == "" or not ResourceLoader.exists(textura_path):
+		return
+	var tex = load(textura_path)
 	if not tex:
 		return
 	if materiales_detectados.size() > 0:
@@ -221,38 +301,77 @@ func aplicar_skin(textura_path: String) -> void:
 		if mat is StandardMaterial3D:
 			mat.albedo_texture = tex
 
+func _obtener_clave_vehiculo() -> String:
+	var p := get_parent()
+	if not p:
+		return "<unknown>"
+	if p.has_meta("modelo_id"):
+		return str(p.get_meta("modelo_id"))
+	var pname := String(p.name)
+	if pname.begins_with("Vehiculo_"):
+		return "T800_A"
+	return pname
+
+func _leer_color_material(mat: Material) -> Dictionary:
+	if mat is StandardMaterial3D:
+		return {"color": mat.albedo_color, "metallic": mat.metallic, "roughness": mat.roughness, "specular": mat.metallic_specular}
+	elif mat is ShaderMaterial:
+		var col = null
+		for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+			col = mat.get_shader_parameter(param)
+			if col != null:
+				break
+		if col == null:
+			col = Color.WHITE
+		var met = mat.get_shader_parameter("metallic")
+		var rough = mat.get_shader_parameter("roughness")
+		return {"color": col, "metallic": float(met) if met != null else 0.0, "roughness": float(rough) if rough != null else 0.5, "specular": 0.5}
+	return {}
+
 func guardar_personalizacion() -> void:
-	if DatosUsuario:
-		var parent_name = String(get_parent().name) if get_parent() else "<unknown>"
-		if not "vehiculos_personalizados" in DatosUsuario:
-			DatosUsuario.set("vehiculos_personalizados", {})
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du:
+		var parent_name = _obtener_clave_vehiculo()
+		if not "vehiculos_personalizados" in du:
+			du.set("vehiculos_personalizados", {})
 		var col_hex_list = []
 		var met_list = []
 		var rough_list = []
 		var spec_list = []
 		for mat in materiales_detectados:
-			if mat is StandardMaterial3D:
-				col_hex_list.append(mat.albedo_color.to_html())
-				met_list.append(mat.metallic)
-				rough_list.append(mat.roughness)
-				spec_list.append(mat.metallic_specular)
-			elif mat is ShaderMaterial:
-				var col = mat.get_shader_parameter("albedo")
-				if col == null:
-					col = mat.get_shader_parameter("paint_color")
-				if col == null:
-					col = Color.WHITE
-				col_hex_list.append(col.to_html())
-				var met = mat.get_shader_parameter("metallic")
-				met_list.append(met if met != null else 0.0)
-				var rough = mat.get_shader_parameter("roughness")
-				rough_list.append(rough if rough != null else 0.5)
-				spec_list.append(0.5)
+			var info := _leer_color_material(mat)
+			if not info.is_empty():
+				col_hex_list.append((info["color"] as Color).to_html())
+				met_list.append(info["metallic"])
+				rough_list.append(info["roughness"])
+				spec_list.append(info["specular"])
+
+		# Guardar también personalización por malla/superficie para cambios individuales
+		if meshes_detectados.is_empty():
+			detectar_meshes_personalizables()
+		var meshes_colores := {}
+		for mesh in meshes_detectados:
+			if not is_instance_valid(mesh):
+				continue
+			for entry in obtener_materiales_de_mesh(mesh):
+				var s_idx: int = int(entry["surface_idx"])
+				var mat: Material = entry["material"]
+				var info := _leer_color_material(mat)
+				if not info.is_empty():
+					var key := String(mesh.name) + ":" + str(s_idx)
+					meshes_colores[key] = {
+						"color": (info["color"] as Color).to_html(),
+						"metallic": info["metallic"],
+						"roughness": info["roughness"],
+						"specular": info["specular"]
+					}
+
 		var dict = {
 			"colores_slots": col_hex_list,
 			"metallic_slots": met_list,
 			"roughness_slots": rough_list,
 			"specular_slots": spec_list,
+			"meshes_colores": meshes_colores,
 			"wheel_offset": wheel_offset_actual,
 			"wheel_camber": wheel_camber_actual,
 			"skin": skin_actual_path,
@@ -263,14 +382,20 @@ func guardar_personalizacion() -> void:
 			"plate_city": plate_city_actual,
 			"plate_is_public": plate_is_public_actual
 		}
-		DatosUsuario.get("vehiculos_personalizados")[parent_name] = dict
-		DatosUsuario.save_local()
+		du.get("vehiculos_personalizados")[parent_name] = dict
+		du.save_local(true)
+		var sb := get_node_or_null("/root/SupabaseManager")
+		if sb and sb.has_method("esta_autenticado") and sb.esta_autenticado() and sb.has_method("guardar_perfil"):
+			sb.guardar_perfil({"vehiculos_personalizados": du.get("vehiculos_personalizados")})
 		print("CustomizerComponent: Personalización guardada para ", parent_name)
 
 func cargar_personalizacion() -> void:
-	if DatosUsuario and "vehiculos_personalizados" in DatosUsuario:
-		var parent_name = String(get_parent().name) if get_parent() else "<unknown>"
-		var dicts = DatosUsuario.get("vehiculos_personalizados")
+	if materiales_detectados.is_empty():
+		detectar_materiales_personalizables()
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du and "vehiculos_personalizados" in du:
+		var parent_name = _obtener_clave_vehiculo()
+		var dicts = du.get("vehiculos_personalizados")
 		if dicts and dicts.has(parent_name):
 			var data = dicts[parent_name]
 			var col_list = data.get("colores_slots", [])
@@ -283,12 +408,85 @@ func cargar_personalizacion() -> void:
 				var rough = float(rough_list[i]) if i < rough_list.size() else 0.5
 				var spec = float(spec_list[i]) if i < spec_list.size() else 0.5
 				aplicar_color_slot(i, col, met, rough, spec)
+			var meshes_colores: Dictionary = data.get("meshes_colores", {})
+			if not meshes_colores.is_empty():
+				if meshes_detectados.is_empty():
+					detectar_meshes_personalizables()
+				for mesh in meshes_detectados:
+					if not is_instance_valid(mesh):
+						continue
+					for entry in obtener_materiales_de_mesh(mesh):
+						var s_idx: int = int(entry["surface_idx"])
+						var key := String(mesh.name) + ":" + str(s_idx)
+						if meshes_colores.has(key):
+							var mc: Dictionary = meshes_colores[key]
+							aplicar_color_a_mesh_material(
+								mesh,
+								s_idx,
+								Color.html(str(mc.get("color", "ffffff"))),
+								float(mc.get("metallic", 0.0)),
+								float(mc.get("roughness", 0.5)),
+								float(mc.get("specular", 0.5))
+							)
 			aplicar_offset_ruedas(float(data.get("wheel_offset", 0.0)))
 			aplicar_camber_ruedas(float(data.get("wheel_camber", 0.0)))
 			aplicar_neon(bool(data.get("neon_enabled", false)), Color.html(data.get("neon_color", "0000ff")), float(data.get("neon_intensity", 1.0)))
 			aplicar_placa(str(data.get("plate_text", "ABC 123")), str(data.get("plate_city", "BOGOTÁ")), bool(data.get("plate_is_public", false)))
 			if data.has("skin") and data["skin"] != "":
 				aplicar_skin(data["skin"])
+
+func crear_snapshot() -> Dictionary:
+	var slots: Array = []
+	for mat in materiales_detectados:
+		if mat is StandardMaterial3D:
+			slots.append({"color": mat.albedo_color, "metallic": mat.metallic, "roughness": mat.roughness, "specular": mat.metallic_specular})
+		elif mat is ShaderMaterial:
+			var col = mat.get_shader_parameter("albedo")
+			if col == null: col = mat.get_shader_parameter("paint_color")
+			if col == null: col = Color.WHITE
+			var met = mat.get_shader_parameter("metallic")
+			var rough = mat.get_shader_parameter("roughness")
+			slots.append({"color": col, "metallic": float(met) if met != null else 0.0, "roughness": float(rough) if rough != null else 0.5, "specular": 0.5})
+		else:
+			slots.append({})
+	return {
+		"slots": slots,
+		"color": color_actual, "metallic": metallic_actual, "roughness": roughness_actual, "specular": specular_actual,
+		"color_sec": color_sec_actual, "metallic_sec": metallic_sec_actual, "roughness_sec": roughness_sec_actual, "specular_sec": specular_sec_actual,
+		"glass_color": glass_color_actual, "glass_opacity": glass_opacity_actual,
+		"rims_color": rims_color_actual, "rims_metallic": rims_metallic_actual, "rims_roughness": rims_roughness_actual, "modelo_rines": modelo_rines,
+		"wheel_offset": wheel_offset_actual, "wheel_camber": wheel_camber_actual,
+		"neon_enabled": neon_enabled_actual, "neon_color": neon_color_actual, "neon_intensity": neon_intensity_actual,
+		"plate_text": plate_text_actual, "plate_city": plate_city_actual, "plate_is_public": plate_is_public_actual,
+		"skin": skin_actual_path
+	}
+
+func restaurar_snapshot(snap: Dictionary) -> void:
+	if snap.is_empty():
+		return
+	var slots: Array = snap.get("slots", [])
+	for i in range(min(slots.size(), materiales_detectados.size())):
+		var s: Dictionary = slots[i]
+		if not s.is_empty():
+			aplicar_color_slot(i, s["color"], s["metallic"], s["roughness"], s["specular"])
+	color_actual = snap.get("color", color_actual)
+	metallic_actual = snap.get("metallic", metallic_actual)
+	roughness_actual = snap.get("roughness", roughness_actual)
+	specular_actual = snap.get("specular", specular_actual)
+	color_sec_actual = snap.get("color_sec", color_sec_actual)
+	metallic_sec_actual = snap.get("metallic_sec", metallic_sec_actual)
+	roughness_sec_actual = snap.get("roughness_sec", roughness_sec_actual)
+	specular_sec_actual = snap.get("specular_sec", specular_sec_actual)
+	aplicar_vidrios(snap.get("glass_color", Color.BLACK), float(snap.get("glass_opacity", 0.0)))
+	aplicar_color_rines(snap.get("rims_color", Color.WHITE), float(snap.get("rims_metallic", 0.8)), float(snap.get("rims_roughness", 0.2)))
+	aplicar_rines(str(snap.get("modelo_rines", "original")))
+	aplicar_offset_ruedas(float(snap.get("wheel_offset", 0.0)))
+	aplicar_camber_ruedas(float(snap.get("wheel_camber", 0.0)))
+	aplicar_neon(bool(snap.get("neon_enabled", false)), snap.get("neon_color", Color.BLUE), float(snap.get("neon_intensity", 1.0)))
+	aplicar_placa(str(snap.get("plate_text", "ABC 123")), str(snap.get("plate_city", "BOGOTÁ")), bool(snap.get("plate_is_public", false)))
+	var sk := str(snap.get("skin", ""))
+	if sk != "":
+		aplicar_skin(sk)
 
 # Wrappers y utilidades para compatibilidad con la UI
 func aplicar_pintura(color: Color, metallic: float=0.0, roughness: float=0.5, specular: float=0.5) -> void:
@@ -578,9 +776,9 @@ func desactivar_xray() -> void:
 			mesh.material_override = xray_backups[mesh]
 	xray_backups.clear()
 
-func aplicar_color_a_mesh_material(mesh: MeshInstance3D, surface_idx: int, color: Color, metallic: float, roughness: float, specular: float) -> void:
+func aplicar_color_a_mesh_material(mesh: MeshInstance3D, surface_idx: int, color: Color, metallic: float, roughness: float, specular: float) -> Material:
 	if not is_instance_valid(mesh):
-		return
+		return null
 	var mat_original: Material = null
 	if surface_idx == -1:
 		mat_original = mesh.material_override
@@ -595,14 +793,14 @@ func aplicar_color_a_mesh_material(mesh: MeshInstance3D, surface_idx: int, color
 			mat_original = mesh.get_active_material(surface_idx)
 			
 	if not mat_original:
-		return
+		return null
 		
 	if mat_original == xray_material:
 		var backup = xray_backups.get(mesh)
 		if backup:
 			mat_original = backup
 		else:
-			return
+			return null
 			
 	var mat_actual = mat_original
 	if mat_original.resource_path != "":
@@ -618,13 +816,17 @@ func aplicar_color_a_mesh_material(mesh: MeshInstance3D, surface_idx: int, color
 		mat_actual.roughness = roughness
 		mat_actual.metallic_specular = specular
 	elif mat_actual is ShaderMaterial:
-		if mat_actual.get_shader_parameter("albedo") != null:
-			mat_actual.set_shader_parameter("albedo", color)
-		elif mat_actual.get_shader_parameter("paint_color") != null:
-			mat_actual.set_shader_parameter("paint_color", color)
-		if mat_actual.get_shader_parameter("metallic") != null:
+		var uniform_names: Array = []
+		if mat_actual.shader:
+			for u in mat_actual.shader.get_shader_uniform_list():
+				uniform_names.append(u.get("name", ""))
+		for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+			if param in uniform_names or mat_actual.get_shader_parameter(param) != null:
+				mat_actual.set_shader_parameter(param, color)
+				break
+		if "metallic" in uniform_names or mat_actual.get_shader_parameter("metallic") != null:
 			mat_actual.set_shader_parameter("metallic", metallic)
-		if mat_actual.get_shader_parameter("roughness") != null:
+		if "roughness" in uniform_names or mat_actual.get_shader_parameter("roughness") != null:
 			mat_actual.set_shader_parameter("roughness", roughness)
 			
 	if mesh in xray_backups:
@@ -647,3 +849,11 @@ func aplicar_color_a_mesh_material(mesh: MeshInstance3D, surface_idx: int, color
 			break
 	if not found:
 		meshes_materiales_mapeo[mat_actual].append({"mesh": mesh, "index": surface_idx})
+
+	if mat_idx == 0:
+		color_actual = color
+		metallic_actual = metallic
+		roughness_actual = roughness
+		specular_actual = specular
+
+	return mat_actual

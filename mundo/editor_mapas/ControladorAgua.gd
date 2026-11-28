@@ -8,7 +8,7 @@ signal cuerpo_agua_creado(nodo: Node3D)
 signal cuerpo_agua_modificado(nodo: Node3D)
 signal cuerpo_agua_eliminado(nodo: Node3D)
 
-const SHADER_AGUA := preload("res://shaders/agua_realista.gdshader")
+# Agua liviana sin shader pesado para máximo rendimiento en móvil y PC
 
 enum TipoAgua {
 	LAGO_CIRCULAR,
@@ -35,7 +35,6 @@ var _ancho_rio_activo: float = 8.0
 
 func _ready() -> void:
 	_inicializar_contenedor()
-	_asegurar_texturas_agua()
 	_asegurar_cursor()
 
 func _inicializar_contenedor() -> void:
@@ -44,43 +43,14 @@ func _inicializar_contenedor() -> void:
 		_contenedor_aguas.name = "ContenedorCuerposAgua"
 		add_child(_contenedor_aguas)
 
-func _asegurar_texturas_agua() -> void:
-	if _tex_normal1 and _tex_normal2:
-		return
-	var n1 := FastNoiseLite.new()
-	n1.seed = 101
-	n1.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	n1.frequency = 0.045
-	n1.fractal_octaves = 4
-	var img1: Image = n1.get_seamless_image(256, 256, false, false)
-	img1.bump_map_to_normal_map(2.2)
-	img1.generate_mipmaps()
-	_tex_normal1 = ImageTexture.create_from_image(img1)
-
-	var n2 := FastNoiseLite.new()
-	n2.seed = 307
-	n2.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	n2.frequency = 0.075
-	n2.fractal_octaves = 3
-	var img2: Image = n2.get_seamless_image(256, 256, false, false)
-	img2.bump_map_to_normal_map(1.8)
-	img2.generate_mipmaps()
-	_tex_normal2 = ImageTexture.create_from_image(img2)
-
-func _crear_material_agua(es_rio: bool) -> ShaderMaterial:
-	_asegurar_texturas_agua()
-	var mat := ShaderMaterial.new()
-	mat.shader = SHADER_AGUA
-	mat.set_shader_parameter("textura_normal1", _tex_normal1)
-	mat.set_shader_parameter("textura_normal2", _tex_normal2)
-	mat.set_shader_parameter("color_orilla", Color(0.14, 0.44, 0.42, 0.58) if es_rio else Color(0.12, 0.42, 0.45, 0.52))
-	mat.set_shader_parameter("color_profundo", Color(0.04, 0.16, 0.22, 0.94) if es_rio else Color(0.02, 0.12, 0.22, 0.95))
-	mat.set_shader_parameter("color_espuma", Color(0.95, 0.98, 1.0, 0.95))
-	mat.set_shader_parameter("fuerza_normal", 0.9)
-	mat.set_shader_parameter("rugosidad", 0.06)
-	mat.set_shader_parameter("metalico", 0.04)
-	mat.set_shader_parameter("velocidad_olas", 1.6 if es_rio else 0.9)
-	mat.set_shader_parameter("altura_olas", 0.05 if es_rio else 0.07)
+func _crear_material_agua(es_rio: bool) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
+	mat.roughness = 0.28
+	mat.metallic = 0.0
+	mat.albedo_color = Color(0.28, 0.72, 0.85, 0.42) if es_rio else Color(0.22, 0.65, 0.82, 0.45)
 	return mat
 
 func _asegurar_cursor() -> void:

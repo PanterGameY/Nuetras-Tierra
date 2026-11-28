@@ -131,40 +131,39 @@ var style_active: StyleBoxFlat
 var style_inactive: StyleBoxFlat = StyleBoxFlat.new()
 
 var _grabber_textura: ImageTexture = null
+var _snapshot_original: Dictionary = {}
 
 
 func _ready() -> void:
-	# Permitir que los clics en zonas vacías pasen a la zona de cámara orbital
-	self.mouse_filter = Control.MOUSE_FILTER_PASS
+	# Permitir que los clics en zonas vacías pasen a la zona de cámara orbital (hermana detrás en CanvasLayer)
+	self.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	# Crear textura de grabber circular premium
 	_grabber_textura = _crear_textura_grabber(18, Color(0.12, 0.12, 0.16), Color(0.95, 0.8, 0.0))
 
 	# Ajustar tamaños de letras de elementos nativos en la escena .tscn para que sean legibles
-	# Glassmorphism para el panel de fondo principal
+	# Glassmorphism para el panel de fondo principal (Automotive Cockpit)
 	var main_panel = get_node_or_null("PanelFondo")
 	if main_panel:
 		var sb_main = StyleBoxFlat.new()
-		sb_main.bg_color = Color(0.04, 0.04, 0.06, 0.9)
-		sb_main.border_width_left = 2
-		sb_main.border_width_top = 2
-		sb_main.border_width_right = 2
-		sb_main.border_width_bottom = 2
-		sb_main.border_color = Color(0.18, 0.18, 0.28, 0.8)
+		sb_main.bg_color = Color(0.06, 0.07, 0.08, 0.92)
+		for side in ["left", "top", "right", "bottom"]:
+			sb_main.set("border_width_" + side, 1)
+		sb_main.border_color = Color(0.78, 0.81, 0.85, 0.22)
 		for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			sb_main.set("corner_radius_" + corner, 24)
-		sb_main.shadow_color = Color(0, 0, 0, 0.5)
-		sb_main.shadow_size = 25
+			sb_main.set("corner_radius_" + corner, 16)
+		sb_main.shadow_color = Color(0, 0, 0, 0.55)
+		sb_main.shadow_size = 20
 		main_panel.add_theme_stylebox_override("panel", sb_main)
 
 	# Ajustar tamaños de letras y sombreado premium del título
 	if has_node("PanelFondo/Titulo"):
 		var title = $PanelFondo/Titulo
-		title.add_theme_font_size_override("font_size", 42)
-		title.add_theme_color_override("font_color", Color(0.95, 0.8, 0.0))
+		title.add_theme_font_size_override("font_size", 40)
+		title.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.95))
 		title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-		title.add_theme_constant_override("shadow_offset_x", 3)
-		title.add_theme_constant_override("shadow_offset_y", 3)
+		title.add_theme_constant_override("shadow_offset_x", 2)
+		title.add_theme_constant_override("shadow_offset_y", 2)
 	
 	if lbl_metallic:
 		lbl_metallic.add_theme_font_size_override("font_size", 22)
@@ -181,15 +180,15 @@ func _ready() -> void:
 		btn_guardar.add_theme_font_size_override("font_size", 28)
 		
 		var sb_g = StyleBoxFlat.new()
-		sb_g.bg_color = Color(0.95, 0.8, 0.0, 1.0)
+		sb_g.bg_color = Color(0.88, 0.68, 0.28, 0.92)
 		for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			sb_g.set("corner_radius_" + side, 16)
-		sb_g.shadow_color = Color(0.95, 0.8, 0.0, 0.25)
-		sb_g.shadow_size = 12
+			sb_g.set("corner_radius_" + side, 12)
+		sb_g.shadow_color = Color(0.88, 0.68, 0.28, 0.25)
+		sb_g.shadow_size = 6
 		
 		var sb_g_h = sb_g.duplicate() as StyleBoxFlat
-		sb_g_h.bg_color = Color(1.0, 0.85, 0.1, 1.0)
-		sb_g_h.shadow_size = 18
+		sb_g_h.bg_color = Color(0.95, 0.76, 0.35, 1.0)
+		sb_g_h.shadow_size = 10
 		
 		btn_guardar.add_theme_stylebox_override("normal", sb_g)
 		btn_guardar.add_theme_stylebox_override("hover", sb_g_h)
@@ -200,14 +199,12 @@ func _ready() -> void:
 		btn_cancelar.add_theme_font_size_override("font_size", 28)
 		
 		var sb_c = StyleBoxFlat.new()
-		sb_c.bg_color = Color(0.12, 0.12, 0.16, 0.9)
-		sb_c.border_width_left = 2
-		sb_c.border_width_top = 2
-		sb_c.border_width_right = 2
-		sb_c.border_width_bottom = 2
-		sb_c.border_color = Color(0.85, 0.25, 0.25, 0.8)
+		sb_c.bg_color = Color(0.08, 0.09, 0.11, 0.82)
+		for side in ["left", "top", "right", "bottom"]:
+			sb_c.set("border_width_" + side, 1)
+		sb_c.border_color = Color(0.78, 0.28, 0.26, 0.95)
 		for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			sb_c.set("corner_radius_" + side, 16)
+			sb_c.set("corner_radius_" + side, 12)
 			
 		var sb_c_h = sb_c.duplicate() as StyleBoxFlat
 		sb_c_h.bg_color = Color(0.18, 0.12, 0.15, 0.9)
@@ -238,6 +235,8 @@ func _ready() -> void:
 func configurar_taller(taller: Node, customizer: CustomizerComponent) -> void:
 	taller_ref = taller
 	customizer_ref = customizer
+	if customizer and customizer.has_method("crear_snapshot"):
+		_snapshot_original = customizer.crear_snapshot()
 	
 	# Respaldar originales para restaurar en caso de Cancelar
 	color_original = customizer.color_actual
@@ -306,10 +305,23 @@ func configurar_taller(taller: Node, customizer: CustomizerComponent) -> void:
 
 	# Conectar señal de selección de malla para actualizar la UI
 	if customizer_ref and customizer_ref.has_signal("mesh_selected"):
-		customizer_ref.connect("mesh_selected", Callable(self, "_on_mesh_selected"))
+		var cb := Callable(self, "_on_mesh_selected")
+		if not customizer_ref.is_connected("mesh_selected", cb):
+			customizer_ref.connect("mesh_selected", cb)
 
 func _crear_pestanas_nuevas() -> void:
 	if not tab_container:
+		return
+
+	if is_instance_valid(btn_tab_accesorios):
+		if is_instance_valid(scroll_accesorios):
+			for c in scroll_accesorios.get_children():
+				c.queue_free()
+			_construir_ui_accesorios()
+		if is_instance_valid(scroll_placas):
+			for c in scroll_placas.get_children():
+				c.queue_free()
+			_construir_ui_placas()
 		return
 		
 	var font_path := "res://recursos/fonts/Moderniz.otf"
@@ -426,15 +438,24 @@ func _seleccionar_slot_color(index: int) -> void:
 	var rough = 0.5
 	var spec = 0.5
 	
-	if mat is StandardMaterial3D:
+	if customizer_ref and customizer_ref.has_method("_leer_color_material"):
+		var info: Dictionary = customizer_ref._leer_color_material(mat)
+		if not info.is_empty():
+			col = info["color"]
+			met = info["metallic"]
+			rough = info["roughness"]
+			spec = info["specular"]
+	elif mat is StandardMaterial3D:
 		col = mat.albedo_color
 		met = mat.metallic
 		rough = mat.roughness
 		spec = mat.metallic_specular
 	elif mat is ShaderMaterial:
-		var c = mat.get_shader_parameter("albedo")
-		if c == null: c = mat.get_shader_parameter("paint_color")
-		if c != null: col = c
+		for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+			var c = mat.get_shader_parameter(param)
+			if c != null:
+				col = c
+				break
 		var m = mat.get_shader_parameter("metallic")
 		if m != null: met = m
 		var r = mat.get_shader_parameter("roughness")
@@ -450,15 +471,18 @@ func _seleccionar_slot_color(index: int) -> void:
 	_update_labels()
 
 func _crear_panel_camaras() -> void:
+	if has_node("FloatingCameraPanel"):
+		return
 	# Crear panel de presets de enfoque en la izquierda de la pantalla
 	var cam_panel = PanelContainer.new()
 	cam_panel.name = "FloatingCameraPanel"
 	add_child(cam_panel)
 	
 	var sb = StyleBoxFlat.new()
-	sb.bg_color = Color(0.05, 0.05, 0.07, 0.88)
-	sb.border_width_left = 3
-	sb.border_color = Color(0.95, 0.8, 0.0, 1.0)
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.88)
+	for side in ["left", "top", "right", "bottom"]:
+		sb.set("border_width_" + side, 1)
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.22)
 	for corner in ["top_left", "top_right", "bottom_left", "bottom_right"]:
 		sb.set("corner_radius_" + corner, 12)
 	sb.content_margin_left = 12
@@ -474,8 +498,8 @@ func _crear_panel_camaras() -> void:
 	cam_panel.anchor_bottom = 0.5
 	cam_panel.offset_left = 40
 	cam_panel.offset_right = 230
-	cam_panel.offset_top = -320
-	cam_panel.offset_bottom = 320
+	cam_panel.offset_top = -185
+	cam_panel.offset_bottom = 185
 	cam_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	
 	var vbox = VBoxContainer.new()
@@ -553,94 +577,6 @@ func _crear_panel_camaras() -> void:
 			select_btn.text = "Seleccionar Objeto"
 	)
 	vbox.add_child(select_btn)
-
-	# --- SECCIÓN DE CONTROLES MANUALES ---
-	var div = HSeparator.new()
-	vbox.add_child(div)
-	
-	var lbl_controles = Label.new()
-	lbl_controles.text = "AJUSTE MANUAL"
-	if ResourceLoader.exists(font_path):
-		lbl_controles.add_theme_font_override("font", load(font_path))
-	lbl_controles.add_theme_font_size_override("font_size", 16)
-	lbl_controles.add_theme_color_override("font_color", Color(0.95, 0.8, 0.0))
-	lbl_controles.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(lbl_controles)
-	
-	# Zoom Slider
-	var zoom_box = VBoxContainer.new()
-	zoom_box.add_theme_constant_override("separation", 2)
-	var lbl_zoom = Label.new()
-	lbl_zoom.text = "ZOOM (DISTANCIA)"
-	lbl_zoom.add_theme_font_size_override("font_size", 14)
-	zoom_box.add_child(lbl_zoom)
-	
-	slider_cam_zoom = HSlider.new()
-	slider_cam_zoom.min_value = 1.5
-	slider_cam_zoom.max_value = 15.0
-	slider_cam_zoom.step = 0.1
-	slider_cam_zoom.value = taller_ref.target_distance if taller_ref else 9.0
-	slider_cam_zoom.focus_mode = Control.FOCUS_NONE
-	_estilizar_slider(slider_cam_zoom, _grabber_textura)
-	slider_cam_zoom.drag_started.connect(func(): is_dragging_cam_slider = true)
-	slider_cam_zoom.drag_ended.connect(func(changed): is_dragging_cam_slider = false)
-	slider_cam_zoom.value_changed.connect(func(val):
-		if taller_ref:
-			taller_ref.target_distance = val
-	)
-	zoom_box.add_child(slider_cam_zoom)
-	vbox.add_child(zoom_box)
-	
-	# Giro (Rotación) Slider
-	var rot_box = VBoxContainer.new()
-	rot_box.add_theme_constant_override("separation", 2)
-	var lbl_rot = Label.new()
-	lbl_rot.text = "GIRO (ROTACION)"
-	lbl_rot.add_theme_font_size_override("font_size", 14)
-	rot_box.add_child(lbl_rot)
-	
-	slider_cam_rot = HSlider.new()
-	slider_cam_rot.min_value = -180.0
-	slider_cam_rot.max_value = 180.0
-	slider_cam_rot.step = 1.0
-	slider_cam_rot.value = taller_ref.target_yaw if taller_ref else -45.0
-	slider_cam_rot.focus_mode = Control.FOCUS_NONE
-	_estilizar_slider(slider_cam_rot, _grabber_textura)
-	slider_cam_rot.drag_started.connect(func(): is_dragging_cam_slider = true)
-	slider_cam_rot.drag_ended.connect(func(changed): is_dragging_cam_slider = false)
-	slider_cam_rot.value_changed.connect(func(val):
-		if taller_ref:
-			taller_ref.target_yaw = val
-	)
-	rot_box.add_child(slider_cam_rot)
-	vbox.add_child(rot_box)
-	
-	# Altura Slider
-	var alt_box = VBoxContainer.new()
-	alt_box.add_theme_constant_override("separation", 2)
-	var lbl_alt = Label.new()
-	lbl_alt.text = "ALTURA DE VISTA"
-	lbl_alt.add_theme_font_size_override("font_size", 14)
-	alt_box.add_child(lbl_alt)
-	
-	slider_cam_alt = HSlider.new()
-	var base_y = 0.0
-	if taller_ref and taller_ref.vehiculo_dentro:
-		base_y = taller_ref.vehiculo_dentro.global_position.y
-	slider_cam_alt.min_value = base_y - 0.5
-	slider_cam_alt.max_value = base_y + 3.0
-	slider_cam_alt.step = 0.05
-	slider_cam_alt.value = taller_ref.target_pivot_pos.y if taller_ref else 1.5
-	slider_cam_alt.focus_mode = Control.FOCUS_NONE
-	_estilizar_slider(slider_cam_alt, _grabber_textura)
-	slider_cam_alt.drag_started.connect(func(): is_dragging_cam_slider = true)
-	slider_cam_alt.drag_ended.connect(func(changed): is_dragging_cam_slider = false)
-	slider_cam_alt.value_changed.connect(func(val):
-		if taller_ref:
-			taller_ref.target_pivot_pos.y = val
-	)
-	alt_box.add_child(slider_cam_alt)
-	vbox.add_child(alt_box)
 
 func _crear_tarjeta_seccion(titulo: String, parent_node: Node) -> VBoxContainer:
 	var card = PanelContainer.new()
@@ -943,10 +879,6 @@ func _cambiar_tab(index: int) -> void:
 
 func _on_color_changed(color: Color) -> void:
 	color_seleccionado = color
-	# Resaltar y enfocar la parte correspondiente antes de aplicar el cambio
-	# En el nuevo sistema, ya está enfocada la pieza y con X-ray activado, así que no es necesario parpadear/resaltar al arrastrar el color wheel
-	if not is_instance_valid(mesh_seleccionado_actual) and customizer_ref:
-		customizer_ref.resaltar_slot(slot_color_seleccionado, taller_ref, 0.8, 2)
 	_aplicar_cambios()
 
 func _on_material_changed(_val = null) -> void:
@@ -978,7 +910,9 @@ func _aplicar_cambios() -> void:
 			var entry = materiales_mesh_seleccionado[index_material_seleccionado]
 			var idx = entry["surface_idx"]
 			
-			customizer_ref.aplicar_color_a_mesh_material(mesh_seleccionado_actual, idx, color_seleccionado, met, rough, spec)
+			var mat_actualizada = customizer_ref.aplicar_color_a_mesh_material(mesh_seleccionado_actual, idx, color_seleccionado, met, rough, spec)
+			if mat_actualizada:
+				entry["material"] = mat_actualizada
 			
 			if index_material_seleccionado < container_materiales_objeto.get_child_count():
 				var card = container_materiales_objeto.get_child(index_material_seleccionado) as PanelContainer
@@ -1191,6 +1125,8 @@ func _on_mesh_selected(slot_idx: int) -> void:
 	if lista.size() > 0:
 		var mesh = lista[0].get("mesh")
 		if is_instance_valid(mesh):
+			if container_menu_categorias and container_menu_categorias.visible:
+				_abrir_categoria(0, "enfocar_carroceria")
 			_on_objeto_seleccionado(mesh)
 
 func _cargar_valores_iniciales_en_ui() -> void:
@@ -1249,22 +1185,37 @@ func _on_guardar_pressed() -> void:
 	if customizer_ref:
 		customizer_ref.desactivar_xray()
 		customizer_ref.guardar_personalizacion()
+		if customizer_ref.has_method("crear_snapshot"):
+			_snapshot_original = customizer_ref.crear_snapshot()
+		if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+			var mm = get_node_or_null("/root/MultiplayerManager")
+			if mm and mm.has_method("sincronizar_personalizacion_vehiculo"):
+				mm.sincronizar_personalizacion_vehiculo.rpc(
+					multiplayer.get_unique_id(),
+					customizer_ref.color_actual.to_html(false),
+					customizer_ref.metallic_actual,
+					customizer_ref.roughness_actual,
+					customizer_ref.neon_enabled_actual,
+					customizer_ref.neon_color_actual.to_html(false),
+					customizer_ref.neon_intensity_actual
+				)
 	_salir_ui()
 
 func _on_cancelar_pressed() -> void:
 	if customizer_ref:
 		customizer_ref.desactivar_xray()
-		# Restaurar valores originales
-		customizer_ref.aplicar_pintura(color_original, metallic_original, roughness_original, specular_original)
-		customizer_ref.aplicar_pintura_secundaria(color_sec_original, metallic_sec_original, roughness_sec_original, specular_sec_original)
-		customizer_ref.aplicar_vidrios(glass_color_original, glass_opacity_original)
-		customizer_ref.aplicar_color_rines(rims_color_original, rims_metallic_original, rims_roughness_original)
-		customizer_ref.aplicar_rines(rines_original)
-		customizer_ref.aplicar_neon(neon_enabled_original, neon_color_original, neon_intensity_original)
-		customizer_ref.aplicar_placa(plate_text_original, plate_city_original, plate_is_public_original)
-		
-		if skin_original != "":
-			customizer_ref.aplicar_skin(skin_original)
+		if not _snapshot_original.is_empty() and customizer_ref.has_method("restaurar_snapshot"):
+			customizer_ref.restaurar_snapshot(_snapshot_original)
+		else:
+			customizer_ref.aplicar_pintura(color_original, metallic_original, roughness_original, specular_original)
+			customizer_ref.aplicar_pintura_secundaria(color_sec_original, metallic_sec_original, roughness_sec_original, specular_sec_original)
+			customizer_ref.aplicar_vidrios(glass_color_original, glass_opacity_original)
+			customizer_ref.aplicar_color_rines(rims_color_original, rims_metallic_original, rims_roughness_original)
+			customizer_ref.aplicar_rines(rines_original)
+			customizer_ref.aplicar_neon(neon_enabled_original, neon_color_original, neon_intensity_original)
+			customizer_ref.aplicar_placa(plate_text_original, plate_city_original, plate_is_public_original)
+			if skin_original != "":
+				customizer_ref.aplicar_skin(skin_original)
 	_salir_ui()
 
 func _salir_ui() -> void:
@@ -1353,6 +1304,11 @@ func _estilizar_slider(slider: HSlider, grabber_tex: ImageTexture) -> void:
 # ═══════════════════════════════════════════════════════════════════════
 
 func _inicializar_nueva_ui_objetos() -> void:
+	if is_instance_valid(scroll_objetos):
+		_refrescar_lista_objetos()
+		_mostrar_view_a()
+		return
+
 	var vbox_pintura = $PanelFondo/TabContainer/Pintura/VBoxPintura
 	
 	var font_path := "res://recursos/fonts/Moderniz.otf"
@@ -1406,11 +1362,95 @@ func _inicializar_nueva_ui_objetos() -> void:
 	_refrescar_lista_objetos()
 	_mostrar_view_a()
 
+func _formatear_nombre_pieza(raw_name: String) -> String:
+	var n := raw_name.strip_edges().to_lower()
+	n = n.replace("_ok", "").replace(" ok", "").replace("accesorio_", "").replace("accesorios ", "")
+	var lado := ""
+	if "_izq" in n or "izq" in n or "_fl" in n or "_rl" in n or "left" in n or "_l" in n.right(2):
+		lado = " (IZQ)"
+	elif "_der" in n or "der" in n or "_fr" in n or "_rr" in n or "right" in n or "_r" in n.right(2) or n.ends_with("d"):
+		if "parachoquesd" in raw_name.to_lower():
+			return "PARACHOQUES DELANTERO"
+		lado = " (DER)"
+	if "bonnet" in n or "capo" in n or "hood" in n:
+		return "CAPÓ"
+	if "boot" in n or "baul" in n or "maletero" in n or "tailgate" in n:
+		return "COMPUERTA / BAÚL"
+	if "bump_front" in n or "bumper_front" in n or "parachoques_del" in n:
+		return "PARACHOQUES DELANTERO"
+	if "bump_rear" in n or "bumper_rear" in n or "parachoques_tras" in n:
+		return "PARACHOQUES TRASERO"
+	if "parachoques" in n or "bumper" in n or "defensa" in n:
+		return "PARACHOQUES" + lado
+	if "carroceria" in n or "cabina" in n or "chassis" in n or "chasis" in n or "body" in n:
+		return "CARROCERÍA PRINCIPAL"
+	if "door" in n or "puerta" in n:
+		return "PUERTA" + lado
+	if "fender" in n or "guardafango" in n or "salpicadera" in n:
+		return "GUARDAFANGO" + lado
+	if "grille" in n or "parrilla" in n or "persiana" in n:
+		return "PARRILLA FRONTAL"
+	if "mirror" in n or "espejo" in n or "retrovisor" in n:
+		return "ESPEJOS" + lado
+	if "exhaust" in n or "escape" in n or "mofle" in n:
+		return "ESCAPES / MOFLE"
+	if "spoiler" in n or "aleron" in n:
+		return "ALERÓN"
+	if "roof" in n or "techo" in n:
+		return "TECHO"
+	if "light" in n or "faro" in n or "luz" in n or "luces" in n:
+		return "LUCES / FAROS"
+	if "glass" in n or "vidrio" in n or "windshield" in n or "parabrisas" in n or "ventana" in n:
+		return "VIDRIOS"
+	if "antena" in n:
+		return "ANTENA"
+	if "tanque" in n or "tank" in n:
+		return "TANQUES"
+	if "pendejos" in n:
+		return "ACCESORIOS EXTRAS"
+	return n.replace("_", " ").to_upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+
+func _clasificar_pieza(nombre_formateado: String) -> int:
+	if "CARROCERÍA" in nombre_formateado or "CAPÓ" in nombre_formateado or "PUERTA" in nombre_formateado or "TECHO" in nombre_formateado or "COMPUERTA" in nombre_formateado:
+		return 0
+	if "PARACHOQUES" in nombre_formateado or "PARRILLA" in nombre_formateado or "GUARDAFANGO" in nombre_formateado or "ESPEJOS" in nombre_formateado or "VIDRIOS" in nombre_formateado:
+		return 1
+	return 2
+
+func _abrir_pintura_general_completa() -> void:
+	if not customizer_ref:
+		return
+	_reproducir_sonido_seleccion()
+	customizer_ref.desactivar_xray()
+	mesh_seleccionado_actual = null
+	index_material_seleccionado = -1
+	slot_color_seleccionado = 0
+	if scroll_objetos: scroll_objetos.visible = false
+	if container_materiales_objeto: container_materiales_objeto.visible = false
+	if btn_volver_objetos: btn_volver_objetos.visible = false
+	var col: Color = customizer_ref.color_actual
+	color_seleccionado = col
+	if color_picker:
+		color_picker.set_color_hsv(col.h, col.s, max(col.v, 0.9))
+		color_picker.visible = true
+	if color_preview:
+		color_preview.color = col
+		color_preview.visible = true
+	if btn_configurar:
+		btn_configurar.visible = true
+	if card_sliders:
+		card_sliders.visible = false
+	if slider_metallic: slider_metallic.value = customizer_ref.metallic_actual
+	if slider_roughness: slider_roughness.value = customizer_ref.roughness_actual
+	if slider_specular: slider_specular.value = customizer_ref.specular_actual
+	_update_labels()
+
 func _refrescar_lista_objetos() -> void:
 	if not vbox_objetos or not customizer_ref:
 		return
 		
 	for child in vbox_objetos.get_children():
+		vbox_objetos.remove_child(child)
 		child.queue_free()
 		
 	var font_path := "res://recursos/fonts/Moderniz.otf"
@@ -1418,39 +1458,84 @@ func _refrescar_lista_objetos() -> void:
 	
 	if customizer_ref.meshes_detectados.size() == 0:
 		customizer_ref.detectar_meshes_personalizables()
-		
+
+	# Botón destacado para pintar toda la carrocería en un toque
+	var btn_todo := Button.new()
+	btn_todo.text = "🎨 PINTAR TODA LA CARROCERIA"
+	btn_todo.focus_mode = Control.FOCUS_NONE
+	btn_todo.custom_minimum_size = Vector2(0, 76)
+	btn_todo.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if font: btn_todo.add_theme_font_override("font", font)
+	btn_todo.add_theme_font_size_override("font_size", 26)
+	var sb_todo := StyleBoxFlat.new()
+	sb_todo.bg_color = Color(0.88, 0.68, 0.28, 0.92)
+	for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
+		sb_todo.set("corner_radius_" + side, 12)
+	var sb_todo_h := sb_todo.duplicate() as StyleBoxFlat
+	sb_todo_h.bg_color = Color(0.95, 0.76, 0.35, 1.0)
+	btn_todo.add_theme_stylebox_override("normal", sb_todo)
+	btn_todo.add_theme_stylebox_override("hover", sb_todo_h)
+	btn_todo.add_theme_stylebox_override("pressed", sb_todo)
+	btn_todo.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0))
+	btn_todo.pressed.connect(_abrir_pintura_general_completa)
+	vbox_objetos.add_child(btn_todo)
+
+	var grupos: Array = [[], [], []]
 	for mesh in customizer_ref.meshes_detectados:
 		if not is_instance_valid(mesh):
 			continue
+		var label_limpio := _formatear_nombre_pieza(mesh.name)
+		var cat_idx := _clasificar_pieza(label_limpio)
+		grupos[cat_idx].append({"mesh": mesh, "label": label_limpio})
+
+	var titulos := ["CARROCERIA Y CABINA", "EXTERIOR Y PARACHOQUES", "ACCESORIOS Y DETALLES"]
+	for g_idx in range(3):
+		var items: Array = grupos[g_idx]
+		if items.is_empty():
+			continue
+		items.sort_custom(func(a, b): return a["label"] < b["label"])
+
+		var hdr := Label.new()
+		hdr.text = titulos[g_idx]
+		if font: hdr.add_theme_font_override("font", font)
+		hdr.add_theme_font_size_override("font_size", 18)
+		hdr.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.9))
+		vbox_objetos.add_child(hdr)
+
+		for item in items:
+			var mesh: MeshInstance3D = item["mesh"]
+			var btn = Button.new()
+			btn.text = item["label"]
+			btn.focus_mode = Control.FOCUS_NONE
+			btn.custom_minimum_size = Vector2(0, 68)
+			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			if font: btn.add_theme_font_override("font", font)
+			btn.add_theme_font_size_override("font_size", 24)
 			
-		var btn = Button.new()
-		var original_name = mesh.name.to_upper().replace("Á", "A").replace("É", "E").replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
-		btn.text = original_name
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.custom_minimum_size = Vector2(0, 80)
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		if font: btn.add_theme_font_override("font", font)
-		btn.add_theme_font_size_override("font_size", 30)
-		
-		var sb = StyleBoxFlat.new()
-		sb.bg_color = Color(0.12, 0.12, 0.16, 0.95)
-		sb.border_width_left = 3
-		sb.border_color = Color(0.95, 0.8, 0.0, 0.6)
-		for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			sb.set("corner_radius_" + side, 12)
-		sb.content_margin_left = 20
-		
-		var sb_h = sb.duplicate()
-		sb_h.bg_color = Color(0.18, 0.18, 0.24, 0.95)
-		sb_h.border_color = Color(0.95, 0.8, 0.0, 1.0)
-		
-		btn.add_theme_stylebox_override("normal", sb)
-		btn.add_theme_stylebox_override("hover", sb_h)
-		btn.add_theme_stylebox_override("pressed", sb)
-		
-		btn.pressed.connect(func(): _on_objeto_seleccionado(mesh))
-		vbox_objetos.add_child(btn)
+			var sb = StyleBoxFlat.new()
+			sb.bg_color = Color(0.09, 0.10, 0.12, 0.90)
+			sb.border_width_left = 3
+			sb.border_width_top = 1
+			sb.border_width_right = 1
+			sb.border_width_bottom = 1
+			sb.border_color = Color(0.78, 0.81, 0.85, 0.22)
+			for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
+				sb.set("corner_radius_" + side, 12)
+			sb.content_margin_left = 20
+			sb.shadow_size = 4
+			sb.shadow_color = Color(0, 0, 0, 0.35)
+			
+			var sb_h = sb.duplicate()
+			sb_h.bg_color = Color(0.13, 0.15, 0.18, 0.95)
+			sb_h.border_color = Color(0.88, 0.68, 0.28, 0.92)
+			
+			btn.add_theme_stylebox_override("normal", sb)
+			btn.add_theme_stylebox_override("hover", sb_h)
+			btn.add_theme_stylebox_override("pressed", sb)
+			
+			btn.pressed.connect(func(): _on_objeto_seleccionado(mesh))
+			vbox_objetos.add_child(btn)
 
 func _on_objeto_seleccionado(mesh: MeshInstance3D) -> void:
 	if not is_instance_valid(mesh) or not customizer_ref:
@@ -1458,13 +1543,6 @@ func _on_objeto_seleccionado(mesh: MeshInstance3D) -> void:
 		
 	_reproducir_sonido_seleccion()
 	mesh_seleccionado_actual = mesh
-	
-	if taller_ref and taller_ref.has_method("enfocar_nodo"):
-		var dist = 3.0
-		if mesh.mesh:
-			var aabb = mesh.mesh.get_aabb()
-			dist = max(1.5, aabb.size.length() * 1.5)
-		taller_ref.call("enfocar_nodo", mesh, dist, -45.0, -15.0, Vector3.ZERO)
 		
 	customizer_ref.activar_xray_para_mesh(mesh)
 	_mostrar_view_b()
@@ -1473,9 +1551,6 @@ func _on_objeto_seleccionado(mesh: MeshInstance3D) -> void:
 func _on_volver_objetos_pressed() -> void:
 	if customizer_ref:
 		customizer_ref.desactivar_xray()
-		
-	if taller_ref and taller_ref.has_method("enfocar_carroceria"):
-		taller_ref.enfocar_carroceria()
 		
 	mesh_seleccionado_actual = null
 	index_material_seleccionado = -1
@@ -1505,6 +1580,7 @@ func _refrescar_materiales_objeto() -> void:
 		return
 		
 	for child in container_materiales_objeto.get_children():
+		container_materiales_objeto.remove_child(child)
 		child.queue_free()
 		
 	var font_path := "res://recursos/fonts/Moderniz.otf"
@@ -1517,12 +1593,18 @@ func _refrescar_materiales_objeto() -> void:
 		var mat = entry["material"]
 		
 		var col = Color.WHITE
-		if mat is StandardMaterial3D:
+		if customizer_ref and customizer_ref.has_method("_leer_color_material"):
+			var info: Dictionary = customizer_ref._leer_color_material(mat)
+			if not info.is_empty():
+				col = info["color"]
+		elif mat is StandardMaterial3D:
 			col = mat.albedo_color
 		elif mat is ShaderMaterial:
-			var c = mat.get_shader_parameter("albedo")
-			if c == null: c = mat.get_shader_parameter("paint_color")
-			if c != null: col = c
+			for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+				var c = mat.get_shader_parameter(param)
+				if c != null:
+					col = c
+					break
 			
 		# Crear panel contenedor de la tarjeta premium
 		var card = PanelContainer.new()
@@ -1633,15 +1715,24 @@ func _seleccionar_material_slot_objeto(index: int) -> void:
 	var rough = 0.5
 	var spec = 0.5
 	
-	if mat is StandardMaterial3D:
+	if customizer_ref and customizer_ref.has_method("_leer_color_material"):
+		var info: Dictionary = customizer_ref._leer_color_material(mat)
+		if not info.is_empty():
+			col = info["color"]
+			met = info["metallic"]
+			rough = info["roughness"]
+			spec = info["specular"]
+	elif mat is StandardMaterial3D:
 		col = mat.albedo_color
 		met = mat.metallic
 		rough = mat.roughness
 		spec = mat.metallic_specular
 	elif mat is ShaderMaterial:
-		var c = mat.get_shader_parameter("albedo")
-		if c == null: c = mat.get_shader_parameter("paint_color")
-		if c != null: col = c
+		for param in ["albedo", "paint_color", "albedo_color", "base_color", "color"]:
+			var c = mat.get_shader_parameter(param)
+			if c != null:
+				col = c
+				break
 		var m = mat.get_shader_parameter("metallic")
 		if m != null: met = m
 		var r = mat.get_shader_parameter("roughness")
@@ -1701,6 +1792,10 @@ func _process(_delta: float) -> void:
 # ═══════════════════════════════════════════════════════════════════════
 
 func _inicializar_menu_categorias() -> void:
+	if is_instance_valid(container_menu_categorias):
+		_ir_a_menu_principal()
+		return
+
 	var panel_fondo = get_node_or_null("PanelFondo")
 	if not panel_fondo:
 		return
@@ -1718,18 +1813,18 @@ func _inicializar_menu_categorias() -> void:
 	btn_volver_menu_principal.visible = false
 	
 	var sb_v = StyleBoxFlat.new()
-	sb_v.bg_color = Color(0.12, 0.12, 0.16, 0.95)
-	sb_v.border_width_left = 2
-	sb_v.border_width_top = 2
-	sb_v.border_width_right = 2
-	sb_v.border_width_bottom = 2
-	sb_v.border_color = Color(0.95, 0.8, 0.0, 0.8)
+	sb_v.bg_color = Color(0.08, 0.09, 0.11, 0.85)
+	for s in ["left", "top", "right", "bottom"]:
+		sb_v.set("border_width_" + s, 1)
+	sb_v.border_color = Color(0.78, 0.81, 0.85, 0.25)
 	for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-		sb_v.set("corner_radius_" + side, 16)
+		sb_v.set("corner_radius_" + side, 12)
+	sb_v.shadow_size = 4
+	sb_v.shadow_color = Color(0, 0, 0, 0.4)
 		
 	var sb_v_h = sb_v.duplicate() as StyleBoxFlat
-	sb_v_h.bg_color = Color(0.18, 0.18, 0.24, 0.95)
-	sb_v_h.border_color = Color(0.95, 0.8, 0.0, 1.0)
+	sb_v_h.bg_color = Color(0.12, 0.14, 0.17, 0.92)
+	sb_v_h.border_color = Color(0.88, 0.68, 0.28, 0.92)
 	
 	btn_volver_menu_principal.add_theme_stylebox_override("normal", sb_v)
 	btn_volver_menu_principal.add_theme_stylebox_override("hover", sb_v_h)
@@ -1788,17 +1883,22 @@ func _inicializar_menu_categorias() -> void:
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		
 		var sb = StyleBoxFlat.new()
-		sb.bg_color = Color(0.08, 0.08, 0.12, 0.9)
-		sb.border_width_left = 4
-		sb.border_color = Color(0.95, 0.8, 0.0, 0.7)
+		sb.bg_color = Color(0.08, 0.09, 0.11, 0.86)
+		sb.border_width_left = 3
+		sb.border_width_top = 1
+		sb.border_width_right = 1
+		sb.border_width_bottom = 1
+		sb.border_color = Color(0.88, 0.68, 0.28, 0.72)
 		for side in ["top_left", "top_right", "bottom_left", "bottom_right"]:
-			sb.set("corner_radius_" + side, 14)
+			sb.set("corner_radius_" + side, 12)
 		sb.content_margin_left = 25
+		sb.shadow_size = 5
+		sb.shadow_color = Color(0, 0, 0, 0.4)
 		
 		var sb_h = sb.duplicate() as StyleBoxFlat
-		sb_h.bg_color = Color(0.14, 0.14, 0.2, 0.95)
-		sb_h.border_color = Color(0.95, 0.8, 0.0, 1.0)
-		sb_h.shadow_color = Color(0.95, 0.8, 0.0, 0.1)
+		sb_h.bg_color = Color(0.13, 0.15, 0.18, 0.94)
+		sb_h.border_color = Color(0.88, 0.68, 0.28, 1.0)
+		sb_h.shadow_color = Color(0.88, 0.68, 0.28, 0.18)
 		sb_h.shadow_size = 6
 		
 		btn.add_theme_stylebox_override("normal", sb)
@@ -1824,13 +1924,11 @@ func _ir_a_menu_principal() -> void:
 	
 	if customizer_ref:
 		customizer_ref.desactivar_xray()
-	if taller_ref and taller_ref.has_method("enfocar_carroceria"):
-		taller_ref.enfocar_carroceria()
 		
 	mesh_seleccionado_actual = null
 	index_material_seleccionado = -1
 
-func _abrir_categoria(tab_idx: int, focus_method: String) -> void:
+func _abrir_categoria(tab_idx: int, _focus_method: String) -> void:
 	_reproducir_sonido_seleccion()
 	
 	if container_menu_categorias: container_menu_categorias.visible = false
@@ -1843,14 +1941,11 @@ func _abrir_categoria(tab_idx: int, focus_method: String) -> void:
 	if hbox_btns: hbox_btns.visible = false
 	
 	if btn_volver_menu_principal: btn_volver_menu_principal.visible = true
-	
-	if taller_ref and taller_ref.has_method(focus_method):
-		taller_ref.call(focus_method)
 
 func _on_volver_menu_principal_pressed() -> void:
 	_reproducir_sonido_seleccion()
 	
-	if tab_container and tab_container.current_tab == 0 and is_instance_valid(mesh_seleccionado_actual):
+	if tab_container and tab_container.current_tab == 0 and (is_instance_valid(mesh_seleccionado_actual) or (scroll_objetos and not scroll_objetos.visible)):
 		_on_volver_objetos_pressed()
 	else:
 		_ir_a_menu_principal()

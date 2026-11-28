@@ -156,6 +156,7 @@ var _signal_change_interval: float = 4.0
 var app_container_home: Control
 var app_container_waze: Control
 var app_container_settings: Control
+var _settings_categoria_actual: String = ""
 var app_container_bank: Control
 var app_container_music: Control
 var app_container_garage: Control
@@ -865,13 +866,13 @@ func _setup_ui() -> void:
 		if app_container_missions.has_signal("volver_pressed"):
 			app_container_missions.connect("volver_pressed", func(): _switch_app("home"))
 
-	# Cargar e instanciar dinámicamente la app de Soporte Técnico en tiempo real
+	# Cargar e instanciar dinámicamente la app de Soporte Técnico dentro de screen_content
 	var soporte_scene = load("res://interfaz/soporte/SoporteUI.tscn")
 	if soporte_scene:
 		app_container_support = soporte_scene.instantiate()
 		app_container_support.visible = false
 		app_container_support.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(app_container_support)
+		screen_content.add_child(app_container_support)
 		app_container_support.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		if app_container_support.has_signal("volver_pressed"):
 			app_container_support.connect("volver_pressed", func(): _switch_app("home"))
@@ -912,14 +913,14 @@ func _setup_ui() -> void:
 	_setup_hud_button()
 
 func _configure_nav_bar(bar: HBoxContainer) -> void:
-	bar.custom_minimum_size = Vector2(0, 78)
+	bar.custom_minimum_size = Vector2(0, 96)
 	bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("separation", 36)
+	bar.add_theme_constant_override("separation", 40)
 	for child in bar.get_children():
 		child.queue_free()
 
 	var back_btn = _make_nav_btn("◀   REGRESAR", "_back", C_ACCENT)
-	back_btn.pressed.connect(func(): _switch_app("home"))
+	back_btn.pressed.connect(_on_tablet_back_pressed)
 	bar.add_child(back_btn)
 
 	var home_btn = _make_nav_btn("⌂   INICIO", "home", C_ORANGE)
@@ -928,13 +929,13 @@ func _configure_nav_bar(bar: HBoxContainer) -> void:
 func _make_nav_btn(text_label: String, app: String, accent_color: Color) -> Button:
 	var btn = Button.new()
 	btn.text = text_label
-	btn.custom_minimum_size = Vector2(280, 58)
+	btn.custom_minimum_size = Vector2(360, 74)
 	btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	btn.pivot_offset = Vector2(140, 29)
+	btn.pivot_offset = Vector2(180, 37)
 	
 	if _font:
 		btn.add_theme_font_override("font", _font)
-	btn.add_theme_font_size_override("font_size", 18)
+	btn.add_theme_font_size_override("font_size", 26)
 	btn.add_theme_color_override("font_color", Color(0.90, 0.92, 0.95, 1.0))
 	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
 	btn.add_theme_color_override("font_pressed_color", C_AMBER)
@@ -1310,6 +1311,7 @@ func _setup_app_home(_parent: Control) -> void:
 		["res://recursos/iconos app/app_musica.png",  "Musica",    C_ACCENT2,               func(): _switch_app("music")],
 		["🎧",                                        "Soporte",   Color(1.0, 0.45, 0.0),   func(): _switch_app("soporte")],
 		["res://recursos/iconos app/app_ajustes.png", "Ajustes",   Color(0.30, 0.32, 0.40), func(): _switch_app("settings")],
+		["🏠",                                        "Al Spawn",  C_GREEN,                  func(): _volver_al_spawn_rapido()],
 	]
 	for app_data in apps:
 		grid.add_child(_create_app_icon(app_data[0], app_data[1], app_data[2], app_data[3]))
@@ -3116,7 +3118,7 @@ func _build_bank_tab_historial(parent: Control) -> void:
 		h_vbox.add_child(card_p)
 
 func _update_bank_display() -> void:
-	if DatosUsuario:
+	if not Engine.is_editor_hint() and DatosUsuario:
 		if bank_money_label:
 			bank_money_label.text = _formatear_pesos_colombianos(DatosUsuario.dinero)
 		if bank_emeralds_label:
@@ -3200,9 +3202,10 @@ func _setup_app_fletes(_parent: Control) -> void:
 	var lic_h = HBoxContainer.new()
 	lic_bar.add_child(lic_h)
 
-	var tiene_c1: bool = DatosUsuario.tiene_licencia("C1") if (DatosUsuario and DatosUsuario.has_method("tiene_licencia")) else false
-	var tiene_c2: bool = DatosUsuario.tiene_licencia("C2") if (DatosUsuario and DatosUsuario.has_method("tiene_licencia")) else false
-	var tiene_c3: bool = DatosUsuario.tiene_licencia("C3") if (DatosUsuario and DatosUsuario.has_method("tiene_licencia")) else false
+	var du_valido := (not Engine.is_editor_hint()) and DatosUsuario != null and DatosUsuario.has_method("tiene_licencia")
+	var tiene_c1: bool = DatosUsuario.tiene_licencia("C1") if du_valido else false
+	var tiene_c2: bool = DatosUsuario.tiene_licencia("C2") if du_valido else false
+	var tiene_c3: bool = DatosUsuario.tiene_licencia("C3") if du_valido else false
 
 	var lic_lbl = Label.new()
 	lic_lbl.text = "🪪 Tus Licencias:   [C1 Camionetas: %s]   [C2 Rígidos: %s]   [C3 Tractomula: %s]" % [
@@ -4256,9 +4259,10 @@ func _setup_app_garage(_parent: Control) -> void:
 	var services = [
 		["🛠️", "Auxilio Vial 24/7",    "Combustible, llantas, grúa y rescate", C_ORANGE, func(): _abrir_panel_asistencia_mecanica()],
 		["🔩", "Mecanico General",     "Motor, inyección, frenos y transmisión", C_ACCENT, func(): _abrir_panel_asistencia_mecanica()],
-		["🛞", "Taller de Rines",     "Cambio y personalización de rines",  Color(0.25, 0.75, 1.0), Callable()],
-		["🎨", "Pintura Custom",       "Colores y viniles exclusivos",        C_ACCENT2, Callable()],
-		["💡", "Luces y Neon",         "Iluminación interior y exterior",     C_YELLOW, Callable()],
+		["🚚", "Sacar Trailer",        "Generar remolque detrás de tu camión",  C_AMBER, func(): _sacar_trailer_rapido()],
+		["🎨", "Pintura Custom",       "Color de carrocería y acabado (Online)", C_ACCENT2, func(): _abrir_modal_personalizacion_rapida()],
+		["💡", "Luces y Neon",         "Neones inferiores sincronizados",        C_YELLOW, func(): _abrir_modal_personalizacion_rapida()],
+		["🏠", "Volver al Spawn",      "Devolver jugador y vehículo al inicio",  C_GREEN, func(): _volver_al_spawn_rapido()],
 		["🏎️", "Rendimiento",          "Turbo, escape y suspensión",          C_RED, Callable()],
 		["🧼", "Lavado Premium",       "Detailing completo del vehículo",     C_GREEN, Callable()],
 	]
@@ -4344,10 +4348,21 @@ func _make_garage_item(icon: String, name_: String, desc: String, color: Color, 
 # ═════════════════════════════════════════════════════════════════════════════
 #  APP: AJUSTES
 # ═════════════════════════════════════════════════════════════════════════════
-func _setup_app_settings(_parent: Control) -> void:
+func _on_tablet_back_pressed() -> void:
+	if current_app == "settings" and _settings_categoria_actual != "":
+		_setup_app_settings(null, "")
+		return
+	if current_app == "soporte" and is_instance_valid(app_container_support) and app_container_support.has_method("manejar_regresar"):
+		if app_container_support.call("manejar_regresar"):
+			return
+	_switch_app("home")
+
+func _setup_app_settings(_parent: Control, categoria_activa: String = "") -> void:
 	if not app_container_settings:
 		return
+	_settings_categoria_actual = categoria_activa
 	for child in app_container_settings.get_children():
+		app_container_settings.remove_child(child)
 		child.queue_free()
 
 	var root = VBoxContainer.new()
@@ -4355,144 +4370,474 @@ func _setup_app_settings(_parent: Control) -> void:
 	root.add_theme_constant_override("separation", 0)
 	app_container_settings.add_child(root)
 
-	var hdr = _make_app_header("Ajustes ⚙️", Color(0.35,0.37,0.48), "⬅ Home", func(): _switch_app("home"))
+	var titulos_cat := {
+		"graficos": "GRAFICOS Y RENDIMIENTO",
+		"audio": "AUDIO Y SONIDO",
+		"controles": "CAMARA Y CONTROLES",
+		"partida": "PARTIDA Y SALIDA"
+	}
+	var titulo_hdr: String = titulos_cat.get(categoria_activa, "AJUSTES DEL SISTEMA")
+	var hdr = _make_app_header(titulo_hdr, Color(0.88, 0.68, 0.28), "", func(): pass)
+	for ch in hdr.get_children():
+		if ch is HBoxContainer:
+			for b in ch.get_children():
+				if b is Button:
+					b.visible = false
 	root.add_child(hdr)
 
 	var scroll = ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var v_bar := scroll.get_v_scroll_bar()
+	if v_bar:
+		v_bar.custom_minimum_size = Vector2(36, 0)
+		var sb_track := StyleBoxFlat.new()
+		sb_track.bg_color = Color(0.06, 0.07, 0.08, 0.75)
+		sb_track.set_corner_radius_all(14)
+		var sb_grab := StyleBoxFlat.new()
+		sb_grab.bg_color = Color(0.88, 0.68, 0.28, 0.85)
+		sb_grab.set_corner_radius_all(14)
+		var sb_grab_hi := sb_grab.duplicate() as StyleBoxFlat
+		sb_grab_hi.bg_color = Color(0.95, 0.76, 0.35, 1.0)
+		v_bar.add_theme_stylebox_override("scroll", sb_track)
+		v_bar.add_theme_stylebox_override("grabber", sb_grab)
+		v_bar.add_theme_stylebox_override("grabber_highlight", sb_grab_hi)
+		v_bar.add_theme_stylebox_override("grabber_pressed", sb_grab_hi)
 	root.add_child(scroll)
 
 	var vbox = VBoxContainer.new()
 	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 14)
+	vbox.add_theme_constant_override("separation", 18)
 	scroll.add_child(vbox)
 
 	var margin = MarginContainer.new()
-	margin.add_theme_constant_override("margin_left",  20)
-	margin.add_theme_constant_override("margin_right", 20)
-	margin.add_theme_constant_override("margin_top",   16)
-	margin.add_theme_constant_override("margin_bottom",16)
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left",  70)
+	margin.add_theme_constant_override("margin_right", 70)
+	margin.add_theme_constant_override("margin_top",   28)
+	margin.add_theme_constant_override("margin_bottom",28)
 	vbox.add_child(margin)
 
 	var inner = VBoxContainer.new()
-	inner.add_theme_constant_override("separation", 16)
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	inner.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 18)
 	margin.add_child(inner)
 
-	var sens_section = _make_settings_section("Control de Camara")
-	inner.add_child(sens_section)
+	# ── MENÚ PRINCIPAL DE CATEGORÍAS (únicamente categorías, uniformes y ocupando la tableta) ──
+	if categoria_activa == "":
+		vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		var cats := [
+			{"id": "graficos",  "titulo": "GRAFICOS Y RENDIMIENTO"},
+			{"id": "audio",     "titulo": "AUDIO Y SONIDO"},
+			{"id": "controles", "titulo": "CAMARA Y CONTROLES"},
+			{"id": "partida",   "titulo": "PARTIDA Y SALIDA"}
+		]
+		for c in cats:
+			inner.add_child(_make_settings_category_card(c["titulo"], func():
+				_setup_app_settings(_parent, c["id"])
+			))
+		return
 
-	var sens_label = Label.new()
-	sens_label.text = "Sensibilidad: Normal"
-	sens_label.add_theme_font_size_override("font_size", 20)
-	sens_label.add_theme_color_override("font_color", C_TEXT)
-	sens_section.add_child(sens_label)
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
 
-	var sens_slider = HSlider.new()
-	sens_slider.min_value = 0.0005
-	sens_slider.max_value = 0.008
-	sens_slider.step = 0.0005
-	sens_slider.custom_minimum_size = Vector2(0, 32)
-	if player:
-		sens_slider.value = player.sensibilidad_raton
-	sens_slider.value_changed.connect(func(v):
-		if player:
-			player.sensibilidad_raton = v
-		sens_label.text = "Sensibilidad: " + str(snapped(v, 0.0001))
+	var aplicar_setting := func(sec: String, key: String, val) -> void:
+		var c := ConfigFile.new()
+		c.load("user://settings.cfg")
+		c.set_value(sec, key, val)
+		c.save("user://settings.cfg")
+		var sm := get_node_or_null("/root/SettingsManager")
+		if sm and sm.has_method("apply_all_settings"):
+			sm.apply_all_settings()
+
+	match categoria_activa:
+		"graficos":
+			var preset_actual := int(cfg.get_value("graficos", "calidad", 1))
+			inner.add_child(_make_settings_chip_card("CALIDAD GRAFICA", ["BAJO", "MEDIO", "ALTO", "ULTRA"], preset_actual, func(idx: int):
+				var sm := get_node_or_null("/root/SettingsManager")
+				if sm and sm.has_method("apply_preset"):
+					sm.apply_preset(idx)
+				notificar("Calidad grafica actualizada", "exito")
+				call_deferred("_setup_app_settings", _parent, "graficos")
+			))
+
+			var r_scale := float(cfg.get_value("graficos", "render_scale", 75))
+			inner.add_child(_make_settings_slider("ESCALA DE RESOLUCION", 50.0, 100.0, 5.0, r_scale, "%", func(v: float):
+				aplicar_setting.call("graficos", "render_scale", int(v))
+			))
+
+			inner.add_child(_make_settings_chip_card("LIMITE DE FPS", ["30", "60", "90", "120", "MAX"], int(cfg.get_value("graficos", "fps", 1)), func(idx: int):
+				aplicar_setting.call("graficos", "fps", idx)
+			))
+
+			inner.add_child(_make_settings_chip_card("SOMBRAS", ["OFF", "BAJA", "MEDIA", "ALTA"], int(cfg.get_value("graficos", "sombras", 1)), func(idx: int):
+				aplicar_setting.call("graficos", "sombras", idx)
+			))
+
+			inner.add_child(_make_settings_toggle("V-SYNC", bool(cfg.get_value("graficos", "vsync", true)), func(on: bool):
+				aplicar_setting.call("graficos", "vsync", on)
+			))
+			inner.add_child(_make_settings_toggle("BRILLO / GLOW", bool(cfg.get_value("graficos", "glow_enabled", true)), func(on: bool):
+				aplicar_setting.call("graficos", "glow_enabled", on)
+			))
+			inner.add_child(_make_settings_toggle("OCLUSION AMBIENTAL (SSAO)", bool(cfg.get_value("graficos", "ssao_enabled", false)), func(on: bool):
+				aplicar_setting.call("graficos", "ssao_enabled", on)
+			))
+
+		"audio":
+			inner.add_child(_make_settings_slider("VOLUMEN GENERAL", 0.0, 100.0, 5.0, float(cfg.get_value("audio", "vol_general", 100)), "%", func(v: float):
+				aplicar_setting.call("audio", "vol_general", int(v))
+			))
+			inner.add_child(_make_settings_slider("MUSICA", 0.0, 100.0, 5.0, float(cfg.get_value("audio", "musica", 80)), "%", func(v: float):
+				aplicar_setting.call("audio", "musica", int(v))
+			))
+			inner.add_child(_make_settings_slider("EFECTOS Y MOTOR", 0.0, 100.0, 5.0, float(cfg.get_value("audio", "efectos", 100)), "%", func(v: float):
+				aplicar_setting.call("audio", "efectos", int(v))
+			))
+
+		"controles":
+			var sens_val := float(cfg.get_value("controles", "sensibilidad_camara", player.sensibilidad_raton if player else 0.0025))
+			inner.add_child(_make_settings_slider("SENSIBILIDAD DE CAMARA", 0.0005, 0.008, 0.0005, sens_val, "", func(v: float):
+				if player:
+					player.sensibilidad_raton = v
+				var c := ConfigFile.new()
+				c.load("user://settings.cfg")
+				c.set_value("controles", "sensibilidad_camara", v)
+				c.save("user://settings.cfg")
+			))
+			inner.add_child(_make_settings_button("ALTERNAR 1A / 3A PERSONA", func():
+				if player and player.has_method("_set_primera_persona"):
+					player.call("_set_primera_persona", not player.get("_primera_persona"))
+			))
+			inner.add_child(_make_settings_toggle("MODO PC (SIN TACTIL)", bool(cfg.get_value("controles", "modo_pc", false)), func(on: bool):
+				aplicar_setting.call("controles", "modo_pc", on)
+			))
+
+		"partida":
+			inner.add_child(_make_settings_button("GUARDAR PARTIDA", func():
+				var datos = get_node_or_null("/root/DatosUsuario")
+				if datos and datos.has_method("save_local"):
+					datos.save_local(true)
+					notificar("Partida guardada exitosamente", "exito")
+			))
+			inner.add_child(_make_settings_button("SALIR AL MENU PRINCIPAL", func():
+				get_tree().paused = false
+				var menu_path = "res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn"
+				if ResourceLoader.exists(menu_path):
+					get_tree().change_scene_to_file(menu_path)
+				else:
+					get_tree().quit()
+			))
+
+func _make_settings_card_shell() -> Dictionary:
+	var font_moderniz: Font = load("res://recursos/fonts/Moderniz.otf") if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf") else null
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0, 92)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.09, 0.10, 0.12, 0.90)
+	st.set_corner_radius_all(12)
+	st.set_border_width_all(1)
+	st.border_color = Color(0.78, 0.81, 0.85, 0.22)
+	st.content_margin_left = 24
+	st.content_margin_right = 24
+	st.content_margin_top = 14
+	st.content_margin_bottom = 14
+	st.shadow_color = Color(0.0, 0.0, 0.0, 0.40)
+	st.shadow_size = 5
+
+	var st_hover := st.duplicate() as StyleBoxFlat
+	st_hover.bg_color = Color(0.13, 0.15, 0.18, 0.95)
+	st_hover.border_color = Color(0.88, 0.68, 0.28, 0.92)
+	card.add_theme_stylebox_override("panel", st)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 18)
+	hbox.mouse_filter = Control.MOUSE_FILTER_PASS
+	card.add_child(hbox)
+
+	var accent_bar := ColorRect.new()
+	accent_bar.custom_minimum_size = Vector2(4, 42)
+	accent_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	accent_bar.color = Color(0.88, 0.68, 0.28, 0.92)
+	accent_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(accent_bar)
+
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	body.add_theme_constant_override("separation", 10)
+	body.mouse_filter = Control.MOUSE_FILTER_PASS
+	hbox.add_child(body)
+
+	return {"card": card, "hbox": hbox, "body": body, "st": st, "st_hover": st_hover, "font": font_moderniz}
+
+func _make_settings_category_card(titulo: String, on_press: Callable) -> Control:
+	var font_moderniz: Font = load("res://recursos/fonts/Moderniz.otf") if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf") else null
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(0, 104)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.09, 0.10, 0.12, 0.90)
+	st.set_corner_radius_all(12)
+	st.set_border_width_all(1)
+	st.border_color = Color(0.78, 0.81, 0.85, 0.22)
+	st.content_margin_left = 24
+	st.content_margin_right = 24
+	st.content_margin_top = 14
+	st.content_margin_bottom = 14
+	st.shadow_color = Color(0.0, 0.0, 0.0, 0.40)
+	st.shadow_size = 5
+
+	var st_hover := st.duplicate() as StyleBoxFlat
+	st_hover.bg_color = Color(0.13, 0.15, 0.18, 0.95)
+	st_hover.border_color = Color(0.88, 0.68, 0.28, 0.92)
+	card.add_theme_stylebox_override("panel", st)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 16)
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(hbox)
+
+	var accent_bar := ColorRect.new()
+	accent_bar.custom_minimum_size = Vector2(4, 42)
+	accent_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	accent_bar.color = Color(0.88, 0.68, 0.28, 0.92)
+	accent_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(accent_bar)
+
+	var lbl_t := Label.new()
+	lbl_t.text = titulo
+	lbl_t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl_t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if font_moderniz:
+		lbl_t.add_theme_font_override("font", font_moderniz)
+	lbl_t.add_theme_font_size_override("font_size", 34)
+	lbl_t.add_theme_color_override("font_color", C_TEXT)
+	hbox.add_child(lbl_t)
+
+	var arrow := Label.new()
+	arrow.text = ">"
+	arrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if font_moderniz:
+		arrow.add_theme_font_override("font", font_moderniz)
+	arrow.add_theme_font_size_override("font_size", 34)
+	arrow.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.92))
+	hbox.add_child(arrow)
+
+	var btn := Button.new()
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	btn.mouse_entered.connect(func(): card.add_theme_stylebox_override("panel", st_hover))
+	btn.mouse_exited.connect(func(): card.add_theme_stylebox_override("panel", st))
+	btn.pressed.connect(on_press)
+	card.add_child(btn)
+	return card
+
+func _make_settings_chip_card(titulo: String, opciones: Array, activo_idx: int, on_select: Callable) -> Control:
+	var sh := _make_settings_card_shell()
+	var card: PanelContainer = sh["card"]
+	var body: VBoxContainer = sh["body"]
+	var font_moderniz: Font = sh["font"]
+
+	var lbl := Label.new()
+	lbl.text = titulo
+	if font_moderniz:
+		lbl.add_theme_font_override("font", font_moderniz)
+	lbl.add_theme_font_size_override("font_size", 26)
+	lbl.add_theme_color_override("font_color", C_TEXT)
+	body.add_child(lbl)
+	body.add_child(_make_settings_chip_row(opciones, activo_idx, on_select))
+	return card
+
+func _make_settings_slider(titulo: String, min_v: float, max_v: float, step_v: float, val_inicial: float, sufijo: String, on_change: Callable) -> Control:
+	var sh := _make_settings_card_shell()
+	var card: PanelContainer = sh["card"]
+	var body: VBoxContainer = sh["body"]
+	var font_moderniz: Font = sh["font"]
+
+	var lbl := Label.new()
+	var fmt_val := str(int(round(val_inicial))) + sufijo if sufijo != "" else str(snapped(val_inicial, 0.0001))
+	lbl.text = "%s: %s" % [titulo, fmt_val]
+	if font_moderniz:
+		lbl.add_theme_font_override("font", font_moderniz)
+	lbl.add_theme_font_size_override("font_size", 26)
+	lbl.add_theme_color_override("font_color", C_TEXT)
+	body.add_child(lbl)
+
+	var s := HSlider.new()
+	s.min_value = min_v
+	s.max_value = max_v
+	s.step = step_v
+	s.value = clampf(val_inicial, min_v, max_v)
+	s.custom_minimum_size = Vector2(0, 56)
+	s.focus_mode = Control.FOCUS_NONE
+
+	var sb_sl := StyleBoxFlat.new()
+	sb_sl.bg_color = Color(0.05, 0.06, 0.08, 0.95)
+	sb_sl.set_corner_radius_all(12)
+	sb_sl.content_margin_top = 12
+	sb_sl.content_margin_bottom = 12
+
+	var sb_fill := StyleBoxFlat.new()
+	sb_fill.bg_color = Color(0.88, 0.68, 0.28, 0.95)
+	sb_fill.set_corner_radius_all(12)
+	sb_fill.content_margin_top = 12
+	sb_fill.content_margin_bottom = 12
+
+	var grab_tex := _crear_grabber_ajustes(22)
+	s.add_theme_icon_override("grabber", grab_tex)
+	s.add_theme_icon_override("grabber_highlight", grab_tex)
+	s.add_theme_stylebox_override("slider", sb_sl)
+	s.add_theme_stylebox_override("grabber_area", sb_fill)
+	s.add_theme_stylebox_override("grabber_area_highlight", sb_fill)
+	s.value_changed.connect(func(v: float):
+		var txt := str(int(round(v))) + sufijo if sufijo != "" else str(snapped(v, 0.0001))
+		lbl.text = "%s: %s" % [titulo, txt]
+		on_change.call(v)
 	)
-	sens_section.add_child(sens_slider)
+	body.add_child(s)
+	return card
 
-	var view_section = _make_settings_section("Vista del Jugador")
-	inner.add_child(view_section)
+func _make_settings_toggle(titulo: String, estado_inicial: bool, on_toggle: Callable) -> Control:
+	var sh := _make_settings_card_shell()
+	var card: PanelContainer = sh["card"]
+	var hbox: HBoxContainer = sh["hbox"]
+	var body: VBoxContainer = sh["body"]
+	var st: StyleBoxFlat = sh["st"]
+	var font_moderniz: Font = sh["font"]
 
-	var cam_btn = _make_settings_button("🎥  Alternar 1a / 3a Persona", func():
-		if player and player.has_method("_set_primera_persona"):
-			player.call("_set_primera_persona", not player.get("_primera_persona"))
-	)
-	view_section.add_child(cam_btn)
+	var lbl := Label.new()
+	lbl.text = titulo
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if font_moderniz:
+		lbl.add_theme_font_override("font", font_moderniz)
+	lbl.add_theme_font_size_override("font_size", 26)
+	lbl.add_theme_color_override("font_color", C_TEXT)
+	body.add_child(lbl)
 
-	var adv_section = _make_settings_section("Avanzado")
-	inner.add_child(adv_section)
+	var track := Panel.new()
+	track.custom_minimum_size = Vector2(88, 46)
+	track.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(track)
 
-	var adv_btn = _make_settings_button("🛠️  Configuraciones Completas", func():
-		var sm = get_node_or_null("/root/SettingsManager")
-		if sm and sm.has_method("change_to_settings"):
-			sm.change_to_settings()
+	var knob := Panel.new()
+	knob.custom_minimum_size = Vector2(36, 36)
+	knob.size = Vector2(36, 36)
+	knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	track.add_child(knob)
+
+	var btn := Button.new()
+	btn.flat = true
+	btn.toggle_mode = true
+	btn.button_pressed = estado_inicial
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	card.add_child(btn)
+
+	var actualizar_visual := func(on: bool):
+		var sb_tr := StyleBoxFlat.new()
+		sb_tr.set_corner_radius_all(23)
+		sb_tr.set_border_width_all(2)
+		var sb_kn := StyleBoxFlat.new()
+		sb_kn.set_corner_radius_all(18)
+		if on:
+			sb_tr.bg_color = Color(0.88, 0.68, 0.28, 0.92)
+			sb_tr.border_color = Color(0.98, 0.82, 0.42, 1.0)
+			sb_kn.bg_color = Color(0.06, 0.07, 0.08, 1.0)
+			knob.position = Vector2(46, 5)
+			st.border_color = Color(0.88, 0.68, 0.28, 0.55)
 		else:
-			var path = "res://interfaz/pantallas/configuraciones/configuraciones.tscn"
-			if ResourceLoader.exists(path):
-				var s = load(path)
-				if s:
-					get_tree().current_scene.add_child(s.instantiate())
-					close_phone()
+			sb_tr.bg_color = Color(0.06, 0.07, 0.09, 0.95)
+			sb_tr.border_color = Color(0.78, 0.81, 0.85, 0.28)
+			sb_kn.bg_color = Color(0.78, 0.81, 0.85, 0.85)
+			knob.position = Vector2(6, 5)
+			st.border_color = Color(0.78, 0.81, 0.85, 0.22)
+		track.add_theme_stylebox_override("panel", sb_tr)
+		knob.add_theme_stylebox_override("panel", sb_kn)
+
+	actualizar_visual.call(estado_inicial)
+	btn.toggled.connect(func(on: bool):
+		actualizar_visual.call(on)
+		on_toggle.call(on)
 	)
-	adv_section.add_child(adv_btn)
+	return card
 
-	var rescue_section = _make_settings_section("🚨  Auxilio Vial y Asistencia en Carretera")
-	inner.add_child(rescue_section)
+func _crear_grabber_ajustes(radio: int) -> ImageTexture:
+	var sz := radio * 2
+	var img := Image.create(sz, sz, false, Image.FORMAT_RGBA8)
+	var c := Vector2(radio, radio)
+	for x in range(sz):
+		for y in range(sz):
+			var d := c.distance_to(Vector2(x, y))
+			if d <= radio:
+				var a := clampf(radio - d, 0.0, 1.0)
+				if d > radio - 3.5:
+					img.set_pixel(x, y, Color(0.98, 0.84, 0.48, a))
+				else:
+					img.set_pixel(x, y, Color(0.88, 0.68, 0.28, a))
+	return ImageTexture.create_from_image(img)
 
-	var mecano_btn = _make_settings_button("🛠️  Solicitar Auxilio Mecánico en Carretera (24/7)", func():
-		_abrir_panel_asistencia_mecanica()
-	)
-	rescue_section.add_child(mecano_btn)
-
-	var grua_btn = _make_settings_button("🏗️  Remolque de Emergencia / Grúa al Taller (-$ 85.000)", func():
-		_ejecutar_servicio_grua_tableta()
-	)
-	rescue_section.add_child(grua_btn)
-
-	var save_section = _make_settings_section("💾  Gestión de Partida")
-	inner.add_child(save_section)
-
-	var save_btn = _make_settings_button("💾  Guardar Partida", func():
-		var datos = get_node_or_null("/root/DatosUsuario")
-		if datos and datos.has_method("save_local"):
-			datos.save_local()
-			notificar("¡Partida guardada exitosamente!", "exito")
-	)
-	save_section.add_child(save_btn)
-
-	var exit_btn = _make_settings_button("🏠  Salir al Menú Principal", func():
-		get_tree().paused = false
-		var menu_path = "res://interfaz/pantallas/menu_principal/MainMenuModerno.tscn"
-		if ResourceLoader.exists(menu_path):
-			get_tree().change_scene_to_file(menu_path)
-		else:
-			get_tree().quit()
-	)
-	save_section.add_child(exit_btn)
+func _make_settings_chip_row(opciones: Array, activo_idx: int, on_select: Callable) -> HBoxContainer:
+	var font_moderniz: Font = load("res://recursos/fonts/Moderniz.otf") if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf") else null
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 8)
+	var botones: Array[Button] = []
+	var aplicar_estilos := func(sel: int):
+		for i in range(botones.size()):
+			var b := botones[i]
+			var st := StyleBoxFlat.new()
+			st.set_corner_radius_all(10)
+			if i == sel:
+				st.bg_color = Color(0.88, 0.68, 0.28, 0.92)
+				b.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0))
+			else:
+				st.bg_color = Color(0.09, 0.10, 0.12, 0.90)
+				st.set_border_width_all(1)
+				st.border_color = Color(0.78, 0.81, 0.85, 0.22)
+				b.add_theme_color_override("font_color", C_TEXT)
+			b.add_theme_stylebox_override("normal", st)
+			b.add_theme_stylebox_override("hover", st)
+			b.add_theme_stylebox_override("pressed", st)
+	for i in range(opciones.size()):
+		var b := Button.new()
+		b.text = str(opciones[i])
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 72)
+		b.focus_mode = Control.FOCUS_NONE
+		if font_moderniz:
+			b.add_theme_font_override("font", font_moderniz)
+		b.add_theme_font_size_override("font_size", 24)
+		b.pressed.connect(func():
+			aplicar_estilos.call(i)
+			on_select.call(i)
+		)
+		botones.append(b)
+		hbox.add_child(b)
+	aplicar_estilos.call(clampi(activo_idx, 0, max(0, opciones.size() - 1)))
+	return hbox
 
 func _make_settings_section(title: String) -> VBoxContainer:
 	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 10)
+	vbox.add_theme_constant_override("separation", 14)
 	var lbl = Label.new()
 	lbl.text = title.to_upper()
-	lbl.add_theme_font_size_override("font_size", 20)
-	lbl.add_theme_color_override("font_color", C_TEXT_DIM)
+	lbl.add_theme_font_size_override("font_size", 28)
+	lbl.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.95))
 	vbox.add_child(lbl)
 	return vbox
 
-func _make_settings_button(text_: String, action: Callable) -> Button:
-	var btn = Button.new()
-	btn.text = text_
-	btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	btn.add_theme_font_size_override("font_size", 20)
-	btn.add_theme_color_override("font_color", C_TEXT)
-	btn.custom_minimum_size = Vector2(0, 56)
-	var st = StyleBoxFlat.new()
-	st.bg_color = Color(0.08, 0.09, 0.12, 0.85)
-	st.corner_radius_top_left=8;st.corner_radius_top_right=8
-	st.corner_radius_bottom_left=8;st.corner_radius_bottom_right=8
-	st.content_margin_left=18;st.content_margin_top=12;st.content_margin_bottom=12
-	st.border_width_left=1;st.border_width_top=1;st.border_width_right=1;st.border_width_bottom=2
-	st.border_color=Color(0.78, 0.81, 0.85, 0.20)
-	var sh = st.duplicate() as StyleBoxFlat
-	sh.bg_color = Color(0.14, 0.16, 0.19, 0.92)
-	sh.border_color = Color(0.85, 0.88, 0.92, 0.42)
-	btn.add_theme_stylebox_override("normal",  st)
-	btn.add_theme_stylebox_override("hover",   sh)
-	btn.add_theme_stylebox_override("pressed", st)
-	btn.pressed.connect(action)
-	return btn
+func _make_settings_button(text_: String, action: Callable) -> Control:
+	return _make_settings_category_card(text_, action)
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  UTILIDADES
@@ -4570,6 +4915,8 @@ func _switch_app(app_name: String) -> void:
 	_show_app_splash(app_name)
 
 func _actualizar_datos_soporte() -> void:
+	if Engine.is_editor_hint():
+		return
 	if is_instance_valid(app_container_support):
 		if app_container_support.has_method("asignar_actividades_recientes"):
 			app_container_support.call("asignar_actividades_recientes", bank_transactions)
@@ -4716,9 +5063,10 @@ func _update_app_visibility() -> void:
 			app_container_missions.call("actualizar_lista")
 	if app_container_support:
 		app_container_support.visible = tablet_activa and (current_app == "soporte")
+		app_container_support.mouse_filter = Control.MOUSE_FILTER_STOP if app_container_support.visible else Control.MOUSE_FILTER_IGNORE
 
 	if is_instance_valid(phone_frame):
-		phone_frame.visible = tablet_activa and (current_app != "soporte" and current_app != "missions")
+		phone_frame.visible = tablet_activa and (current_app != "missions")
 
 	_actualizar_material_carreteras(current_app == "waze")
 	_actualizar_minimap_viewport_state()
@@ -5790,5 +6138,333 @@ func _crear_tarjeta_servicio_mecanico(data: Dictionary, modal: Control) -> Contr
 		ServicioMecanicoCarretera.solicitar_servicio(data["tipo"])
 	)
 	hbox.add_child(btn_call)
-
 	return panel
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  ACCIONES RÁPIDAS: VOLVER AL SPAWN, SACAR TRAILER Y PERSONALIZACIÓN ONLINE
+# ═════════════════════════════════════════════════════════════════════════════
+
+func _obtener_vehiculo_local_tableta() -> Node3D:
+	if has_node("/root/InputVehiculo"):
+		var iv = get_node("/root/InputVehiculo")
+		if "vehiculo_actual" in iv and is_instance_valid(iv.vehiculo_actual):
+			return iv.vehiculo_actual as Node3D
+	var cs := get_tree().current_scene if get_tree() else null
+	if not cs:
+		return null
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		var v_mp := cs.find_child("Vehiculo_" + str(multiplayer.get_unique_id()), true, false) as Node3D
+		if v_mp:
+			return v_mp
+	for nm in ["T800_A", "T800_Alargada"]:
+		var found := cs.find_child(nm, true, false) as Node3D
+		if found:
+			return found
+	var grupo := get_tree().get_nodes_in_group("vehiculo_jugador")
+	if not grupo.is_empty() and grupo[0] is Node3D:
+		return grupo[0] as Node3D
+	return null
+
+func _obtener_jugador_local_tableta() -> Node3D:
+	if is_instance_valid(player):
+		return player
+	var cs := get_tree().current_scene if get_tree() else null
+	if cs and is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer():
+		var j_mp := cs.find_child("Jugador_" + str(multiplayer.get_unique_id()), true, false) as Node3D
+		if j_mp:
+			return j_mp
+	var pl := get_tree().get_first_node_in_group("jugador") as Node3D if get_tree() else null
+	if not pl and cs:
+		pl = cs.find_child("Jugador", true, false) as Node3D
+	return pl
+
+func _volver_al_spawn_rapido() -> void:
+	var cs := get_tree().current_scene if get_tree() else null
+	var spawn_pos := Vector3(30.4923, 1.0, 786.3555)
+	if Engine.has_meta("nt_mp_spawn_pos"):
+		var sp_meta: Variant = Engine.get_meta("nt_mp_spawn_pos")
+		if sp_meta is Vector3:
+			spawn_pos = sp_meta
+	elif cs:
+		var ctrl_sp := cs.find_child("ControladorSpawn", true, false)
+		if ctrl_sp and ctrl_sp.has_method("obtener_transform_spawn"):
+			var xf: Transform3D = ctrl_sp.call("obtener_transform_spawn")
+			spawn_pos = xf.origin
+
+	var veh := _obtener_vehiculo_local_tableta()
+	var jug := _obtener_jugador_local_tableta()
+	var remolque: RigidBody3D = null
+
+	if veh:
+		var hitch := veh.find_child("Enganche", true, false)
+		if hitch and "conectado" in hitch and hitch.conectado and hitch.get("enganche_remoto"):
+			if hitch.has_method("_buscar_cuerpo"):
+				remolque = hitch.call("_buscar_cuerpo", hitch.enganche_remoto) as RigidBody3D
+		if veh is RigidBody3D:
+			var rb := veh as RigidBody3D
+			rb.freeze = true
+			rb.linear_velocity = Vector3.ZERO
+			rb.angular_velocity = Vector3.ZERO
+			rb.rotation = Vector3.ZERO
+			rb.global_position = spawn_pos + Vector3(3.6, 0.45, -2.5)
+		else:
+			veh.global_position = spawn_pos + Vector3(3.6, 0.45, -2.5)
+			veh.rotation = Vector3.ZERO
+
+	if is_instance_valid(remolque):
+		remolque.freeze = true
+		remolque.linear_velocity = Vector3.ZERO
+		remolque.angular_velocity = Vector3.ZERO
+		remolque.rotation = Vector3.ZERO
+		remolque.global_position = spawn_pos + Vector3(3.6, 0.45, 7.0)
+
+	if jug and not (jug.get("_conduciendo") == true):
+		if jug is CharacterBody3D:
+			(jug as CharacterBody3D).velocity = Vector3.ZERO
+		jug.global_position = spawn_pos + Vector3(0.0, 0.45, 0.0)
+
+	if get_tree():
+		get_tree().create_timer(0.35, true).timeout.connect(func():
+			if is_instance_valid(veh) and veh is RigidBody3D:
+				(veh as RigidBody3D).freeze = false
+				(veh as RigidBody3D).linear_velocity = Vector3.ZERO
+			if is_instance_valid(remolque):
+				remolque.freeze = false
+				remolque.linear_velocity = Vector3.ZERO
+		, CONNECT_ONE_SHOT)
+
+	notificar("¡Has vuelto al punto de Spawn!", "exito")
+	close_phone()
+
+func _sacar_trailer_rapido() -> void:
+	var cs := get_tree().current_scene if get_tree() else null
+	if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer() and cs:
+		var mm := cs.find_child("MultiplayerManager", true, false)
+		if mm and mm.has_method("solicitar_spawn_trailer"):
+			mm.solicitar_spawn_trailer.rpc_id(1, multiplayer.get_unique_id(), TrailerFactory.RUTA_CHASIS_DEFECTO)
+			notificar("¡Trailer generado detrás de tu vehículo (Online)!", "exito")
+			close_phone()
+			return
+
+	var veh := _obtener_vehiculo_local_tableta()
+	if not veh or not cs:
+		notificar("No se encontró tu vehículo para acoplar un trailer.", "error")
+		return
+	var previo := cs.find_child("Trailer_Local", true, false)
+	if previo:
+		previo.queue_free()
+	var atras := veh.global_transform.basis.z.normalized()
+	var pos := veh.global_position + atras * 9.5 + Vector3(0.0, 0.35, 0.0)
+	var trailer := TrailerFactory.crear_trailer(TrailerFactory.RUTA_CHASIS_DEFECTO, "rin_t2_cromo", pos, Vector3(0.0, veh.rotation.y, 0.0))
+	if not trailer:
+		notificar("No se pudo instanciar el trailer.", "error")
+		return
+	trailer.name = "Trailer_Local"
+	cs.add_child(trailer)
+	notificar("¡Trailer generado detrás de tu vehículo!", "exito")
+	close_phone()
+
+func _abrir_modal_personalizacion_rapida() -> void:
+	var veh := _obtener_vehiculo_local_tableta()
+	if not veh:
+		notificar("No se encontró tu vehículo para personalizar.", "error")
+		return
+	var comp := veh.find_child("CustomizerComponent", true, false) as CustomizerComponent
+	if not comp:
+		comp = CustomizerComponent.new()
+		comp.name = "CustomizerComponent"
+		veh.add_child(comp)
+	if comp.materiales_detectados.is_empty():
+		comp.detectar_materiales_personalizables()
+
+	var overlay := ColorRect.new()
+	overlay.name = "ModalPersonalizacionRapida"
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.color = Color(0.02, 0.03, 0.04, 0.72)
+	add_child(overlay)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(680, 0)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.95)
+	sb.border_width_left = 1; sb.border_width_top = 1
+	sb.border_width_right = 1; sb.border_width_bottom = 1
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.25)
+	sb.corner_radius_top_left = 12; sb.corner_radius_top_right = 12
+	sb.corner_radius_bottom_left = 12; sb.corner_radius_bottom_right = 12
+	sb.shadow_color = Color(0, 0, 0, 0.65); sb.shadow_size = 10
+	panel.add_theme_stylebox_override("panel", sb)
+	center.add_child(panel)
+
+	var mc := MarginContainer.new()
+	mc.add_theme_constant_override("margin_left", 24)
+	mc.add_theme_constant_override("margin_right", 24)
+	mc.add_theme_constant_override("margin_top", 22)
+	mc.add_theme_constant_override("margin_bottom", 22)
+	panel.add_child(mc)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	mc.add_child(vb)
+
+	var lbl_t := Label.new()
+	lbl_t.text = "PERSONALIZACIÓN RÁPIDA (CARROCERÍA Y NEÓN)"
+	lbl_t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_t.add_theme_font_size_override("font_size", 22)
+	lbl_t.add_theme_color_override("font_color", C_AMBER)
+	vb.add_child(lbl_t)
+
+	var estado := {
+		"color": comp.color_actual,
+		"metallic": comp.metallic_actual,
+		"roughness": comp.roughness_actual,
+		"neon_on": comp.neon_enabled_actual,
+		"neon_color": comp.neon_color_actual,
+		"neon_int": maxf(comp.neon_intensity_actual, 1.2)
+	}
+
+	var aplicar_y_sincronizar := func():
+		comp.aplicar_pintura(estado["color"], estado["metallic"], estado["roughness"], 0.5)
+		comp.aplicar_neon(estado["neon_on"], estado["neon_color"], estado["neon_int"])
+		comp.guardar_personalizacion()
+		var cs := get_tree().current_scene if get_tree() else null
+		if is_inside_tree() and multiplayer and multiplayer.has_multiplayer_peer() and cs:
+			var mm := cs.find_child("MultiplayerManager", true, false)
+			if mm and mm.has_method("sincronizar_personalizacion_vehiculo"):
+				mm.sincronizar_personalizacion_vehiculo.rpc(
+					multiplayer.get_unique_id(),
+					(estado["color"] as Color).to_html(),
+					float(estado["metallic"]),
+					float(estado["roughness"]),
+					bool(estado["neon_on"]),
+					(estado["neon_color"] as Color).to_html(),
+					float(estado["neon_int"])
+				)
+
+	var lbl_p := Label.new()
+	lbl_p.text = "Color de Carrocería:"
+	lbl_p.add_theme_font_size_override("font_size", 18)
+	lbl_p.add_theme_color_override("font_color", C_TEXT)
+	vb.add_child(lbl_p)
+
+	var grid_p := GridContainer.new()
+	grid_p.columns = 5
+	grid_p.add_theme_constant_override("h_separation", 10)
+	grid_p.add_theme_constant_override("v_separation", 10)
+	vb.add_child(grid_p)
+
+	var paleta_pintura := [
+		["Blanco", Color(0.95, 0.96, 0.98)],
+		["Ámbar", Color(0.88, 0.68, 0.28)],
+		["Rojo", Color(0.82, 0.14, 0.16)],
+		["Azul", Color(0.12, 0.42, 0.88)],
+		["Verde", Color(0.14, 0.72, 0.36)],
+		["Negro", Color(0.08, 0.09, 0.11)],
+		["Grafito", Color(0.28, 0.31, 0.36)],
+		["Naranja", Color(0.95, 0.42, 0.08)],
+		["Amarillo", Color(0.96, 0.82, 0.12)],
+		["Violeta", Color(0.55, 0.20, 0.82)],
+	]
+	for item in paleta_pintura:
+		var btn_c := Button.new()
+		btn_c.text = item[0]
+		btn_c.custom_minimum_size = Vector2(114, 44)
+		btn_c.add_theme_font_size_override("font_size", 15)
+		var st_c := StyleBoxFlat.new()
+		st_c.bg_color = (item[1] as Color).darkened(0.15)
+		st_c.border_width_left = 2; st_c.border_width_top = 2
+		st_c.border_width_right = 2; st_c.border_width_bottom = 2
+		st_c.border_color = Color(0.85, 0.88, 0.92, 0.45)
+		st_c.corner_radius_top_left = 8; st_c.corner_radius_top_right = 8
+		st_c.corner_radius_bottom_left = 8; st_c.corner_radius_bottom_right = 8
+		btn_c.add_theme_stylebox_override("normal", st_c)
+		var col_val: Color = item[1]
+		btn_c.pressed.connect(func():
+			estado["color"] = col_val
+			aplicar_y_sincronizar.call()
+		)
+		grid_p.add_child(btn_c)
+
+	var btn_metal := Button.new()
+	btn_metal.text = "ACABADO: METÁLICO" if float(estado["metallic"]) >= 0.4 else "ACABADO: BRILLANTE"
+	btn_metal.custom_minimum_size = Vector2(0, 44)
+	btn_metal.add_theme_font_size_override("font_size", 16)
+	btn_metal.pressed.connect(func():
+		if float(estado["metallic"]) < 0.4:
+			estado["metallic"] = 0.75
+			estado["roughness"] = 0.22
+			btn_metal.text = "ACABADO: METÁLICO"
+		else:
+			estado["metallic"] = 0.15
+			estado["roughness"] = 0.32
+			btn_metal.text = "ACABADO: BRILLANTE"
+		aplicar_y_sincronizar.call()
+	)
+	vb.add_child(btn_metal)
+
+	var lbl_n := Label.new()
+	lbl_n.text = "Neones Inferiores:"
+	lbl_n.add_theme_font_size_override("font_size", 18)
+	lbl_n.add_theme_color_override("font_color", C_TEXT)
+	vb.add_child(lbl_n)
+
+	var btn_neon_toggle := Button.new()
+	btn_neon_toggle.text = "NEÓN: ENCENDIDO" if bool(estado["neon_on"]) else "NEÓN: APAGADO"
+	btn_neon_toggle.custom_minimum_size = Vector2(0, 46)
+	btn_neon_toggle.add_theme_font_size_override("font_size", 17)
+	btn_neon_toggle.pressed.connect(func():
+		estado["neon_on"] = not bool(estado["neon_on"])
+		btn_neon_toggle.text = "NEÓN: ENCENDIDO" if bool(estado["neon_on"]) else "NEÓN: APAGADO"
+		aplicar_y_sincronizar.call()
+	)
+	vb.add_child(btn_neon_toggle)
+
+	var hb_neones := HBoxContainer.new()
+	hb_neones.add_theme_constant_override("separation", 8)
+	vb.add_child(hb_neones)
+	for n_item in [
+		["Azul", Color(0.10, 0.55, 1.0)],
+		["Ámbar", Color(1.0, 0.65, 0.12)],
+		["Verde", Color(0.15, 0.95, 0.45)],
+		["Rojo", Color(0.95, 0.18, 0.22)],
+		["Morado", Color(0.75, 0.20, 1.0)],
+		["Blanco", Color(0.95, 0.98, 1.0)],
+	]:
+		var bn := Button.new()
+		bn.text = n_item[0]
+		bn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bn.custom_minimum_size = Vector2(0, 42)
+		var ncol: Color = n_item[1]
+		bn.pressed.connect(func():
+			estado["neon_on"] = true
+			estado["neon_color"] = ncol
+			btn_neon_toggle.text = "NEÓN: ENCENDIDO"
+			aplicar_y_sincronizar.call()
+		)
+		hb_neones.add_child(bn)
+
+	var btn_cerrar := Button.new()
+	btn_cerrar.text = "LISTO / CERRAR"
+	btn_cerrar.custom_minimum_size = Vector2(0, 50)
+	btn_cerrar.add_theme_font_size_override("font_size", 18)
+	var st_ok := StyleBoxFlat.new()
+	st_ok.bg_color = Color(0.12, 0.14, 0.18, 0.9)
+	st_ok.border_width_left = 2; st_ok.border_width_top = 2
+	st_ok.border_width_right = 2; st_ok.border_width_bottom = 2
+	st_ok.border_color = C_AMBER
+	st_ok.corner_radius_top_left = 10; st_ok.corner_radius_top_right = 10
+	st_ok.corner_radius_bottom_left = 10; st_ok.corner_radius_bottom_right = 10
+	btn_cerrar.add_theme_stylebox_override("normal", st_ok)
+	btn_cerrar.pressed.connect(func(): overlay.queue_free())
+	vb.add_child(btn_cerrar)
+
+	panel.modulate.a = 0.0
+	panel.scale = Vector2(0.92, 0.92)
+	panel.pivot_offset = Vector2(340, 230)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(panel, "modulate:a", 1.0, 0.26).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(panel, "scale", Vector2.ONE, 0.26).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)

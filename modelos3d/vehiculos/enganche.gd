@@ -36,8 +36,8 @@ var audio_player_crash: AudioStreamPlayer3D = null
 
 @export_group("Realismo del Enganche")
 @export var limite_velocidad_acople: float = 4.0
-@export var fuerza_impacto_suspension: float = 0.08
-@export var duracion_alineacion: float = 0.25
+@export var fuerza_impacto_suspension: float = 0.015
+@export var duracion_alineacion: float = 0.40
 
 @export_group("Visualización X-Ray de Enganche")
 ## MeshInstance3D para resaltar (Quinta Rueda en camión o Kingpin/Enganche en remolque).
@@ -289,11 +289,11 @@ func _activar_joint(cuerpo_a: PhysicsBody3D, cuerpo_b: PhysicsBody3D) -> void:
 	j6.set("angular_limit_x/upper_angle", deg_to_rad(22.0))
 	j6.set("angular_limit_x/softness", 0.5)
 
-	# Yaw (eje Y): Tope realista de quinta rueda (+-50 grados) para que el tráiler no traspase la cabina ni exostos
+	# Yaw (eje Y): Tope amplio de quinta rueda (+-115 grados) para maniobras cerradas en reversa
 	j6.set("angular_limit_y/enabled", true)
-	j6.set("angular_limit_y/lower_angle", deg_to_rad(-50.0))
-	j6.set("angular_limit_y/upper_angle", deg_to_rad(50.0))
-	j6.set("angular_limit_y/softness", 0.5)
+	j6.set("angular_limit_y/lower_angle", deg_to_rad(-115.0))
+	j6.set("angular_limit_y/upper_angle", deg_to_rad(115.0))
+	j6.set("angular_limit_y/softness", 0.8)
 
 	# Roll (eje Z): Permitir balanceo y torsión lateral del remolque (+-7 grados) para que el chasis oscile con las irregularidades del camino
 	j6.set("angular_limit_z/enabled", true)
@@ -621,7 +621,7 @@ func _buscar_cuerpo(nodo: Node) -> PhysicsBody3D:
 var _indicador: Node3D = null # Compatibilidad hacia atrás si algún nodo externo lo consulta
 
 func _obtener_o_crear_mesh_objetivo() -> MeshInstance3D:
-	if is_instance_valid(mesh_enganche):
+	if is_instance_valid(mesh_enganche) and mesh_enganche.mesh != null:
 		return mesh_enganche
 
 	# 1. Buscar si hay un MeshInstance3D hijo directo

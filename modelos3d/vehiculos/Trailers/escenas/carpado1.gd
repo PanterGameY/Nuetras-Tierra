@@ -2,7 +2,7 @@ extends RigidBody3D
 
 @export var debug_patas: bool = false
 @export var auto_snap_on_ready: bool = true
-@export var mass_kg: float = 7500.0
+@export var mass_kg: float = 5800.0
 
 @export_group("Distribución de Centro de Masa")
 ## Si está activo, el centro de masa se calcula dinámicamente distribuyendo el peso de la carga de forma equilibrada entre el enganche (Z=-5.61) y las ruedas traseras (Z=+4.90).
@@ -11,13 +11,13 @@ extends RigidBody3D
 @export_range(0.2, 0.8, 0.01) var porcentaje_carga_a_ruedas: float = 0.50
 ## Posición longitudinal Z del centro de masa del trailer en vacío.
 @export var cm_offset_z_vacio: float = 0.60
-## Altura base Y del centro de masa en vacío.
-@export var cm_offset_y_vacio: float = 0.55
+## Altura base Y del centro de masa en vacío (centro de gravedad estable para curvas).
+@export var cm_offset_y_vacio: float = 0.92
 ## Altura Y del centro de masa con carga completa.
-@export var cm_offset_y_cargado: float = 0.95
+@export var cm_offset_y_cargado: float = 1.15
 
 ## Variables públicas calculadas de posición de centro de masa (compatibilidad con inspector y scripts externos)
-@export var cm_offset_y: float = 0.6
+@export var cm_offset_y: float = 0.92
 @export var cm_offset_z: float = -0.355 ## Punto equilibrado 50% enganche / 50% ejes traseros
 
 @export_group("Física General")
@@ -73,6 +73,23 @@ var _btn_pantalla_patas: Button = null
 var _audio_patas: AudioStreamPlayer3D = null
 var _ultimo_tiempo_interaccion_ms: int = 0
 
+@export_group("Carpa, Varillas y Compuertas")
+@export var broches_sueltos: bool = false:
+	set(val):
+		broches_sueltos = val
+		if is_node_ready():
+			_actualizar_animacion_viento_o_broches()
+@export var velocidad_viento_minima: float = 4.0
+
+var carpa_recogida: bool = false
+var varillas_recogidas: bool = false
+var compuerta_izq_abierta: bool = false
+var compuerta_der_abierta: bool = false
+var _anim_player: AnimationPlayer = null
+var _compuerta_izq: Node3D = null
+var _compuerta_der: Node3D = null
+var _viento_activo: bool = false
+
 func tiene_patas_abajo() -> bool:
 	return patas_abajo
 
@@ -80,6 +97,8 @@ func _ready() -> void:
 	add_to_group("remolque")
 	add_to_group("trailers")
 	_eliminar_static_bodies_internos()
+	_asegurar_raycasts_ruedas()
+	_configurar_sistemas_carpa_y_compuertas()
 	
 	if tipo_ruedas != "":
 		aplicar_tipo_ruedas(tipo_ruedas)
@@ -115,6 +134,16 @@ func _ready() -> void:
 		_nodo_patas = _buscar_nodo_patas_recursivo(self)
 	if _nodo_patas:
 		_patas_pos_original = _nodo_patas.position
+		if not _patas_shape:
+			var cs_patas := CollisionShape3D.new()
+			cs_patas.name = "ColisionPatasApoyo"
+			var box_p := BoxShape3D.new()
+			box_p.size = Vector3(2.0, 0.90, 0.36)
+			cs_patas.shape = box_p
+			cs_patas.position = Vector3(0.0, 0.45, -1.98)
+			add_child(cs_patas)
+			_patas_shape = cs_patas
+		_patas_shape.disabled = not patas_abajo
 		print("[Patas] Nodo patas encontrado:", _nodo_patas.get_path(), " pos_original:", _patas_pos_original)
 		call_deferred("_crear_boton_sprite_patas")
 	else:
@@ -158,6 +187,12 @@ func _configurar_ruedas() -> void:
 
 	for r in ruedas:
 		r.configurar_desde_masa(masa_sobre_ejes, ruedas.size())
+		# Suspensión firme (20cm recorrido, 18% sag en reposo) para altura equilibrada sobre el suelo
+		r.largo_reposo = 0.20
+		var peso_por_rueda: float = masa_sobre_ejes * 9.81 / max(ruedas.size(), 1)
+		r.rigidez_muelle = maxf(peso_por_rueda / maxf(0.18 * r.largo_reposo, 0.001), 115000.0)
+		r.amortiguacion = r.rigidez_muelle * 0.085
+		r.target_position = Vector3(0, -(r.largo_reposo + r.radio_rueda + 0.45), 0)
 
 ## Aplica un tipo de rueda del catálogo a todas las ruedas del trailer
 func aplicar_tipo_ruedas(id_tipo: String) -> void:
@@ -168,8 +203,17 @@ func aplicar_tipo_ruedas(id_tipo: String) -> void:
 func _aplicar_tipo_ruedas_interno(id_tipo: String) -> void:
 	var ruedas: Array[RuedaTrailer] = []
 	_gather_ruedas(self, ruedas)
+	var usar_catalogo := id_tipo != "" and id_tipo != "original_carpado"
 	for r in ruedas:
+		if usar_catalogo:
+			var signo := 1.0 if r.position.x >= 0.0 else -1.0
+			r.position.x = signo * 1.05
+			r.rotation.y = PI if signo > 0.0 else 0.0
+		elif r.position.x > 0.0:
+			r.rotation.y = 0.0
 		r.aplicar_tipo_rueda(id_tipo)
+		if usar_catalogo and is_instance_valid(r.rueda_visual):
+			r.rueda_visual.scale.x *= 1.22
 		if color_rines.a > 0.001 or metallic_rines >= 0.0 or roughness_rines >= 0.0:
 			r.aplicar_color_rin(color_rines, metallic_rines, roughness_rines)
 	_configurar_ruedas()
@@ -257,6 +301,36 @@ func _physics_process(_delta: float) -> void:
 	# Failsafe anti-abismo: si el tráiler cae por debajo del mapa por algún glitch de colisión
 	if global_position.y < -12.0:
 		_rescatar_del_abismo()
+	_aplicar_estabilizador_antivuelco()
+	_actualizar_animacion_viento_o_broches()
+
+func _aplicar_estabilizador_antivuelco() -> void:
+	if freeze or sleeping:
+		return
+	var ruedas := obtener_ruedas()
+	if ruedas.is_empty():
+		return
+	var comp_izq := 0.0
+	var comp_der := 0.0
+	var n_izq := 0
+	var n_der := 0
+	for r in ruedas:
+		if not r.is_colliding():
+			continue
+		var dist := r.global_position.distance_to(r.get_collision_point())
+		var comp := clampf(r.largo_reposo - maxf(dist - r.radio_rueda, 0.0), 0.0, r.largo_reposo)
+		if r.position.x < 0.0:
+			comp_izq += comp
+			n_izq += 1
+		else:
+			comp_der += comp
+			n_der += 1
+	if n_izq > 0 and n_der > 0:
+		var diff := (comp_izq / float(n_izq)) - (comp_der / float(n_der))
+		var forward_axis := -global_transform.basis.orthonormalized().z
+		var roll_vel := angular_velocity.dot(forward_axis)
+		# Barra estabilizadora firme + amortiguación de balanceo para evitar vuelco en curvas
+		apply_torque(forward_axis * (diff * 220000.0 - roll_vel * 24000.0))
 
 
 func _rescatar_del_abismo() -> void:
@@ -421,19 +495,21 @@ func _snap_to_ground() -> void:
 	_gather_raycasts(self, raycasts)
 	var colliders := []
 	_gather_collision_objects(self, colliders)
-	var max_delta: float = 0.0
+	var max_delta: float = -INF
+	var any_hit := false
 	for rc in raycasts:
 		if rc is RayCast3D and rc.enabled:
 			for col in colliders:
 				rc.add_exception(col)
 			rc.force_raycast_update()
 			if rc.is_colliding():
+				any_hit = true
 				var cp: Vector3 = rc.get_collision_point()
 				var desired_len: float = 0.0
 				if rc.has_method("configurar_desde_masa") or "radio_rueda" in rc:
-					var r_rueda: float = float(rc.get("radio_rueda")) if "radio_rueda" in rc else 0.52
-					var l_repo: float = float(rc.get("largo_reposo")) if "largo_reposo" in rc else 0.16
-					desired_len = r_rueda + l_repo * 0.70
+					var r_rueda: float = float(rc.get("radio_rueda")) if "radio_rueda" in rc else 0.54
+					var l_repo: float = float(rc.get("largo_reposo")) if "largo_reposo" in rc else 0.24
+					desired_len = r_rueda + l_repo * 0.80
 				elif rc.target_position.y != 0.0:
 					desired_len = abs(rc.target_position.y) - 0.25
 				else:
@@ -445,10 +521,11 @@ func _snap_to_ground() -> void:
 				if debug_patas:
 					print("_snap_to_ground: rc=", rc.name, " cp=", cp, " desired_len=", desired_len, " delta=", delta, " collider=", rc.get_collider())
 
-	if max_delta > snap_clamp_max:
-		max_delta = snap_clamp_max
+	if not any_hit:
+		max_delta = 0.0
+	max_delta = clampf(max_delta, -1.5, snap_clamp_max)
 
-	if max_delta > 0.001:
+	if absf(max_delta) > 0.001:
 		global_transform.origin.y += max_delta
 		if debug_patas:
 			print("_snap_to_ground: moved trailer up by ", max_delta)
@@ -604,6 +681,7 @@ func _calcular_centro_de_masa(peso_carga_actual: float) -> Vector3:
 
 func _process(delta: float) -> void:
 	_actualizar_presencia_jugador_patas(delta)
+	_actualizar_ui_carpa_y_puertas(delta)
 
 	# Mantener el botón táctil 2D posicionado exactamente sobre el Sprite3D en pantalla
 	if _sprite_patas_visible and is_instance_valid(_sprite_patas) and _sprite_patas.visible:
@@ -825,3 +903,602 @@ func _mostrar_ocultar_sprite_patas(mostrar: bool) -> void:
 				_btn_pantalla_patas.visible = false
 		)
 
+
+
+# ════════════════════════════════════════════════════════════════════
+# AUTO-CONFIGURACIÓN DE RAYCASTS (RUEDAS), CARPA, VARILLAS Y COMPUERTAS
+# ════════════════════════════════════════════════════════════════════
+
+func _asegurar_raycasts_ruedas() -> void:
+	var ruedas_parent := find_child("Ruedas", true, false) as Node3D
+	if not ruedas_parent:
+		return
+	var script_rueda := load("res://modelos3d/vehiculos/Trailers/escenas/ruedatrailer.gd")
+	for hijo in ruedas_parent.get_children().duplicate():
+		if not (hijo is Node3D) or hijo is RayCast3D:
+			continue
+		if not hijo.name.begins_with("Rueda_"):
+			continue
+		var rc := RayCast3D.new()
+		if script_rueda:
+			rc.set_script(script_rueda)
+		rc.name = "RayCast_" + hijo.name
+		rc.transform = hijo.transform
+		# Altura ligeramente más baja (~0.60m) para que el tráiler no quede tan levantado
+		rc.position.y = maxf(hijo.position.y, 0.60)
+		rc.target_position = Vector3(0, -1.25, 0)
+		rc.enabled = true
+		rc.collision_mask = 1
+		rc.add_exception(self)
+		if script_rueda:
+			rc.set("largo_reposo", 0.28)
+			rc.set("radio_rueda", 0.54)
+			rc.set("rigidez_muelle", 85000.0)
+			rc.set("fuerza_suspension_max", 150000.0)
+			rc.set("agarre_lateral", 30.0)
+		ruedas_parent.remove_child(hijo)
+		rc.add_child(hijo)
+		hijo.transform = Transform3D.IDENTITY
+		if script_rueda:
+			rc.set("rueda_visual", hijo)
+		ruedas_parent.add_child(rc)
+
+
+func _configurar_sistemas_carpa_y_compuertas() -> void:
+	_anim_player = find_child("AnimationPlayer", true, false) as AnimationPlayer
+	_compuerta_izq = find_child("Compuerta_Trasera_Izq", true, false) as Node3D
+	_compuerta_der = find_child("Compuerta_Trasera_Der", true, false) as Node3D
+
+	if _compuerta_izq:
+		_crear_hitbox_interaccion(_compuerta_izq, "HitboxCompuertaIzq", Vector3(0.60, 0.90, 0.0), Vector3(1.15, 1.80, 0.22), Callable(self, "_interactuar_puerta_izq"))
+	if _compuerta_der:
+		_crear_hitbox_interaccion(_compuerta_der, "HitboxCompuertaDer", Vector3(-0.60, 0.90, 0.0), Vector3(1.15, 1.80, 0.22), Callable(self, "_interactuar_puerta_der"))
+
+	call_deferred("_crear_zona_y_puntos_interaccion")
+
+
+func _crear_hitbox_interaccion(padre: Node3D, nombre_body: String, offset_local: Vector3, tam_caja: Vector3, accion: Callable) -> void:
+	if padre.find_child(nombre_body, false, false):
+		return
+	var sb := StaticBody3D.new()
+	sb.name = nombre_body
+	# Capa 2 solo para RayCast de interacción del jugador (no colisiona con RigidBody3D en capa 1)
+	sb.collision_layer = 2
+	sb.collision_mask = 0
+	sb.position = offset_local
+	add_collision_exception_with(sb)
+	var script_inter := GDScript.new()
+	script_inter.source_code = """extends StaticBody3D
+var _cb: Callable
+func interactuar() -> void:
+	if _cb.is_valid():
+		_cb.call()
+"""
+	script_inter.reload()
+	sb.set_script(script_inter)
+	sb.set("_cb", accion)
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = tam_caja
+	cs.shape = box
+	sb.add_child(cs)
+	padre.add_child(sb)
+
+
+func _reproducir_anim(nombre: String, reversa: bool = false) -> void:
+	if not is_instance_valid(_anim_player) or not _anim_player.has_animation(nombre):
+		return
+	if reversa:
+		_anim_player.play_backwards(nombre)
+	else:
+		_anim_player.play(nombre)
+
+
+func recoger_carpa() -> void:
+	if carpa_recogida:
+		return
+	carpa_recogida = true
+	if broches_sueltos:
+		broches_sueltos = false
+	_reproducir_anim("Anim_Recoger_Carpa", false)
+	_refrescar_botones_carpa()
+
+
+func extender_carpa() -> void:
+	if not carpa_recogida or varillas_recogidas:
+		return
+	carpa_recogida = false
+	_reproducir_anim("Anim_Recoger_Carpa", true)
+	_refrescar_botones_carpa()
+
+
+func alternar_carpa() -> void:
+	if carpa_recogida:
+		extender_carpa()
+	else:
+		recoger_carpa()
+
+
+func recoger_varillas() -> void:
+	if varillas_recogidas or not carpa_recogida:
+		return
+	varillas_recogidas = true
+	_reproducir_anim("Anim_Recoger_Varillas", false)
+	_refrescar_botones_carpa()
+
+
+func extender_varillas() -> void:
+	if not varillas_recogidas:
+		return
+	varillas_recogidas = false
+	_reproducir_anim("Anim_Recoger_Varillas", true)
+	_refrescar_botones_carpa()
+
+
+func alternar_varillas() -> void:
+	if varillas_recogidas:
+		extender_varillas()
+	else:
+		recoger_varillas()
+
+
+func _actualizar_animacion_viento_o_broches() -> void:
+	if not is_instance_valid(_anim_player) or carpa_recogida:
+		return
+	if broches_sueltos:
+		if _anim_player.current_animation != "Anim_Broches_Sueltos" and _anim_player.has_animation("Anim_Broches_Sueltos"):
+			_anim_player.play("Anim_Broches_Sueltos")
+		return
+	elif _anim_player.current_animation == "Anim_Broches_Sueltos":
+		_anim_player.stop()
+		_resetear_forma_viento_y_broches()
+	var en_movimiento := linear_velocity.length() > velocidad_viento_minima
+	if en_movimiento and not _viento_activo:
+		_viento_activo = true
+		if _anim_player.has_animation("Anim_Viento_Trasero"):
+			_anim_player.play("Anim_Viento_Trasero")
+	elif not en_movimiento and _viento_activo:
+		_viento_activo = false
+		if _anim_player.current_animation == "Anim_Viento_Trasero":
+			_anim_player.stop()
+			_resetear_forma_viento_y_broches()
+
+
+func _resetear_forma_viento_y_broches() -> void:
+	var claves := ["Viento_Base", "Viento_Sin", "Viento_Cos", "Broches_Base", "Broches_Sin", "Broches_Cos"]
+	var carpa_root := find_child("Carpa", true, false)
+	if not carpa_root:
+		return
+	for hijo in carpa_root.get_children():
+		if hijo is MeshInstance3D:
+			var mi := hijo as MeshInstance3D
+			for c in claves:
+				var idx := mi.find_blend_shape_by_name(c)
+				if idx != -1:
+					mi.set_blend_shape_value(idx, 0.0)
+
+
+func alternar_compuerta_izq() -> void:
+	if not is_instance_valid(_compuerta_izq):
+		return
+	compuerta_izq_abierta = not compuerta_izq_abierta
+	var destino_y := -115.0 if compuerta_izq_abierta else 0.0
+	create_tween().tween_property(_compuerta_izq, "rotation_degrees:y", destino_y, 0.55).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+
+func alternar_compuerta_der() -> void:
+	if not is_instance_valid(_compuerta_der):
+		return
+	compuerta_der_abierta = not compuerta_der_abierta
+	var destino_y := 115.0 if compuerta_der_abierta else 0.0
+	create_tween().tween_property(_compuerta_der, "rotation_degrees:y", destino_y, 0.55).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+
+func bajar_compuerta_izq(bajar: bool = true) -> void:
+	if not is_instance_valid(_compuerta_izq):
+		return
+	compuerta_izq_abierta = bajar
+	var destino_x := -95.0 if bajar else 0.0
+	create_tween().tween_property(_compuerta_izq, "rotation_degrees:x", destino_x, 0.55).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+
+func bajar_compuerta_der(bajar: bool = true) -> void:
+	if not is_instance_valid(_compuerta_der):
+		return
+	compuerta_der_abierta = bajar
+	var destino_x := -95.0 if bajar else 0.0
+	create_tween().tween_property(_compuerta_der, "rotation_degrees:x", destino_x, 0.55).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+
+
+# ════════════════════════════════════════════════════════════════════
+# ZONA DE INTERACCIÓN (BROCHES / CARPA / VARILLAS) Y PUERTAS 3D PORTABLES
+# ════════════════════════════════════════════════════════════════════
+
+var _zona_carpa: Area3D = null
+var _jugador_en_zona_carpa: bool = false
+var _canvas_carpa: CanvasLayer = null
+var _panel_carpa: PanelContainer = null
+var _btn_broches: Button = null
+var _btn_carpa: Button = null
+var _btn_varillas: Button = null
+var _lbl_aviso_carpa: Label = null
+
+var _puertas_info: Dictionary = {} # "izq" / "der" -> { nodo, padre_orig, xf_orig, sprite, label, btn, en_trailer }
+var _puerta_en_mano: String = "" # "" | "izq" | "der"
+
+
+func _crear_zona_y_puntos_interaccion() -> void:
+	# 1. Área3D alrededor del tráiler para interactuar con broches, carpa y varillas
+	_zona_carpa = Area3D.new()
+	_zona_carpa.name = "ZonaInteraccionCarpa"
+	_zona_carpa.monitoring = true
+	_zona_carpa.monitorable = false
+	_zona_carpa.collision_layer = 0
+	_zona_carpa.collision_mask = 1
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(5.6, 3.6, 14.8)
+	cs.shape = box
+	cs.position = Vector3(0.0, 1.8, 0.8)
+	_zona_carpa.add_child(cs)
+	add_child(_zona_carpa)
+	_zona_carpa.body_entered.connect(_on_zona_carpa_entered)
+	_zona_carpa.body_exited.connect(_on_zona_carpa_exited)
+
+	_construir_ui_carpa()
+
+	# 2. Dos puntos 3D interactivos sobre las puertas traseras (agarrar / botar / colocar)
+	if is_instance_valid(_compuerta_izq):
+		_registrar_punto_puerta("izq", _compuerta_izq, Vector3(0.58, 0.92, 0.14))
+	if is_instance_valid(_compuerta_der):
+		_registrar_punto_puerta("der", _compuerta_der, Vector3(-0.58, 0.92, 0.14))
+
+
+func _on_zona_carpa_entered(body: Node) -> void:
+	if body.is_in_group("jugador") or body.is_in_group("player"):
+		_jugador_en_zona_carpa = true
+		_mostrar_ocultar_ui_carpa(true)
+
+
+func _on_zona_carpa_exited(body: Node) -> void:
+	if body.is_in_group("jugador") or body.is_in_group("player"):
+		_jugador_en_zona_carpa = false
+		_mostrar_ocultar_ui_carpa(false)
+
+
+func _estilo_panel_glass_carpa() -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.90)
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.22)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(12)
+	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
+	sb.shadow_size = 6
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 12
+	sb.content_margin_bottom = 12
+	return sb
+
+
+func _estilo_boton_glass_carpa(acento: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.09, 0.11, 0.82)
+	sb.border_color = acento
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(10)
+	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.35)
+	sb.shadow_size = 4
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	return sb
+
+
+func _construir_ui_carpa() -> void:
+	if is_instance_valid(_canvas_carpa):
+		_canvas_carpa.queue_free()
+	_canvas_carpa = CanvasLayer.new()
+	_canvas_carpa.name = "CanvasCarpaInteraccion"
+	_canvas_carpa.layer = 124
+	add_child(_canvas_carpa)
+
+	_panel_carpa = PanelContainer.new()
+	_panel_carpa.add_theme_stylebox_override("panel", _estilo_panel_glass_carpa())
+	_panel_carpa.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_panel_carpa.offset_left = -430.0
+	_panel_carpa.offset_right = 430.0
+	_panel_carpa.offset_top = -210.0
+	_panel_carpa.offset_bottom = -38.0
+	_panel_carpa.visible = false
+	_panel_carpa.modulate.a = 0.0
+	_canvas_carpa.add_child(_panel_carpa)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	_panel_carpa.add_child(vb)
+
+	var hb := HBoxContainer.new()
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.add_theme_constant_override("separation", 14)
+	vb.add_child(hb)
+
+	var font_res: Font = load("res://recursos/fonts/Moderniz.otf") if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf") else null
+
+	_btn_broches = Button.new()
+	_btn_broches.custom_minimum_size = Vector2(255, 76)
+	_btn_broches.focus_mode = Control.FOCUS_NONE
+	_btn_broches.add_theme_stylebox_override("normal", _estilo_boton_glass_carpa(Color(0.78, 0.81, 0.85, 0.25)))
+	_btn_broches.add_theme_stylebox_override("pressed", _estilo_boton_glass_carpa(Color(0.88, 0.68, 0.28, 0.92)))
+	_btn_broches.add_theme_font_size_override("font_size", 22)
+	if font_res: _btn_broches.add_theme_font_override("font", font_res)
+	_btn_broches.pressed.connect(func():
+		broches_sueltos = not broches_sueltos
+		_refrescar_botones_carpa()
+	)
+	hb.add_child(_btn_broches)
+
+	_btn_carpa = Button.new()
+	_btn_carpa.custom_minimum_size = Vector2(255, 76)
+	_btn_carpa.focus_mode = Control.FOCUS_NONE
+	_btn_carpa.add_theme_stylebox_override("normal", _estilo_boton_glass_carpa(Color(0.88, 0.68, 0.28, 0.92)))
+	_btn_carpa.add_theme_stylebox_override("pressed", _estilo_boton_glass_carpa(Color(1.0, 0.8, 0.35, 1.0)))
+	_btn_carpa.add_theme_font_size_override("font_size", 22)
+	if font_res: _btn_carpa.add_theme_font_override("font", font_res)
+	_btn_carpa.pressed.connect(func():
+		if carpa_recogida and varillas_recogidas:
+			if is_instance_valid(_lbl_aviso_carpa):
+				_lbl_aviso_carpa.text = "Coloca primero las varillas antes de extender la carpa"
+			return
+		alternar_carpa()
+	)
+	hb.add_child(_btn_carpa)
+
+	_btn_varillas = Button.new()
+	_btn_varillas.custom_minimum_size = Vector2(265, 76)
+	_btn_varillas.focus_mode = Control.FOCUS_NONE
+	_btn_varillas.add_theme_stylebox_override("normal", _estilo_boton_glass_carpa(Color(0.88, 0.68, 0.28, 0.70)))
+	_btn_varillas.add_theme_stylebox_override("pressed", _estilo_boton_glass_carpa(Color(1.0, 0.8, 0.35, 1.0)))
+	_btn_varillas.add_theme_font_size_override("font_size", 22)
+	if font_res: _btn_varillas.add_theme_font_override("font", font_res)
+	_btn_varillas.pressed.connect(func():
+		if not carpa_recogida and not varillas_recogidas:
+			if is_instance_valid(_lbl_aviso_carpa):
+				_lbl_aviso_carpa.text = "Primero debes recoger la carpa antes que las varillas"
+			return
+		alternar_varillas()
+	)
+	hb.add_child(_btn_varillas)
+
+	_lbl_aviso_carpa = Label.new()
+	_lbl_aviso_carpa.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_aviso_carpa.add_theme_font_size_override("font_size", 18)
+	_lbl_aviso_carpa.add_theme_color_override("font_color", Color(0.88, 0.68, 0.28, 0.92))
+	if font_res: _lbl_aviso_carpa.add_theme_font_override("font", font_res)
+	vb.add_child(_lbl_aviso_carpa)
+
+	_refrescar_botones_carpa()
+
+
+func _refrescar_botones_carpa() -> void:
+	if not is_instance_valid(_btn_broches):
+		return
+	_btn_broches.text = "AMARRAR BROCHES" if broches_sueltos else "SOLTAR BROCHES"
+	_btn_broches.disabled = carpa_recogida
+
+	_btn_carpa.text = "EXTENDER CARPA" if carpa_recogida else "RECOGER CARPA"
+	_btn_carpa.disabled = carpa_recogida and varillas_recogidas
+
+	_btn_varillas.text = "PONER VARILLAS" if varillas_recogidas else "RECOGER VARILLAS"
+	_btn_varillas.disabled = (not carpa_recogida) and (not varillas_recogidas)
+
+	if is_instance_valid(_lbl_aviso_carpa):
+		if not carpa_recogida:
+			_lbl_aviso_carpa.text = "Recoge primero la carpa para poder recoger las varillas"
+		elif not varillas_recogidas:
+			_lbl_aviso_carpa.text = "Carpa recogida · Ya puedes recoger las varillas"
+		else:
+			_lbl_aviso_carpa.text = "Carpa y varillas recogidas"
+
+
+func _mostrar_ocultar_ui_carpa(mostrar: bool) -> void:
+	if not is_instance_valid(_panel_carpa):
+		return
+	var iv := get_node_or_null("/root/InputVehiculo")
+	var conduciendo: bool = iv and "conduciendo" in iv and iv.conduciendo
+	if mostrar and not conduciendo:
+		_refrescar_botones_carpa()
+		_panel_carpa.visible = true
+		_panel_carpa.pivot_offset = _panel_carpa.size * 0.5
+		_panel_carpa.scale = Vector2(0.92, 0.92)
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(_panel_carpa, "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(_panel_carpa, "modulate:a", 1.0, 0.24).set_ease(Tween.EASE_OUT)
+	else:
+		var tw := create_tween().set_parallel(true)
+		tw.tween_property(_panel_carpa, "scale", Vector2(0.92, 0.92), 0.20).set_ease(Tween.EASE_IN)
+		tw.tween_property(_panel_carpa, "modulate:a", 0.0, 0.18)
+		tw.chain().tween_callback(func():
+			if is_instance_valid(_panel_carpa) and not _jugador_en_zona_carpa:
+				_panel_carpa.visible = false
+		)
+
+
+func _registrar_punto_puerta(id: String, nodo: Node3D, pos_local: Vector3) -> void:
+	var spr := Sprite3D.new()
+	spr.name = "Punto3DPuerta_" + id
+	var img := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for y in range(64):
+		for x in range(64):
+			var d := Vector2(x - 31.5, y - 31.5).length()
+			if d <= 26.0 and d >= 18.0:
+				img.set_pixel(x, y, Color(0.88, 0.68, 0.28, 0.95))
+			elif d < 18.0:
+				img.set_pixel(x, y, Color(0.06, 0.07, 0.08, 0.88))
+	spr.texture = ImageTexture.create_from_image(img)
+	spr.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	spr.pixel_size = 0.0062
+	spr.no_depth_test = true
+	spr.render_priority = 5
+	spr.position = pos_local
+	spr.visible = false
+	nodo.add_child(spr)
+
+	var lbl := Label3D.new()
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.pixel_size = 0.0032
+	lbl.no_depth_test = true
+	lbl.render_priority = 6
+	lbl.position = Vector3(0, 0.30, 0)
+	lbl.font_size = 28
+	lbl.outline_size = 6
+	lbl.modulate = Color(0.88, 0.68, 0.28)
+	lbl.outline_modulate = Color(0.06, 0.07, 0.08, 0.95)
+	if ResourceLoader.exists("res://recursos/fonts/Moderniz.otf"):
+		lbl.font = load("res://recursos/fonts/Moderniz.otf")
+	lbl.text = "AGARRAR PUERTA"
+	spr.add_child(lbl)
+
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(200, 200)
+	btn.size = Vector2(200, 200)
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.visible = false
+	btn.pressed.connect(func(): _interactuar_puerta(id))
+	_canvas_carpa.add_child(btn)
+
+	_puertas_info[id] = {
+		"nodo": nodo,
+		"padre_orig": nodo.get_parent(),
+		"xf_orig": nodo.transform,
+		"sprite": spr,
+		"label": lbl,
+		"btn": btn,
+		"en_trailer": true,
+	}
+
+
+func _interactuar_puerta_izq() -> void:
+	_interactuar_puerta("izq")
+
+
+func _interactuar_puerta_der() -> void:
+	_interactuar_puerta("der")
+
+
+func _interactuar_puerta(id: String) -> void:
+	if not _puertas_info.has(id):
+		return
+	var info: Dictionary = _puertas_info[id]
+	var nodo: Node3D = info["nodo"]
+	var padre_orig: Node3D = info["padre_orig"]
+	var xf_orig: Transform3D = info["xf_orig"]
+	if not is_instance_valid(nodo) or not is_instance_valid(padre_orig):
+		return
+
+	var tree := get_tree()
+	var j := tree.get_first_node_in_group("jugador") as Node3D if tree else null
+	if not is_instance_valid(j):
+		j = tree.get_first_node_in_group("player") as Node3D if tree else null
+
+	# Si tenemos otra puerta en la mano, no agarrar segunda
+	if _puerta_en_mano != "" and _puerta_en_mano != id:
+		return
+
+	if _puerta_en_mano == id:
+		# Soltar o volver a colocar en el tráiler si está cerca de su bisagra
+		var pos_bisagra := padre_orig.to_global(xf_orig.origin)
+		if nodo.global_position.distance_to(pos_bisagra) <= 2.4:
+			nodo.get_parent().remove_child(nodo)
+			padre_orig.add_child(nodo)
+			nodo.transform = xf_orig
+			info["en_trailer"] = true
+			_puerta_en_mano = ""
+		else:
+			# Botar / dejar caer acostada en el suelo (no parada)
+			var cam := get_viewport().get_camera_3d()
+			var drop_pos := nodo.global_position
+			if cam:
+				var space := get_world_3d().direct_space_state
+				var q := PhysicsRayQueryParameters3D.create(drop_pos + Vector3.UP * 1.2, drop_pos + Vector3.DOWN * 5.0)
+				q.collision_mask = 1
+				var hit := space.intersect_ray(q)
+				if not hit.is_empty():
+					drop_pos.y = hit["position"].y + 0.06
+			info["en_trailer"] = false
+			_puerta_en_mano = ""
+			var tw_caida := create_tween().set_parallel(true)
+			tw_caida.tween_property(nodo, "global_position", drop_pos, 0.32).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw_caida.tween_property(nodo, "rotation_degrees:x", -90.0, 0.32).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+		return
+
+	# Agarrar la puerta (ya sea del tráiler o del suelo)
+	var escena_raiz := tree.current_scene if tree and tree.current_scene else tree.root
+	if nodo.get_parent() != escena_raiz:
+		var gxf := nodo.global_transform
+		nodo.get_parent().remove_child(nodo)
+		escena_raiz.add_child(nodo)
+		nodo.global_transform = gxf
+	info["en_trailer"] = false
+	_puerta_en_mano = id
+
+
+func _actualizar_ui_carpa_y_puertas(_delta: float) -> void:
+	var tree := get_tree()
+	if not tree:
+		return
+	var j := tree.get_first_node_in_group("jugador") as Node3D
+	if not is_instance_valid(j):
+		j = tree.get_first_node_in_group("player") as Node3D
+	var iv := get_node_or_null("/root/InputVehiculo")
+	var conduciendo: bool = iv and "conduciendo" in iv and iv.conduciendo
+
+	if conduciendo and is_instance_valid(_panel_carpa) and _panel_carpa.visible:
+		_mostrar_ocultar_ui_carpa(false)
+
+	var cam := get_viewport().get_camera_3d()
+
+	# Si lleva una puerta en mano, posicionarla suavemente delante de la cámara
+	if _puerta_en_mano != "" and _puertas_info.has(_puerta_en_mano) and is_instance_valid(cam):
+		var p_info: Dictionary = _puertas_info[_puerta_en_mano]
+		var p_nodo: Node3D = p_info["nodo"]
+		if is_instance_valid(p_nodo):
+			var fwd := -cam.global_transform.basis.z
+			fwd.y = 0.0
+			if fwd.length() < 0.01: fwd = Vector3.FORWARD
+			fwd = fwd.normalized()
+			p_nodo.global_position = cam.global_position + fwd * 1.55 + Vector3.DOWN * 0.85
+			p_nodo.global_rotation = Vector3(0.0, cam.global_rotation.y, 0.0)
+
+	# Actualizar visibilidad y proyección 2D de los dos puntos 3D de las puertas
+	for id in _puertas_info:
+		var info: Dictionary = _puertas_info[id]
+		var spr: Sprite3D = info["sprite"]
+		var lbl: Label3D = info["label"]
+		var btn: Button = info["btn"]
+		var nodo: Node3D = info["nodo"]
+		var padre_orig: Node3D = info["padre_orig"]
+		var xf_orig: Transform3D = info["xf_orig"]
+		if not is_instance_valid(spr) or not is_instance_valid(nodo) or not is_instance_valid(btn):
+			continue
+
+		var mostrar := false
+		if not conduciendo and is_instance_valid(j):
+			if _puerta_en_mano == id:
+				mostrar = true
+				var pos_bisagra := padre_orig.to_global(xf_orig.origin) if is_instance_valid(padre_orig) else Vector3.ZERO
+				lbl.text = "COLOCAR EN TRÁILER" if (is_instance_valid(padre_orig) and nodo.global_position.distance_to(pos_bisagra) <= 2.4) else "SOLTAR AQUÍ"
+			elif _puerta_en_mano == "":
+				mostrar = spr.global_position.distance_to(j.global_position) <= 4.2
+				lbl.text = "AGARRAR PUERTA"
+
+		spr.visible = mostrar
+		if mostrar and is_instance_valid(cam) and not cam.is_position_behind(spr.global_position):
+			var sp := cam.unproject_position(spr.global_position)
+			btn.global_position = sp - btn.size * 0.5
+			btn.visible = true
+		else:
+			btn.visible = false

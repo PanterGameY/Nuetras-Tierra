@@ -1,12 +1,18 @@
 class_name RepositorioMapasComunidad
 extends Node
 
-## RepositorioMapasComunidad.gd — Publicación, listado en Supabase y descarga para jugar en "Descubrir"
+## RepositorioMapasComunidad.gd — Publicación (100 Esmeraldas), listado ligero en Supabase,
+## descarga (10 Esmeraldas -> +1 al creador) y Biblioteca local.
 
 signal mapas_cargados(lista: Array[Dictionary])
 signal subida_completada(exito: bool, mensaje: String)
 
 const TABLA_SUPABASE := "mapas_comunidad"
+const PRECIO_DESCARGA_ESMERALDAS := 10
+const PRECIO_SUBIDA_ESMERALDAS := 100
+const RECOMPENSA_CREADOR_DESCARGA := 1
+const MAX_BYTES_PAQUETE := 5242880 # 5 MB máx. comprimido
+const LIMITE_PAGINA := 20
 const DIR_MAPAS_LOCAL := "user://mapas"
 const DIR_CACHE_PC := "user://mapas_comunidad_cache"
 const DIR_CACHE_PORTADAS := "user://mapas_comunidad_cache/portadas"
@@ -27,15 +33,17 @@ func _obtener_supabase_key() -> String:
 
 func _obtener_headers_supabase(extra: PackedStringArray = PackedStringArray()) -> PackedStringArray:
 	var key := _obtener_supabase_key()
-	var token := key
-	var sm := get_node_or_null("/root/SupabaseManager")
-	if sm and "access_token" in sm and not str(sm.access_token).is_empty():
-		token = str(sm.access_token)
 	var headers := PackedStringArray([
 		"apikey: " + key,
-		"Authorization: Bearer " + token,
 		"Content-Type: application/json"
 	])
+	var sm := get_node_or_null("/root/SupabaseManager")
+	if sm and "access_token" in sm:
+		var tok := str(sm.access_token).strip_edges()
+		if not tok.is_empty():
+			headers.append("Authorization: Bearer " + tok)
+	elif key.contains("."):
+		headers.append("Authorization: Bearer " + key)
 	for h in extra:
 		headers.append(h)
 	return headers
@@ -54,8 +62,38 @@ func _leer_texto_ntmap(ruta: String) -> String:
 		return txt_p
 	return ""
 
-func cargar_mapas_comunidad() -> void:
-	var url := "%s/rest/v1/%s?select=*&order=fecha.desc&limit=60" % [_obtener_supabase_url(), TABLA_SUPABASE]
+func buscar_mapa_por_nombre_async(nombre_mapa: String, callback: Callable) -> void:
+	var objetivo := nombre_mapa.strip_edges()
+	if objetivo.is_empty():
+		callback.call({})
+		return
+	var campos := "id,id_mapa,nombre,autor,autor_uid,categoria,descripcion,portada_url,num_vias,num_objetos,descargas,fecha,tamano_bytes"
+	var url := "%s/rest/v1/%s?select=%s&nombre=ilike.%s&limit=1" % [
+		_obtener_supabase_url(), TABLA_SUPABASE, campos, objetivo.uri_encode()
+	]
+	var http := HTTPRequest.new()
+	http.timeout = 12.0
+	add_child(http)
+	http.request_completed.connect(func(res: int, status: int, _hdrs: PackedStringArray, body: PackedByteArray):
+		http.queue_free()
+		if res == HTTPRequest.RESULT_SUCCESS and status >= 200 and status < 300:
+			var j := JSON.new()
+			if j.parse(body.get_string_from_utf8()) == OK and j.data is Array and not (j.data as Array).is_empty():
+				var d = (j.data as Array)[0]
+				if d is Dictionary:
+					callback.call(_normalizar_doc_comunidad(d))
+					return
+		callback.call({})
+	)
+	var err := http.request(url, _obtener_headers_supabase(), HTTPClient.METHOD_GET)
+	if err != OK:
+		http.queue_free()
+		callback.call({})
+
+func cargar_mapas_comunidad(offset: int = 0, limite: int = LIMITE_PAGINA) -> void:
+	# Consulta ligera: solo metadatos (sin descargar ntmap_b64 ni terreno_zip_b64 hasta que el jugador compre/descargue)
+	var campos := "id,id_mapa,nombre,autor,autor_uid,categoria,descripcion,portada_url,num_vias,num_objetos,descargas,fecha,tamano_bytes"
+	var url := "%s/rest/v1/%s?select=%s&order=fecha.desc&limit=%d&offset=%d" % [_obtener_supabase_url(), TABLA_SUPABASE, campos, limite, offset]
 	var http := HTTPRequest.new()
 	http.timeout = 12.0
 	add_child(http)
@@ -76,22 +114,73 @@ func cargar_mapas_comunidad() -> void:
 		var vacia: Array[Dictionary] = []
 		mapas_cargados.emit(vacia)
 
-func _empaquetar_terreno_zip_b64(dir_terreno: String) -> String:
+func cargar_estadisticas_creador_async(callback: Callable) -> void:
+	var du = get_node_or_null("/root/DatosUsuario")
+	var sm = get_node_or_null("/root/SupabaseManager")
+	var autor_uid := ""
+	var autor := ""
+	if du:
+		if "supabase_uid" in du:
+			autor_uid = str(du.supabase_uid).strip_edges()
+		if "nombre_usuario" in du:
+			autor = str(du.nombre_usuario).strip_edges()
+	if autor_uid.is_empty() and sm and "user_id" in sm:
+		autor_uid = str(sm.user_id).strip_edges()
+
+	var filtro := ""
+	if not autor_uid.is_empty():
+		filtro = "autor_uid=eq.%s" % autor_uid.uri_encode()
+	elif not autor.is_empty():
+		filtro = "autor=eq.%s" % autor.uri_encode()
+	else:
+		callback.call({"exito": false, "mapas": [], "mensaje": "Inicia sesión para ver tus estadísticas de creador."})
+		return
+
+	var campos := "id,id_mapa,nombre,autor,autor_uid,categoria,num_vias,num_objetos,descargas,fecha,tamano_bytes"
+	var url := "%s/rest/v1/%s?select=%s&%s&order=descargas.desc,fecha.desc" % [
+		_obtener_supabase_url(), TABLA_SUPABASE, campos, filtro
+	]
+	var http := HTTPRequest.new()
+	http.timeout = 12.0
+	add_child(http)
+	http.request_completed.connect(func(res: int, status: int, _hdrs: PackedStringArray, body: PackedByteArray):
+		http.queue_free()
+		if res != HTTPRequest.RESULT_SUCCESS or status < 200 or status >= 300:
+			callback.call({"exito": false, "mapas": [], "mensaje": "Error al consultar estadísticas (%d)." % status})
+			return
+		var lista: Array[Dictionary] = []
+		var j := JSON.new()
+		if j.parse(body.get_string_from_utf8()) == OK and j.data is Array:
+			for d in j.data:
+				if d is Dictionary:
+					lista.append(_normalizar_doc_comunidad(d))
+		callback.call({"exito": true, "mapas": lista, "mensaje": ""})
+	)
+	var err := http.request(url, _obtener_headers_supabase(), HTTPClient.METHOD_GET)
+	if err != OK:
+		http.queue_free()
+		callback.call({"exito": false, "mapas": [], "mensaje": "No se pudo conectar con Supabase."})
+
+func _empaquetar_terreno_zip_b64(dir_terreno: String) -> Dictionary:
 	if not DirAccess.dir_exists_absolute(dir_terreno):
-		return ""
+		return {"b64": "", "bytes": 0}
 	var d := DirAccess.open(dir_terreno)
 	if not d:
-		return ""
+		return {"b64": "", "bytes": 0}
 	var archivos: Array[String] = []
+	var peso_res_total := 0
 	for fn in d.get_files():
 		if fn.ends_with(".res"):
 			archivos.append(fn)
-	if archivos.is_empty():
-		return ""
+			peso_res_total += FileAccess.get_file_as_bytes(dir_terreno + "/" + fn).size()
+	# Si es un único cuadro plano sin esculpir (<= 10 KB), omitir subida de terreno para ahorrar 95% de espacio
+	if archivos.is_empty() or (archivos.size() == 1 and peso_res_total <= 10240):
+		return {"b64": "", "bytes": 0}
+
 	var zip_path := "user://_tmp_terreno_upload.zip"
 	var zp := ZIPPacker.new()
 	if zp.open(zip_path) != OK:
-		return ""
+		return {"b64": "", "bytes": 0}
 	for fn in archivos:
 		var bytes := FileAccess.get_file_as_bytes(dir_terreno + "/" + fn)
 		if not bytes.is_empty():
@@ -102,8 +191,8 @@ func _empaquetar_terreno_zip_b64(dir_terreno: String) -> String:
 	var zip_bytes := FileAccess.get_file_as_bytes(zip_path)
 	DirAccess.remove_absolute(zip_path)
 	if zip_bytes.is_empty():
-		return ""
-	return Marshalls.raw_to_base64(zip_bytes)
+		return {"b64": "", "bytes": 0}
+	return {"b64": Marshalls.raw_to_base64(zip_bytes), "bytes": zip_bytes.size()}
 
 func _generar_identificador_mapa() -> String:
 	var rng := RandomNumberGenerator.new()
@@ -113,6 +202,13 @@ func _generar_identificador_mapa() -> String:
 func subir_mapa(ruta_ntmap: String, categoria: String, descripcion: String, portada_url: String = "") -> Dictionary:
 	if not FileAccess.file_exists(ruta_ntmap):
 		return {"exito": false, "mensaje": "No se encontró el archivo del mapa."}
+
+	var du = get_node_or_null("/root/DatosUsuario")
+	if not du or not ("pases_mapa" in du):
+		return {"exito": false, "mensaje": "No se pudo verificar tus Pases de Mapa."}
+	if int(du.pases_mapa) < 1:
+		return {"exito": false, "mensaje": "Necesitas 1 Pase de Mapa para publicar. Cómpralo en la Tienda (100 Esmeraldas)."}
+
 	var texto := _leer_texto_ntmap(ruta_ntmap)
 	if texto.is_empty():
 		return {"exito": false, "mensaje": "No se pudo leer el archivo del mapa."}
@@ -122,26 +218,30 @@ func subir_mapa(ruta_ntmap: String, categoria: String, descripcion: String, port
 		return {"exito": false, "mensaje": "El archivo del mapa no es válido."}
 	var datos: Dictionary = json.data
 
+	var ntmap_bytes := FileAccess.get_file_as_bytes(ruta_ntmap)
+	var terr_res := _empaquetar_terreno_zip_b64(ruta_ntmap.get_basename() + "_terreno")
+	var tamano_total_bytes: int = ntmap_bytes.size() + int(terr_res.get("bytes", 0))
+	if tamano_total_bytes > MAX_BYTES_PAQUETE:
+		return {"exito": false, "mensaje": "El mapa supera el límite de 5 MB comprimido (%s)." % _formatear_peso(tamano_total_bytes)}
+
 	var nombre := str(datos.get("nombre", ruta_ntmap.get_file().get_basename()))
 	var autor := str(datos.get("autor", "Conductor"))
 	var autor_uid := ""
-	var du = get_node_or_null("/root/DatosUsuario")
-	if du:
-		if "nombre_usuario" in du and str(du.nombre_usuario).strip_edges() != "":
-			autor = str(du.nombre_usuario)
-		if "supabase_uid" in du and str(du.supabase_uid) != "":
-			autor_uid = str(du.supabase_uid)
+	if "nombre_usuario" in du and str(du.nombre_usuario).strip_edges() != "":
+		autor = str(du.nombre_usuario)
+	if "supabase_uid" in du and str(du.supabase_uid) != "":
+		autor_uid = str(du.supabase_uid)
 	var sm := get_node_or_null("/root/SupabaseManager")
 	if autor_uid.is_empty() and sm and "user_id" in sm:
 		autor_uid = str(sm.user_id)
 
 	var doc_id := _generar_identificador_mapa()
-
-	var ntmap_bytes := FileAccess.get_file_as_bytes(ruta_ntmap)
 	var ntmap_b64 := Marshalls.raw_to_base64(ntmap_bytes)
-	var terreno_zip_b64 := _empaquetar_terreno_zip_b64(ruta_ntmap.get_basename() + "_terreno")
+	var terreno_zip_b64 := str(terr_res.get("b64", ""))
 	var portada_limpia := portada_url.strip_edges()
 
+	var vias_arr: Array = datos.get("carreteras", []) if datos.get("carreteras") is Array else []
+	var objs_arr: Array = datos.get("objetos", []) if datos.get("objetos") is Array else []
 	var payload := {
 		"id_mapa": doc_id,
 		"nombre": nombre,
@@ -150,43 +250,116 @@ func subir_mapa(ruta_ntmap: String, categoria: String, descripcion: String, port
 		"categoria": categoria,
 		"descripcion": descripcion.strip_edges() if not descripcion.strip_edges().is_empty() else "Ruta publicada por la comunidad de Nuestra Tierra.",
 		"portada_url": portada_limpia,
-		"num_vias": (datos.get("carreteras", []) as Array).size(),
-		"num_objetos": (datos.get("objetos", []) as Array).size(),
+		"num_vias": vias_arr.size(),
+		"num_objetos": objs_arr.size(),
 		"descargas": 0,
 		"fecha": int(Time.get_unix_time_from_system()),
+		"tamano_bytes": tamano_total_bytes,
 		"ntmap_b64": ntmap_b64,
 		"terreno_zip_b64": terreno_zip_b64
 	}
 
-	_guardar_en_cache_local(doc_id, payload)
-
 	var url := "%s/rest/v1/%s" % [_obtener_supabase_url(), TABLA_SUPABASE]
 	var http := HTTPRequest.new()
-	http.timeout = 20.0
+	http.timeout = 25.0
 	add_child(http)
 	http.request_completed.connect(func(res: int, status: int, _hdrs: PackedStringArray, resp_body: PackedByteArray):
 		http.queue_free()
 		if res == HTTPRequest.RESULT_SUCCESS and status >= 200 and status < 300:
-			subida_completada.emit(true, "¡Mapa publicado en Descubrir! ID: %s" % doc_id)
+			du.pases_mapa = maxi(0, int(du.pases_mapa) - 1)
+			if du.has_method("save_local"):
+				du.save_local()
+			_guardar_en_cache_local(doc_id, payload)
+			subida_completada.emit(true, "¡Mapa publicado (-1 Pase de Mapa)! ID: %s" % doc_id)
 		else:
-			var err_txt := resp_body.get_string_from_utf8().left(140)
-			push_warning("[RepositorioMapasComunidad] Supabase POST %d: %s" % [status, err_txt])
-			subida_completada.emit(true, "Guardado localmente (error Supabase %d)." % status)
+			var err_txt := resp_body.get_string_from_utf8().left(220)
+			push_warning("[RepositorioMapasComunidad] Supabase POST %d (res=%d): %s" % [status, res, err_txt])
+			subida_completada.emit(false, "Error al publicar en Supabase (%d): %s" % [status, err_txt if not err_txt.is_empty() else "Sin respuesta"])
 	)
 	var headers := _obtener_headers_supabase(PackedStringArray(["Prefer: return=minimal"]))
 	var err := http.request(url, headers, HTTPClient.METHOD_POST, JSON.stringify(payload))
 	if err != OK:
 		http.queue_free()
-		subida_completada.emit(true, "Mapa publicado en caché local.")
-		return {"exito": true, "mensaje": "Mapa guardado localmente."}
+		subida_completada.emit(false, "No se pudo conectar con Supabase (código %d)." % err)
+		return {"exito": false, "mensaje": "Error de conexión al publicar."}
 
-	return {"exito": true, "mensaje": "Publicando mapa en Supabase..."}
+	return {"exito": true, "mensaje": "Publicando mapa en la nube..."}
 
 func mapa_ya_descargado(id_mapa: String) -> bool:
 	return FileAccess.file_exists(_ruta_local_comunidad(id_mapa))
 
 func ruta_mapa_descargado(id_mapa: String) -> String:
 	return _ruta_local_comunidad(id_mapa)
+
+func descargar_y_preparar_async(item: Dictionary, callback: Callable) -> void:
+	var id_mapa := str(item.get("id_mapa", ""))
+	if id_mapa.is_empty():
+		callback.call({"exito": false, "mensaje": "Mapa inválido."})
+		return
+
+	# Si ya está en la biblioteca local, abrir directo sin cobrar ni descargar
+	if mapa_ya_descargado(id_mapa):
+		callback.call(preparar_mapa_para_jugar(item))
+		return
+
+	# Verificar saldo antes de descargar
+	var du = get_node_or_null("/root/DatosUsuario")
+	if not du or not ("esmeraldas" in du):
+		callback.call({"exito": false, "mensaje": "No se pudo verificar tu saldo de esmeraldas."})
+		return
+	if int(du.esmeraldas) < PRECIO_DESCARGA_ESMERALDAS:
+		callback.call({"exito": false, "mensaje": "Necesitas %d esmeraldas para descargar este mapa (tienes %d)." % [PRECIO_DESCARGA_ESMERALDAS, int(du.esmeraldas)]})
+		return
+
+	# Si el item ya trae el payload completo, preparar de inmediato
+	if not str(item.get("ntmap_b64", "")).is_empty() or not str(item.get("datos_json", "")).is_empty():
+		var res_dir := preparar_mapa_para_jugar(item)
+		if res_dir.get("exito", false):
+			_registrar_descarga_en_supabase(id_mapa)
+		callback.call(res_dir)
+		return
+
+	# Descargar únicamente el payload de este mapa desde Supabase
+	var url := "%s/rest/v1/%s?select=ntmap_b64,terreno_zip_b64&id_mapa=eq.%s&limit=1" % [
+		_obtener_supabase_url(), TABLA_SUPABASE, id_mapa.uri_encode()
+	]
+	var http := HTTPRequest.new()
+	http.timeout = 20.0
+	add_child(http)
+	http.request_completed.connect(func(res: int, status: int, _hdrs: PackedStringArray, body: PackedByteArray):
+		http.queue_free()
+		if res != HTTPRequest.RESULT_SUCCESS or status < 200 or status >= 300:
+			push_warning("[RepositorioMapasComunidad] Supabase GET descarga %d: %s" % [status, body.get_string_from_utf8().left(160)])
+			callback.call({"exito": false, "mensaje": "Error al descargar el mapa (%d)." % status})
+			return
+		var j := JSON.new()
+		if j.parse(body.get_string_from_utf8()) != OK or not (j.data is Array) or (j.data as Array).is_empty():
+			callback.call({"exito": false, "mensaje": "No se encontraron los datos del mapa en el servidor."})
+			return
+		var fila: Dictionary = j.data[0]
+		var item_completo := item.duplicate()
+		item_completo["ntmap_b64"] = str(fila.get("ntmap_b64", ""))
+		item_completo["terreno_zip_b64"] = str(fila.get("terreno_zip_b64", ""))
+		var res_prep := preparar_mapa_para_jugar(item_completo)
+		if res_prep.get("exito", false):
+			_registrar_descarga_en_supabase(id_mapa)
+		callback.call(res_prep)
+	)
+	var err := http.request(url, _obtener_headers_supabase(), HTTPClient.METHOD_GET)
+	if err != OK:
+		http.queue_free()
+		callback.call({"exito": false, "mensaje": "No se pudo conectar con el servidor."})
+
+func _registrar_descarga_en_supabase(id_mapa: String) -> void:
+	# Llama a la función RPC de Supabase para sumar +1 descarga y acreditar +1 esmeralda al creador
+	var url := "%s/rest/v1/rpc/registrar_descarga_mapa" % _obtener_supabase_url()
+	var http := HTTPRequest.new()
+	http.timeout = 10.0
+	add_child(http)
+	http.request_completed.connect(func(_r: int, _s: int, _h: PackedStringArray, _b: PackedByteArray):
+		http.queue_free()
+	)
+	http.request(url, _obtener_headers_supabase(), HTTPClient.METHOD_POST, JSON.stringify({"p_id_mapa": id_mapa}))
 
 func preparar_mapa_para_jugar(item: Dictionary) -> Dictionary:
 	var id_mapa := str(item.get("id_mapa", ""))
@@ -197,6 +370,21 @@ func preparar_mapa_para_jugar(item: Dictionary) -> Dictionary:
 		DirAccess.make_dir_recursive_absolute(DIR_MAPAS_LOCAL)
 
 	var ruta_dest := _ruta_local_comunidad(id_mapa)
+	var ya_en_biblioteca := FileAccess.file_exists(ruta_dest)
+
+	if not ya_en_biblioteca:
+		var du = get_node_or_null("/root/DatosUsuario")
+		if not du or not ("esmeraldas" in du):
+			return {"exito": false, "mensaje": "No se pudo verificar tu saldo de esmeraldas."}
+		if int(du.esmeraldas) < PRECIO_DESCARGA_ESMERALDAS:
+			return {"exito": false, "mensaje": "Necesitas %d esmeraldas para descargar este mapa (tienes %d)." % [PRECIO_DESCARGA_ESMERALDAS, int(du.esmeraldas)]}
+		du.esmeraldas = int(du.esmeraldas) - PRECIO_DESCARGA_ESMERALDAS
+		if du.has_method("save_local"):
+			du.save_local()
+		var sm := get_node_or_null("/root/SupabaseManager")
+		if sm and sm.has_method("guardar_perfil") and "access_token" in sm and not str(sm.access_token).is_empty():
+			sm.guardar_perfil({"esmeraldas": int(du.esmeraldas)})
+
 	var ntmap_b64 := str(item.get("ntmap_b64", ""))
 	var raw_json := str(item.get("datos_json", ""))
 
@@ -214,14 +402,7 @@ func preparar_mapa_para_jugar(item: Dictionary) -> Dictionary:
 		if fw_c:
 			fw_c.store_string(raw_json)
 			fw_c.close()
-	elif str(item.get("ruta_local_defecto", "")) != "" and FileAccess.file_exists(str(item.get("ruta_local_defecto", ""))):
-		var bytes_def := FileAccess.get_file_as_bytes(str(item.get("ruta_local_defecto", "")))
-		var fw_d := FileAccess.open(ruta_dest, FileAccess.WRITE)
-		if fw_d and not bytes_def.is_empty():
-			fw_d.store_buffer(bytes_def)
-			fw_d.close()
 
-	# Extraer terreno ZIP si viene incluido desde Supabase
 	var tz_b64 := str(item.get("terreno_zip_b64", ""))
 	if not tz_b64.is_empty():
 		var zip_bytes := Marshalls.base64_to_raw(tz_b64)
@@ -242,31 +423,66 @@ func preparar_mapa_para_jugar(item: Dictionary) -> Dictionary:
 							f_out.close()
 					zr.close()
 				DirAccess.remove_absolute(tmp_zip)
-	elif id_mapa == "ciudad_prueba_grande":
-		# Si es la ciudad destacada por defecto, copiar su carpeta de terreno local si existe
-		var dir_src := DIR_MAPAS_LOCAL + "/ciudad_prueba_grande_terreno"
-		var dir_dst := ruta_dest.get_basename() + "_terreno"
-		if DirAccess.dir_exists_absolute(dir_src) and not DirAccess.dir_exists_absolute(dir_dst):
-			DirAccess.make_dir_recursive_absolute(dir_dst)
-			var ds := DirAccess.open(dir_src)
-			if ds:
-				for fn in ds.get_files():
-					if fn.ends_with(".res"):
-						var b := FileAccess.get_file_as_bytes(dir_src + "/" + fn)
-						var fo := FileAccess.open(dir_dst + "/" + fn, FileAccess.WRITE)
-						if fo and not b.is_empty():
-							fo.store_buffer(b)
-							fo.close()
 
 	if not FileAccess.file_exists(ruta_dest):
-		return {"exito": false, "mensaje": "No se pudo preparar el archivo del mapa."}
+		return {"exito": false, "mensaje": "No se pudo guardar el archivo del mapa."}
+
+	var meta_path := ruta_dest.get_basename() + ".meta.json"
+	var fm := FileAccess.open(meta_path, FileAccess.WRITE)
+	if fm:
+		fm.store_string(JSON.stringify({
+			"id_mapa": id_mapa,
+			"codigo_id": str(item.get("codigo_id", id_mapa)),
+			"nombre": str(item.get("nombre", "Mapa Comunidad")),
+			"autor": str(item.get("autor", "Conductor")),
+			"categoria": str(item.get("categoria", "Urbano")),
+			"descripcion": str(item.get("descripcion", "")),
+			"portada_url": str(item.get("portada_url", "")),
+			"peso_texto": str(item.get("peso_texto", "Ligero"))
+		}))
+		fm.close()
 
 	return {
 		"exito": true,
+		"ya_en_biblioteca": ya_en_biblioteca,
 		"ruta": ruta_dest,
 		"nombre": str(item.get("nombre", "Mapa Comunidad")),
-		"mensaje": "¡Iniciando mapa!"
+		"mensaje": "¡Abriendo mapa!" if ya_en_biblioteca else ("Mapa descargado (-%d Esmeraldas) y guardado en tu Biblioteca." % PRECIO_DESCARGA_ESMERALDAS)
 	}
+
+func listar_biblioteca_local() -> Array[Dictionary]:
+	var res: Array[Dictionary] = []
+	if not DirAccess.dir_exists_absolute(DIR_MAPAS_LOCAL):
+		return res
+	var dir := DirAccess.open(DIR_MAPAS_LOCAL)
+	if not dir:
+		return res
+	for fn in dir.get_files():
+		if fn.begins_with("com_") and fn.ends_with(".ntmap"):
+			var ruta := DIR_MAPAS_LOCAL + "/" + fn
+			var meta_path := ruta.get_basename() + ".meta.json"
+			var info: Dictionary = {
+				"id_mapa": fn.trim_prefix("com_").trim_suffix(".ntmap"),
+				"codigo_id": fn.trim_prefix("com_").trim_suffix(".ntmap") + ".map",
+				"nombre": fn.trim_prefix("com_").trim_suffix(".ntmap").capitalize(),
+				"autor": "Comunidad",
+				"categoria": "Urbano",
+				"descripcion": "Mapa guardado en tu biblioteca.",
+				"portada_url": "",
+				"peso_texto": _formatear_peso(FileAccess.get_file_as_bytes(ruta).size()),
+				"ruta": ruta
+			}
+			if FileAccess.file_exists(meta_path):
+				var fm := FileAccess.open(meta_path, FileAccess.READ)
+				if fm:
+					var j := JSON.new()
+					if j.parse(fm.get_as_text()) == OK and j.data is Dictionary:
+						for k in j.data.keys():
+							info[k] = j.data[k]
+					fm.close()
+			info["ruta"] = ruta
+			res.append(info)
+	return res
 
 func descargar_portada_async(url_portada: String, callback: Callable) -> void:
 	var url := url_portada.strip_edges()
@@ -331,7 +547,9 @@ func _normalizar_doc_comunidad(d: Dictionary) -> Dictionary:
 	var nt_b64 := str(d.get("ntmap_b64", ""))
 	var tz_b64 := str(d.get("terreno_zip_b64", ""))
 	var d_json := str(d.get("datos_json", ""))
-	var peso_b: int = int((nt_b64.length() * 3) / 4) + int((tz_b64.length() * 3) / 4)
+	var peso_b: int = int(d.get("tamano_bytes", 0))
+	if peso_b <= 0:
+		peso_b = int((nt_b64.length() * 3) / 4) + int((tz_b64.length() * 3) / 4)
 	if peso_b <= 0:
 		peso_b = d_json.length()
 	var id_m := str(d.get("id_mapa", d.get("id", "")))
@@ -343,10 +561,12 @@ func _normalizar_doc_comunidad(d: Dictionary) -> Dictionary:
 		"codigo_id": codigo_id,
 		"nombre": str(d.get("nombre", "Mapa Comunidad")),
 		"autor": str(d.get("autor", "Conductor")),
+		"autor_uid": str(d.get("autor_uid", "")),
 		"categoria": str(d.get("categoria", "Urbano")),
 		"descripcion": str(d.get("descripcion", "Ruta compartida por la comunidad.")),
 		"portada_url": str(d.get("portada_url", "")),
 		"peso_texto": _formatear_peso(peso_b),
+		"descargas": int(d.get("descargas", 0)),
 		"num_vias": int(d.get("num_vias", 0)),
 		"num_objetos": int(d.get("num_objetos", 0)),
 		"ntmap_b64": nt_b64,
@@ -361,47 +581,3 @@ func _guardar_en_cache_local(doc_id: String, payload: Dictionary) -> void:
 	if f:
 		f.store_string(JSON.stringify(payload))
 		f.close()
-
-func _cargar_cache_y_destacados() -> Array[Dictionary]:
-	var lista: Array[Dictionary] = []
-	if DirAccess.dir_exists_absolute(DIR_CACHE_PC):
-		var dir := DirAccess.open(DIR_CACHE_PC)
-		if dir:
-			dir.list_dir_begin()
-			var fn := dir.get_next()
-			while fn != "":
-				if not dir.current_is_dir() and fn.ends_with(".json"):
-					var f := FileAccess.open(DIR_CACHE_PC + "/" + fn, FileAccess.READ)
-					if f:
-						var j := JSON.new()
-						if j.parse(f.get_as_text()) == OK and j.data is Dictionary:
-							lista.append(_normalizar_doc_comunidad(j.data))
-						f.close()
-				fn = dir.get_next()
-			dir.list_dir_end()
-
-	# Mapa destacado incluido por defecto
-	var ruta_def := "res://mundo/editor_mapas/mapas_defecto/ciudad_prueba_grande.ntmap"
-	if FileAccess.file_exists(ruta_def):
-		var peso_def: int = FileAccess.get_file_as_bytes(ruta_def).size()
-		var dir_t_def := DIR_MAPAS_LOCAL + "/ciudad_prueba_grande_terreno"
-		if DirAccess.dir_exists_absolute(dir_t_def):
-			var dt := DirAccess.open(dir_t_def)
-			if dt:
-				for fn_t in dt.get_files():
-					if fn_t.ends_with(".res"):
-						peso_def += FileAccess.get_file_as_bytes(dir_t_def + "/" + fn_t).size()
-		lista.append({
-			"id_mapa": "ciudad_prueba_grande",
-			"codigo_id": "NT-000001",
-			"nombre": "Ciudad Prueba Grande",
-			"autor": "Nuestra Tierra",
-			"categoria": "Urbano",
-			"descripcion": "Ciudad completa con 4x4 avenidas, viaducto elevado con pilotes, zonas de carga/descarga y colinas.",
-			"portada_url": "",
-			"peso_texto": _formatear_peso(peso_def),
-			"num_vias": 57,
-			"num_objetos": 165,
-			"ruta_local_defecto": ruta_def
-		})
-	return lista

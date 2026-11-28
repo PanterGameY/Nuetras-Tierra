@@ -198,6 +198,7 @@ func _cargar_ultimo_vehiculo() -> void:
 func _vincular_customizer() -> void:
 	if not vehiculo_activo:
 		return
+	vehiculo_activo.set_meta("modelo_id", id_vehiculo_actual)
 	customizer_component = vehiculo_activo.get_node_or_null("CustomizerComponent")
 	if not customizer_component:
 		customizer_component = vehiculo_activo.find_child("CustomizerComponent", true, false)
@@ -489,7 +490,7 @@ func _cargar_menu_personalizacion() -> void:
 		ui_canvas_layer.add_child(menu_ui_inst)
 
 		if menu_ui_inst is Control:
-			menu_ui_inst.mouse_filter = Control.MOUSE_FILTER_PASS
+			menu_ui_inst.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 		if menu_ui_inst.has_method("configurar_taller"):
 			menu_ui_inst.configurar_taller(self, customizer_component)

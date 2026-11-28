@@ -218,7 +218,7 @@ func _aplicar_estilos_botones() -> void:
 	_aplicar_boton_primario(btn_confirmar, 20)
 	_aplicar_boton_primario(btn_continuar, 20)
 	_aplicar_boton_primario(btn_activ_reclamar, 20)
-	_aplicar_boton_fantasma(btn_volver, 18)
+	_aplicar_boton_salir(btn_volver, 19)
 	_aplicar_boton_fantasma(btn_cancelar, 20)
 	_aplicar_boton_fantasma(btn_activ_luego, 19)
 
@@ -282,6 +282,24 @@ func _aplicar_boton_fantasma(btn: Button, tam: int) -> void:
 	btn.add_theme_color_override("font_pressed_color", C_AMBER_BRIGHT)
 	btn.add_theme_color_override("font_focus_color", C_AMBER)
 	btn.add_theme_color_override("font_disabled_color", C_MUTED)
+
+
+func _aplicar_boton_salir(btn: Button, tam: int) -> void:
+	var normal := _crear_estilo(Color(0.16, 0.09, 0.09, 0.55), Color(0.78, 0.28, 0.26, 0.45), 10)
+	var hover := _crear_estilo(Color(0.78, 0.28, 0.26, 0.24), Color(0.78, 0.28, 0.26, 0.75), 10)
+	var pressed := _crear_estilo(Color(0.78, 0.28, 0.26, 0.35), Color(0.78, 0.28, 0.26, 0.95), 10)
+	pressed.border_width_bottom = 2
+
+	btn.add_theme_stylebox_override("normal", normal)
+	btn.add_theme_stylebox_override("hover", hover)
+	btn.add_theme_stylebox_override("pressed", pressed)
+	btn.add_theme_stylebox_override("focus", normal)
+	btn.add_theme_font_override("font", FONT)
+	btn.add_theme_font_size_override("font_size", tam)
+	btn.add_theme_color_override("font_color", C_TEXT)
+	btn.add_theme_color_override("font_hover_color", Color(1.0, 0.92, 0.9, 1.0))
+	btn.add_theme_color_override("font_pressed_color", Color(1.0, 0.92, 0.9, 1.0))
+	btn.add_theme_color_override("font_focus_color", C_TEXT)
 
 
 func _estilo_carta(estado: String, bono: bool) -> StyleBoxFlat:

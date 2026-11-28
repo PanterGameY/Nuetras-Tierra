@@ -60,6 +60,11 @@ var salida_offset_lateral: float = 1.6
 
 func _ready() -> void:
 	add_to_group("vehiculo")
+	if get_node_or_null("SistemaDanoColision") == null:
+		var dano_scr: Script = preload("res://codigo/entidades/vehiculo/SistemaDanoColision.gd")
+		var dano_nodo: Node = dano_scr.new()
+		dano_nodo.name = "SistemaDanoColision"
+		add_child(dano_nodo)
 	# Localización de nodos internos y componentes bajo la raíz del chasis
 	motor = get_node_or_null("Motor")
 	spring_arm = find_child("SpringArm3D", true, false) as SpringArm3D

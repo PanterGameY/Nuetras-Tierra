@@ -138,18 +138,71 @@ func finalizar_prueba() -> void:
 	_nodo_padre_ref = null
 	prueba_finalizada.emit()
 
+const CATALOGO_VEHICULOS_MAPA := {
+	"T800_A": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T800_Alargada": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T800": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"800_Modular": "res://modelos3d/vehiculos/tractomulas/cabezotes/T800_Alargada/T800_A.tscn",
+	"T680": "res://modelos3d/vehiculos/tractomulas/cabezotes/T680/T680.tscn",
+	"Kodiak": "res://modelos3d/vehiculos/tractomulas/cabezotes/KODIAK/kodiak.tscn",
+	"NPR": "res://modelos3d/vehiculos/NPR/npr.tscn",
+	"Marcopolo": "res://modelos3d/vehiculos/Buses/MarcopoloG8-1200/MarcopoloG8-1200.tscn",
+	"Duster": "res://modelos3d/vehiculos/automoviles/Duster/duster.tscn",
+	"Mespark": "res://modelos3d/vehiculos/automoviles/Mespark/mespark.tscn",
+	"ToyotaHiace": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Hiage": "res://modelos3d/vehiculos/automoviles/toyota-hiace/hiage.tscn",
+	"Pardo": "res://modelos3d/vehiculos/automoviles/Pardo/pardo.tscn",
+	"Sprinter": "res://modelos3d/vehiculos/automoviles/sprinter/sprinter_repartidor.tscn"
+}
+
+func _obtener_vehiculo_seleccionado() -> Dictionary:
+	var id_veh := "T800_A"
+	var du := get_node_or_null("/root/DatosUsuario")
+	if du:
+		if "guardado_player_vehiculo_nombre" in du and str(du.guardado_player_vehiculo_nombre) != "":
+			id_veh = str(du.guardado_player_vehiculo_nombre)
+		elif "vehiculo_actual" in du and str(du.vehiculo_actual) != "":
+			id_veh = str(du.vehiculo_actual)
+	if not CATALOGO_VEHICULOS_MAPA.has(id_veh):
+		for k in CATALOGO_VEHICULOS_MAPA.keys():
+			if k.to_lower() in id_veh.to_lower() or id_veh.to_lower() in k.to_lower():
+				id_veh = k
+				break
+		if not CATALOGO_VEHICULOS_MAPA.has(id_veh):
+			id_veh = "T800_A"
+	return {"id": id_veh, "ruta": CATALOGO_VEHICULOS_MAPA.get(id_veh, PATH_T800)}
+
 func _iniciar_t800(nodo_padre: Node3D, transform_spawn: Transform3D) -> void:
-	if not ResourceLoader.exists(PATH_T800):
-		push_error("No se encontró la escena de T800_A en: " + PATH_T800)
+	var sel := _obtener_vehiculo_seleccionado()
+	var id_veh: String = sel["id"]
+	var ruta_veh: String = sel["ruta"]
+	if not ResourceLoader.exists(ruta_veh):
+		ruta_veh = PATH_T800
+	if not ResourceLoader.exists(ruta_veh):
+		push_error("No se encontró la escena de vehículo en: " + ruta_veh)
 		return
 
-	var escena_t800 = load(PATH_T800) as PackedScene
-	if not escena_t800:
+	var escena_veh = load(ruta_veh) as PackedScene
+	if not escena_veh:
 		return
 
-	_instancia_vehiculo = escena_t800.instantiate() as Node3D
-	_instancia_vehiculo.name = "T800_Prueba"
+	_instancia_vehiculo = escena_veh.instantiate() as Node3D
+	_instancia_vehiculo.name = id_veh + "_Prueba"
+	_instancia_vehiculo.set_meta("modelo_id", id_veh)
 	nodo_padre.add_child(_instancia_vehiculo)
+
+	var cust: Node = _instancia_vehiculo.get_node_or_null("CustomizerComponent")
+	if not cust:
+		cust = _instancia_vehiculo.find_child("CustomizerComponent", true, false)
+	if not cust:
+		var cust_script := load("res://codigo/sistemas/taller/customizer_component.gd")
+		if cust_script:
+			cust = Node.new()
+			cust.set_script(cust_script)
+			cust.name = "CustomizerComponent"
+			_instancia_vehiculo.add_child(cust)
+	if cust and cust.has_method("cargar_personalizacion"):
+		cust.cargar_personalizacion()
 
 	# Ubicación en el spawn ajustada a la altura real de terreno/carretera
 	var xf := transform_spawn
@@ -329,21 +382,23 @@ func _crear_hud_prueba() -> void:
 	root_ctrl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_canvas_hud_prueba.add_child(root_ctrl)
 
-	# Botón Flotante "✕ VOLVER AL EDITOR" (Technical Crimson Glassmorphic)
-	var btn_volver := Button.new()
-	btn_volver.text = "✕ VOLVER AL EDITOR"
-	btn_volver.custom_minimum_size = Vector2(280, 72)
-	btn_volver.position = Vector2(40, 30)
-	_estilar_boton_crimson(btn_volver)
-	btn_volver.pressed.connect(finalizar_prueba)
-	root_ctrl.add_child(btn_volver)
+	# Barra superior centrada (evita tapar el velocímetro arriba-izquierda y controles arriba-derecha)
+	var top_bar := HBoxContainer.new()
+	top_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	top_bar.add_theme_constant_override("separation", 14)
+	top_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	top_bar.offset_left = -410.0
+	top_bar.offset_right = 410.0
+	top_bar.offset_top = 18.0
+	top_bar.offset_bottom = 82.0
+	top_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root_ctrl.add_child(top_bar)
 
-	# Banner informativo Glassmorphic superior (Centro)
+	# Banner informativo Glassmorphic
 	var panel_info := PanelContainer.new()
-	panel_info.custom_minimum_size = Vector2(480, 60)
-	panel_info.position = Vector2(956, 30) # Centrado para 2392x1080
+	panel_info.custom_minimum_size = Vector2(440, 60)
 	_estilar_panel_glass(panel_info)
-	root_ctrl.add_child(panel_info)
+	top_bar.add_child(panel_info)
 
 	var hbox := HBoxContainer.new()
 	hbox.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -359,6 +414,14 @@ func _crear_hud_prueba() -> void:
 		lbl_info.add_theme_font_override("font", load(RUTA_FUENTE_MODERNIZ))
 	hbox.add_child(lbl_info)
 	_lbl_info_banner = lbl_info
+
+	# Botón "✕ VOLVER AL EDITOR" (Technical Crimson Glassmorphic)
+	var btn_volver := Button.new()
+	btn_volver.text = "✕ VOLVER AL EDITOR"
+	btn_volver.custom_minimum_size = Vector2(260, 60)
+	_estilar_boton_crimson(btn_volver)
+	btn_volver.pressed.connect(finalizar_prueba)
+	top_bar.add_child(btn_volver)
 
 	# Contenedor flotante de botones del Taller (aparece al acercarse a un garaje)
 	_hbox_botones_taller = HBoxContainer.new()

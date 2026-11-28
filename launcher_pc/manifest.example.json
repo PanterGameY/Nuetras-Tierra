@@ -1,0 +1,12 @@
+{
+  "version": "0.0.3",
+  "zip_url": "https://hndlwmvezampajbmpqae.supabase.co/storage/v1/object/public/releases/pc/NuestraTierra_PC.zip",
+  "pck_url": "https://hndlwmvezampajbmpqae.supabase.co/storage/v1/object/public/releases/pc/NuestraTierra.pck",
+  "sha256": "",
+  "obligatoria": false,
+  "notas_parche": [
+    "Nuevo Modo PC en Configuraciones para ocultar controles tactiles.",
+    "Persistencia completa de ajustes entre Menu Principal, partida y Modo Prueba.",
+    "Mejoras de estabilidad y rendimiento general."
+  ]
+}

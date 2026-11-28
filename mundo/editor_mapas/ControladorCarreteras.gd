@@ -872,13 +872,28 @@ func actualizar_cursor_via(pos_mundo: Vector3, visible_en_pantalla: bool) -> voi
 				if an and an.material_override:
 					an.material_override.albedo_color = Color(0.2, 0.85, 1.0, 0.95)
 
+func _actualizar_orientaciones_vecindario(rp_centro: RoadPoint) -> void:
+	if not is_instance_valid(rp_centro):
+		return
+	var candidatos: Array[RoadPoint] = [rp_centro]
+	for path in [rp_centro.prior_pt_init, rp_centro.next_pt_init]:
+		if not path.is_empty():
+			var n = rp_centro.get_node_or_null(path)
+			if is_instance_valid(n) and n is RoadPoint and not candidatos.has(n):
+				candidatos.append(n as RoadPoint)
+	_actualizar_orientaciones_lista(candidatos)
+
+
 func _actualizar_orientaciones_y_curvaturas() -> void:
 	if not road_container or not is_instance_valid(road_container):
 		return
-		
 	var rps: Array = road_container.get_roadpoints()
 	if rps.is_empty():
 		return
+	_actualizar_orientaciones_lista(rps)
+
+
+func _actualizar_orientaciones_lista(rps: Array) -> void:
 
 	# Cada RoadPoint evalúa sus conexiones reales en el grafo (prior/next),
 	# evitando cualquier contaminación de tangentes entre tramos diferentes.
@@ -1678,7 +1693,7 @@ func mover_punto_carretera(rp: RoadPoint, nueva_pos_mundo: Vector3, es_arrastre_
 		if is_instance_valid(n) and n.has_method("is_road_intersection"):
 			inter = n as RoadIntersection
 			
-	_actualizar_orientaciones_y_curvaturas()
+	_actualizar_orientaciones_vecindario(rp)
 	
 	if es_arrastre_temporal:
 		rp.emit_transform(true)
@@ -1689,9 +1704,8 @@ func mover_punto_carretera(rp: RoadPoint, nueva_pos_mundo: Vector3, es_arrastre_
 		if inter and is_instance_valid(inter):
 			inter.emit_transform()
 		if road_container:
-			road_container.rebuild_segments(true)
-		nivelar_terreno_bajo_carreteras()
-		actualizar_seleccionadores_puntos()
+			road_container.rebuild_segments(false)
+		nivelar_terreno_para_punto(rp)
 		if equipamiento_controller and equipamiento_controller.has_method("actualizar_puentes_y_tuneles_automaticos"):
 			equipamiento_controller.actualizar_puentes_y_tuneles_automaticos()
 		carretera_actualizada.emit()
@@ -2838,6 +2852,36 @@ func adaptar_terreno_en_tramo(segmentos: Array) -> bool:
 		equipamiento_controller.actualizar_puentes_y_tuneles_automaticos()
 	return modificado
 
+func nivelar_terreno_para_punto(rp: RoadPoint) -> void:
+	if not is_instance_valid(rp) or not controlador_terreno or not is_instance_valid(controlador_terreno):
+		return
+	var terrain = (controlador_terreno as ControladorTerreno).terrain
+	if not terrain or not is_instance_valid(terrain) or not terrain.data:
+		return
+	if not road_container or not is_instance_valid(road_container):
+		return
+	var segs = road_container.get_segments()
+	if segs.is_empty():
+		return
+	var modificado := false
+	for seg in segs:
+		if not is_instance_valid(seg) or not seg.curve:
+			continue
+		if seg.start_point != rp and seg.end_point != rp:
+			continue
+		var off_start := float(seg.start_point.get_meta("offset_y", 0.0)) if is_instance_valid(seg.start_point) else 0.0
+		var off_end := float(seg.end_point.get_meta("offset_y", 0.0)) if is_instance_valid(seg.end_point) else 0.0
+		if absf(off_start) >= 1.2 or absf(off_end) >= 1.2:
+			continue
+		if _nivelar_segmento(seg, terrain, false):
+			modificado = true
+	if modificado:
+		terrain.data.update_maps(0)
+		terrain.data.calc_height_range()
+		if (controlador_terreno as ControladorTerreno).has_signal("terreno_modificado"):
+			(controlador_terreno as ControladorTerreno).terreno_modificado.emit()
+
+
 func nivelar_terreno_bajo_carreteras() -> void:
 	if not controlador_terreno or not is_instance_valid(controlador_terreno):
 		return
@@ -3511,6 +3555,7 @@ func deserializar_carreteras(datos: Array) -> void:
 		var rot_arr: Array = item.get("rotacion", [0.0, 0.0, 0.0])
 		if rot_arr.size() >= 3:
 			rp.rotation = Vector3(float(rot_arr[0]), float(rot_arr[1]), float(rot_arr[2]))
+		road_container.add_child(rp)
 		if item.has("prior_mag"):
 			rp.prior_mag = float(item["prior_mag"])
 		else:
@@ -3519,7 +3564,6 @@ func deserializar_carreteras(datos: Array) -> void:
 			rp.next_mag = float(item["next_mag"])
 		else:
 			faltan_tangentes = true
-		road_container.add_child(rp)
 		var tipo_v := int(item.get("tipo_via", 0)) as TipoVia
 		_aplicar_tipo_via_a_punto(rp, tipo_v)
 		var off_y := float(item.get("offset_y", 0.0))

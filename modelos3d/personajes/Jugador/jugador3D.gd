@@ -617,9 +617,9 @@ func _input(e):
 		_auto_center_timer = 0
 	elif e is InputEventMouseButton and e.pressed and not solo_touch_camara:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_ajustar_zoom(-0.35)
+			_ajustar_zoom(-0.15)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_ajustar_zoom(0.35)
+			_ajustar_zoom(0.15)
 	elif e.is_action_pressed("quit"): # Esc: no capturar el mouse, solo asegurar que está visible
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	
@@ -871,7 +871,12 @@ func _physics_process(delta: float) -> void:
 		_modelo.rotation.x = 0.0
 	
 	if multiplayer.has_multiplayer_peer() and is_multiplayer_authority():
-		actualizar_transform_remoto.rpc(global_position, rotation.y, velocity, _anim_actual, _conduciendo)
+		var anim_red: String = _anim_actual
+		if _en_aire:
+			anim_red = "Saltar Corriendo" if Vector2(velocity.x, velocity.z).length() > 1.2 else "Saltar"
+		elif _agachado:
+			anim_red = "CaminarAgachado" if idir.length() > 0.1 else "Agacharse"
+		actualizar_transform_remoto.rpc(global_position, rotation.y, velocity, anim_red, _conduciendo)
 
 func _anim_loco(idir, run, suelo):
 	if _anim_lock: return

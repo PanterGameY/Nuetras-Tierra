@@ -8,6 +8,9 @@ class_name ZonaAlquilerTrailer
 const RUTA_CARPADO_1 := "res://modelos3d/vehiculos/Trailers/escenas/Carpado1.tscn"
 const RUTA_CARPADO_ALT := "res://modelos3d/Trailers y remolques/Carpado/carpado.tscn"
 const RUTA_CHASIS := "res://modelos3d/vehiculos/Trailers/chasis/CT_1.tscn"
+const RUTA_CARPADO_GLB := "res://modelos3d/vehiculos/Trailers/carpado1_optimizado.glb"
+const RUTA_CHASIS_GLB := "res://modelos3d/vehiculos/Trailers/chasis/1.glb"
+const FUENTE_MODERNIZ := "res://recursos/fonts/Moderniz.otf"
 const FUENTE_TITULO := "res://recursos/fonts/creato_display/CreatoDisplay-Bold.otf"
 const FUENTE_CUERPO := "res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf"
 
@@ -196,131 +199,175 @@ func _construir_ui() -> void:
 	_ui_layer.add_child(centro)
 
 	_panel = PanelContainer.new()
-	_panel.custom_minimum_size = Vector2(680, 0)
+	_panel.custom_minimum_size = Vector2(1260, 780)
 
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = COL_FONDO
+	sb.bg_color = Color(0.06, 0.07, 0.08, 0.92)
 	sb.set_border_width_all(1)
-	sb.border_color = COL_BORDE
-	sb.set_corner_radius_all(16)
-	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.55)
-	sb.shadow_size = 20
-	sb.content_margin_left = 28
-	sb.content_margin_right = 28
-	sb.content_margin_top = 24
-	sb.content_margin_bottom = 24
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.24)
+	sb.set_corner_radius_all(18)
+	sb.shadow_color = Color(0.0, 0.0, 0.0, 0.60)
+	sb.shadow_size = 24
+	sb.content_margin_left = 34
+	sb.content_margin_right = 34
+	sb.content_margin_top = 28
+	sb.content_margin_bottom = 28
 	_panel.add_theme_stylebox_override("panel", sb)
 	centro.add_child(_panel)
 
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 14)
+	vbox.add_theme_constant_override("separation", 18)
 	_panel.add_child(vbox)
 
-	var fuente_tit: Font = load(FUENTE_TITULO) if ResourceLoader.exists(FUENTE_TITULO) else null
+	var fuente_mod: Font = load(FUENTE_MODERNIZ) if ResourceLoader.exists(FUENTE_MODERNIZ) else null
+	var fuente_tit: Font = load(FUENTE_TITULO) if ResourceLoader.exists(FUENTE_TITULO) else fuente_mod
 	var fuente_cuerpo: Font = load(FUENTE_CUERPO) if ResourceLoader.exists(FUENTE_CUERPO) else fuente_tit
 
 	var hbox_head := HBoxContainer.new()
-	hbox_head.add_theme_constant_override("separation", 12)
+	hbox_head.add_theme_constant_override("separation", 16)
 	vbox.add_child(hbox_head)
 
 	var lbl_tit := Label.new()
-	lbl_tit.text = "ALQUILER DE TRÁILER"
+	lbl_tit.text = "ALQUILER DE TRAILER"
 	lbl_tit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lbl_tit.add_theme_font_size_override("font_size", 26)
-	lbl_tit.add_theme_color_override("font_color", Color(0.95, 0.96, 0.98, 0.98))
-	if fuente_tit:
+	lbl_tit.add_theme_font_size_override("font_size", 40)
+	lbl_tit.add_theme_color_override("font_color", Color(0.95, 0.96, 0.98, 1.0))
+	if fuente_mod:
+		lbl_tit.add_theme_font_override("font", fuente_mod)
+	elif fuente_tit:
 		lbl_tit.add_theme_font_override("font", fuente_tit)
 	hbox_head.add_child(lbl_tit)
 
+	var badge_box := PanelContainer.new()
+	var sb_badge := StyleBoxFlat.new()
+	sb_badge.bg_color = Color(0.88, 0.68, 0.28, 0.14)
+	sb_badge.border_color = COL_ACENTO
+	sb_badge.set_border_width_all(1)
+	sb_badge.set_corner_radius_all(8)
+	sb_badge.content_margin_left = 16
+	sb_badge.content_margin_right = 16
+	sb_badge.content_margin_top = 8
+	sb_badge.content_margin_bottom = 8
+	badge_box.add_theme_stylebox_override("panel", sb_badge)
+	hbox_head.add_child(badge_box)
+
 	_badge_estado = Label.new()
 	_badge_estado.text = "DISPONIBLE"
-	_badge_estado.add_theme_font_size_override("font_size", 14)
+	_badge_estado.add_theme_font_size_override("font_size", 18)
 	_badge_estado.add_theme_color_override("font_color", COL_ACENTO)
-	if fuente_tit:
-		_badge_estado.add_theme_font_override("font", fuente_tit)
-	hbox_head.add_child(_badge_estado)
+	if fuente_mod:
+		_badge_estado.add_theme_font_override("font", fuente_mod)
+	badge_box.add_child(_badge_estado)
 
 	var sep := HSeparator.new()
 	sep.modulate = Color(1, 1, 1, 0.14)
 	vbox.add_child(sep)
 
 	_lbl_estado = Label.new()
-	_lbl_estado.text = "Selecciona el semirremolque que deseas desplegar en la bahía:"
+	_lbl_estado.text = "Selecciona el semirremolque que deseas desplegar en la bahia:"
 	_lbl_estado.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_lbl_estado.add_theme_font_size_override("font_size", 17)
-	_lbl_estado.add_theme_color_override("font_color", Color(0.76, 0.80, 0.85, 0.92))
+	_lbl_estado.add_theme_font_size_override("font_size", 24)
+	_lbl_estado.add_theme_color_override("font_color", Color(0.78, 0.82, 0.88, 0.94))
 	if fuente_cuerpo:
 		_lbl_estado.add_theme_font_override("font", fuente_cuerpo)
 	vbox.add_child(_lbl_estado)
 
+	# Tarjetas lado a lado (Showroom 2 columnas)
+	var grid_cards := HBoxContainer.new()
+	grid_cards.add_theme_constant_override("separation", 22)
+	grid_cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(grid_cards)
+
 	_tarjetas.clear()
 	var ruta_carpado := RUTA_CARPADO_1 if ResourceLoader.exists(RUTA_CARPADO_1) else RUTA_CARPADO_ALT
-	var c1 := _crear_tarjeta_trailer("🚛", "Tráiler Carpado", "3 ejes · Lona alta · Hasta 34 t", fuente_tit, fuente_cuerpo, func(card_ref):
+	var c1 := _crear_tarjeta_trailer(RUTA_CARPADO_GLB, "🚛", "Trailer Carpado", "Lona alta con varillas y compuertas abatibles", ["3 EJES", "HASTA 34 T", "CARPA"], fuente_mod, fuente_tit, fuente_cuerpo, func(card_ref):
 		_pulsar_tarjeta(card_ref)
-		_spawnear_trailer(ruta_carpado, "Tráiler Carpado")
+		_spawnear_trailer(ruta_carpado, "Trailer Carpado")
 	)
 	_tarjetas.append(c1)
-	vbox.add_child(c1)
+	grid_cards.add_child(c1)
 
-	var c2 := _crear_tarjeta_trailer("📦", "Chasis Portacontenedor", "3 ejes · Plataforma abierta · Carga visible", fuente_tit, fuente_cuerpo, func(card_ref):
+	var c2 := _crear_tarjeta_trailer(RUTA_CHASIS_GLB, "📦", "Chasis Portacontenedor", "Plataforma abierta reforzada para carga visible", ["3 EJES", "PLATAFORMA", "CONTENEDOR"], fuente_mod, fuente_tit, fuente_cuerpo, func(card_ref):
 		_pulsar_tarjeta(card_ref)
 		_spawnear_trailer(RUTA_CHASIS, "Chasis Portacontenedor")
 	)
 	_tarjetas.append(c2)
-	vbox.add_child(c2)
+	grid_cards.add_child(c2)
 
-	var btn_cerrar := _crear_boton("CERRAR", COL_CERRAR, fuente_tit)
+	var btn_cerrar := _crear_boton("CERRAR", COL_CERRAR, fuente_mod if fuente_mod else fuente_tit)
+	btn_cerrar.custom_minimum_size = Vector2(0, 72)
+	btn_cerrar.add_theme_font_size_override("font_size", 24)
 	btn_cerrar.pressed.connect(_ocultar_ui)
 	vbox.add_child(btn_cerrar)
 
 
-func _crear_tarjeta_trailer(ico: String, nombre: String, detalle: String, fuente_tit: Font, fuente_cuerpo: Font, cb: Callable) -> PanelContainer:
+func _crear_tarjeta_trailer(ruta_preview_glb: String, ico: String, nombre: String, detalle: String, tags: Array[String], fuente_mod: Font, fuente_tit: Font, fuente_cuerpo: Font, cb: Callable) -> PanelContainer:
 	var card := PanelContainer.new()
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = COL_CARD
+	sb.bg_color = Color(0.09, 0.10, 0.12, 0.90)
 	sb.set_border_width_all(1)
-	sb.border_color = COL_BORDE
-	sb.set_corner_radius_all(12)
-	sb.content_margin_left = 18
-	sb.content_margin_right = 18
-	sb.content_margin_top = 14
-	sb.content_margin_bottom = 14
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.20)
+	sb.set_corner_radius_all(14)
+	sb.content_margin_left = 20
+	sb.content_margin_right = 20
+	sb.content_margin_top = 18
+	sb.content_margin_bottom = 18
 	card.add_theme_stylebox_override("panel", sb)
 
-	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 14)
-	card.add_child(hbox)
+	var vbox_card := VBoxContainer.new()
+	vbox_card.add_theme_constant_override("separation", 14)
+	card.add_child(vbox_card)
 
-	var lbl_ico := Label.new()
-	lbl_ico.text = ico
-	lbl_ico.add_theme_font_size_override("font_size", 32)
-	hbox.add_child(lbl_ico)
-
-	var vbox_info := VBoxContainer.new()
-	vbox_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox_info.add_theme_constant_override("separation", 4)
-	hbox.add_child(vbox_info)
+	var preview_box := _crear_preview_trailer(ruta_preview_glb, ico)
+	vbox_card.add_child(preview_box)
 
 	var lbl_nom := Label.new()
 	lbl_nom.text = nombre
-	lbl_nom.add_theme_font_size_override("font_size", 20)
-	lbl_nom.add_theme_color_override("font_color", Color(0.95, 0.96, 0.98, 1.0))
+	lbl_nom.add_theme_font_size_override("font_size", 30)
+	lbl_nom.add_theme_color_override("font_color", Color(0.96, 0.97, 0.99, 1.0))
 	if fuente_tit:
 		lbl_nom.add_theme_font_override("font", fuente_tit)
-	vbox_info.add_child(lbl_nom)
+	vbox_card.add_child(lbl_nom)
 
 	var lbl_det := Label.new()
 	lbl_det.text = detalle
-	lbl_det.add_theme_font_size_override("font_size", 15)
-	lbl_det.add_theme_color_override("font_color", Color(0.68, 0.72, 0.78, 0.90))
+	lbl_det.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_det.add_theme_font_size_override("font_size", 22)
+	lbl_det.add_theme_color_override("font_color", Color(0.72, 0.76, 0.82, 0.92))
 	if fuente_cuerpo:
 		lbl_det.add_theme_font_override("font", fuente_cuerpo)
-	vbox_info.add_child(lbl_det)
+	vbox_card.add_child(lbl_det)
 
-	var btn := _crear_boton("ALQUILAR", COL_ACENTO, fuente_tit)
-	btn.custom_minimum_size = Vector2(146, 48)
+	var hbox_tags := HBoxContainer.new()
+	hbox_tags.add_theme_constant_override("separation", 8)
+	vbox_card.add_child(hbox_tags)
+	for t in tags:
+		var chip := PanelContainer.new()
+		var sb_chip := StyleBoxFlat.new()
+		sb_chip.bg_color = Color(0.88, 0.68, 0.28, 0.12)
+		sb_chip.border_color = Color(0.88, 0.68, 0.28, 0.45)
+		sb_chip.set_border_width_all(1)
+		sb_chip.set_corner_radius_all(6)
+		sb_chip.content_margin_left = 10
+		sb_chip.content_margin_right = 10
+		sb_chip.content_margin_top = 4
+		sb_chip.content_margin_bottom = 4
+		chip.add_theme_stylebox_override("panel", sb_chip)
+		var l_tag := Label.new()
+		l_tag.text = t
+		l_tag.add_theme_font_size_override("font_size", 15)
+		l_tag.add_theme_color_override("font_color", Color(0.92, 0.76, 0.40, 0.98))
+		if fuente_mod:
+			l_tag.add_theme_font_override("font", fuente_mod)
+		chip.add_child(l_tag)
+		hbox_tags.add_child(chip)
+
+	var btn := _crear_boton("ALQUILAR TRAILER", COL_ACENTO, fuente_mod if fuente_mod else fuente_tit)
+	btn.custom_minimum_size = Vector2(0, 74)
+	btn.add_theme_font_size_override("font_size", 24)
 	btn.pressed.connect(func(): cb.call(card))
-	hbox.add_child(btn)
+	vbox_card.add_child(btn)
 	return card
 
 
@@ -391,7 +438,7 @@ func _spawnear_trailer(ruta_escena: String, nombre_tipo: String) -> void:
 		if _badge_estado:
 			_badge_estado.text = "OCUPADA"
 		if _lbl_estado:
-			_lbl_estado.text = "La bahía trasera está ocupada (%s). Despeja la zona trasera para desplegar el tráiler." % obstaculo
+			_lbl_estado.text = "La bahia trasera esta ocupada (%s). Despeja la zona trasera para desplegar el trailer." % obstaculo
 		return
 
 	if is_instance_valid(_trailer_actual):
@@ -403,7 +450,7 @@ func _spawnear_trailer(ruta_escena: String, nombre_tipo: String) -> void:
 	var trailer := TrailerFactory.crear_trailer(ruta_escena, "rin_t2_cromo", pos_sp, rot_sp)
 	if not trailer:
 		if _lbl_estado:
-			_lbl_estado.text = "No se pudo cargar el tráiler."
+			_lbl_estado.text = "No se pudo cargar el trailer."
 		return
 
 	var padre: Node = get_tree().current_scene
@@ -429,13 +476,119 @@ func _spawnear_trailer(ruta_escena: String, nombre_tipo: String) -> void:
 	_ocultar_ui()
 	var resumen: Array[Dictionary] = [
 		{"label": "SEMIRREMOLQUE", "valor": nombre_tipo},
-		{"label": "UBICACIÓN", "valor": "Bahía trasera (sin enganchar)"},
+		{"label": "UBICACION", "valor": "Bahia trasera (sin enganchar)"},
 	]
 	ZonaCargaInteractiva.mostrar_notificacion_global(
 		self,
-		"ALQUILER · BAHÍA TRASERA",
-		"TRÁILER DESPLEGADO",
-		"Tu semirremolque apareció en la bahía trasera sin enganchar. Retrocede suavemente con el cabezote para acoplarlo.",
+		"ALQUILER · BAHIA TRASERA",
+		"TRAILER DESPLEGADO",
+		"Tu semirremolque aparecio en la bahia trasera sin enganchar. Retrocede suavemente con el cabezote para acoplarlo.",
 		"LISTO",
 		resumen
 	)
+
+
+func _crear_preview_trailer(ruta_glb: String, ico_fallback: String) -> PanelContainer:
+	var marco := PanelContainer.new()
+	marco.custom_minimum_size = Vector2(520, 240)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.05, 0.07, 0.92)
+	sb.border_color = Color(0.78, 0.81, 0.85, 0.22)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(10)
+	marco.add_theme_stylebox_override("panel", sb)
+
+	if not ResourceLoader.exists(ruta_glb):
+		var lbl := Label.new()
+		lbl.text = ico_fallback
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lbl.add_theme_font_size_override("font_size", 48)
+		marco.add_child(lbl)
+		return marco
+
+	var svc := SubViewportContainer.new()
+	svc.stretch = true
+	svc.custom_minimum_size = Vector2(516, 236)
+	marco.add_child(svc)
+
+	var sv := SubViewport.new()
+	sv.size = Vector2i(780, 360)
+	sv.own_world_3d = true
+	sv.world_3d = World3D.new()
+	sv.transparent_bg = true
+	sv.msaa_3d = Viewport.MSAA_2X
+	sv.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	svc.add_child(sv)
+
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.85, 0.90, 0.96)
+	env.ambient_light_energy = 1.05
+	var we := WorldEnvironment.new()
+	we.environment = env
+	sv.add_child(we)
+
+	var key_light := DirectionalLight3D.new()
+	key_light.rotation_degrees = Vector3(-42.0, 38.0, 0.0)
+	key_light.light_energy = 1.45
+	sv.add_child(key_light)
+
+	var fill_light := DirectionalLight3D.new()
+	fill_light.rotation_degrees = Vector3(-25.0, -140.0, 0.0)
+	fill_light.light_energy = 0.70
+	sv.add_child(fill_light)
+
+	var cam := Camera3D.new()
+	cam.fov = 34.0
+	cam.near = 0.2
+	cam.far = 200.0
+	cam.current = true
+	sv.add_child(cam)
+
+	var packed := load(ruta_glb) as PackedScene
+	if packed:
+		var inst := packed.instantiate()
+		sv.add_child(inst)
+		var aabb := _calcular_aabb_recursivo(inst)
+		var centro := aabb.get_center()
+		var radio := maxf(aabb.size.length() * 0.5, 2.0)
+		var dir_cam := Vector3(0.90, 0.34, -0.78).normalized()
+		var cam_pos := centro + dir_cam * (radio * 2.35)
+		cam.transform = Transform3D(Basis.looking_at((centro - cam_pos).normalized(), Vector3.UP), cam_pos)
+
+	# Congelar a UPDATE_ONCE después de renderizar 2 frames ya montado en pantalla
+	marco.tree_entered.connect(func():
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if is_instance_valid(sv):
+			sv.render_target_update_mode = SubViewport.UPDATE_ONCE
+	)
+
+	return marco
+
+
+func _calcular_aabb_recursivo(nodo: Node) -> AABB:
+	var res := AABB()
+	var primero := true
+	var cola: Array[Node] = [nodo]
+	while not cola.is_empty():
+		var actual: Node = cola.pop_back()
+		if actual is VisualInstance3D and actual is Node3D:
+			var vi := actual as VisualInstance3D
+			var local_box := vi.get_aabb()
+			var xform := (actual as Node3D).transform
+			var p: Node = actual.get_parent()
+			while p and p != nodo and p is Node3D:
+				xform = (p as Node3D).transform * xform
+				p = p.get_parent()
+			var global_box := xform * local_box
+			if primero:
+				res = global_box
+				primero = false
+			else:
+				res = res.merge(global_box)
+		for h in actual.get_children():
+			cola.append(h)
+	return res

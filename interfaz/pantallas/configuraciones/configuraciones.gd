@@ -63,9 +63,11 @@ var row_city_dist_container: Control = null
 var chk_ssao: CheckButton = null
 var chk_glow: CheckButton = null
 var chk_sdfgi: CheckButton = null
+var chk_modo_pc: CheckButton = null
 
-# --- DICCIONARIO DE SELECTORES PILL ---
+# --- DICCIONARIO DE SELECTORES PILL Y TOGGLES ---
 var pill_groups: Dictionary = {}
+var _toggle_sync_callbacks: Dictionary = {}
 
 # --- INSPECTOR NODES ---
 var inspector_graficos: VBoxContainer = null
@@ -197,6 +199,7 @@ func _populate_options() -> void:
 # CONSTRUCCION DE LA COLUMNA IZQUIERDA: TARJETAS Y SELECTORES TACTILES
 # =======================================================================
 func _construir_dashboard_interactivo() -> void:
+	_toggle_sync_callbacks.clear()
 	for pagina in [pagina_graficos, pagina_sonido, pagina_controles, pagina_demas]:
 		if pagina:
 			for child in pagina.get_children():
@@ -231,10 +234,22 @@ func _construir_dashboard_interactivo() -> void:
 		chk_vsync.button_pressed = pressed
 		chk_vsync.text = "ACTIVO" if pressed else "DESACT."
 		_actualizar_telemetria_graficos()
+	, chk_vsync)
+	if slider_render:
+		slider_render.min_value = 40
+		slider_render.max_value = 100
+		slider_render.step = 5
+	var p_scale_pills = _crear_fila_con_pills("Escala de Resolución 3D", "Baja la resolución interna para ganar FPS (igual que en el Editor)", "res_scale_pills", ["40%", "55%", "75%", "100%"], 2, func(idx):
+		var vals := [40, 55, 75, 100]
+		if slider_render and idx >= 0 and idx < vals.size():
+			slider_render.value = vals[idx]
+			lbl_render_val.text = "%d%%" % vals[idx]
+			_verificar_preset_activo()
+			_actualizar_telemetria_graficos()
 	)
-	var p_scale = _crear_fila_slider("Escala de Renderizado (FSR 2.0)", "Resolucion 3D interna para balancear nitidez y GPU", slider_render, lbl_render_val)
+	var p_scale = _crear_fila_slider("Ajuste Fino de Resolución", "Porcentaje exacto de escala 3D (40% - 100%)", slider_render, lbl_render_val)
 
-	var card_motor = _crear_tarjeta("PANTALLA & RENDIMIENTO", "MOTOR 3D", [p_calidad, p_fps, p_vsync, p_scale])
+	var card_motor = _crear_tarjeta("PANTALLA & RENDIMIENTO", "MOTOR 3D", [p_calidad, p_fps, p_vsync, p_scale_pills, p_scale])
 	pagina_graficos.add_child(card_motor)
 
 	# 3. Entorno e Iluminacion
@@ -265,17 +280,17 @@ func _construir_dashboard_interactivo() -> void:
 		chk_ssao.button_pressed = pressed
 		_verificar_preset_activo()
 		_actualizar_telemetria_graficos()
-	)
+	, chk_ssao)
 	var p_glow = _crear_fila_con_toggle("Resplandor Optico (Glow)", "Destellos luminicos en faros de tractomulas", chk_glow.button_pressed, func(pressed):
 		chk_glow.button_pressed = pressed
 		_verificar_preset_activo()
 		_actualizar_telemetria_graficos()
-	)
+	, chk_glow)
 	var p_sdfgi = _crear_fila_con_toggle("Iluminacion Global (SDFGI)", "Rebote de luz indirecta de alta fidelidad", chk_sdfgi.button_pressed, func(pressed):
 		chk_sdfgi.button_pressed = pressed
 		_verificar_preset_activo()
 		_actualizar_telemetria_graficos()
-	)
+	, chk_sdfgi)
 	var card_post = _crear_tarjeta("EFECTOS Y POSTPROCESADO", "OPTICA", [p_ssao, p_glow, p_sdfgi])
 	pagina_graficos.add_child(card_post)
 
@@ -332,6 +347,19 @@ func _construir_dashboard_interactivo() -> void:
 	var card_ped = _crear_tarjeta("RESPUESTA DE PEDALES", "TRACCION", [p_ped])
 	pagina_controles.add_child(card_ped)
 
+	if not chk_modo_pc:
+		chk_modo_pc = CheckButton.new()
+	var cfg_pc := ConfigFile.new()
+	if cfg_pc.load(SAVE_PATH) == OK:
+		chk_modo_pc.button_pressed = bool(cfg_pc.get_value("controles", "modo_pc", false))
+	else:
+		chk_modo_pc.button_pressed = false
+	var p_modo_pc = _crear_fila_con_toggle("MODO PC", "Desactiva los botones tactiles del jugador y vehiculo; mantiene activas las interfaces.", chk_modo_pc.button_pressed, func(on: bool):
+		chk_modo_pc.button_pressed = on
+	, chk_modo_pc)
+	var card_entrada = _crear_tarjeta("MODO DE ENTRADA", "PC / TACTIL", [p_modo_pc])
+	pagina_controles.add_child(card_entrada)
+
 	# --- PAGINA 4: OPTIMIZACION ---
 	if not chk_city_opt: chk_city_opt = CheckButton.new()
 	if not slider_city_dist:
@@ -349,7 +377,7 @@ func _construir_dashboard_interactivo() -> void:
 		if row_city_dist_container:
 			row_city_dist_container.visible = pressed
 		_actualizar_telemetria_opt()
-	)
+	, chk_city_opt)
 	var p_dist = _crear_fila_slider("Distancia de Carga de Objetos", "Radio de dibujado de elementos 3D en el mapa", slider_city_dist, lbl_city_dist_val)
 	row_city_dist_container = p_dist
 
@@ -746,7 +774,7 @@ func _crear_fila_con_pills(titulo: String, desc: String, group_name: String, ite
 	row.add_child(v_main)
 	return row
 
-func _crear_fila_con_toggle(titulo: String, desc: String, initial_val: bool, on_toggled: Callable) -> PanelContainer:
+func _crear_fila_con_toggle(titulo: String, desc: String, initial_val: bool, on_toggled: Callable, target_chk: CheckButton = null) -> PanelContainer:
 	var row = _crear_panel_fila()
 	var hbox := HBoxContainer.new()
 	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -776,7 +804,8 @@ func _crear_fila_con_toggle(titulo: String, desc: String, initial_val: bool, on_
 	btn_toggle.add_theme_font_size_override("font_size", 20)
 	
 	var is_on = initial_val
-	var actualizar_visual = func():
+	var actualizar_visual = func(val: bool):
+		is_on = val
 		var style = StyleBoxFlat.new()
 		style.set_corner_radius_all(6)
 		style.set_border_width_all(1)
@@ -795,17 +824,27 @@ func _crear_fila_con_toggle(titulo: String, desc: String, initial_val: bool, on_
 		btn_toggle.add_theme_stylebox_override("hover", style)
 		btn_toggle.add_theme_stylebox_override("pressed", style)
 
-	actualizar_visual.call()
+	actualizar_visual.call(is_on)
+
+	if target_chk:
+		_toggle_sync_callbacks[target_chk] = actualizar_visual
 
 	btn_toggle.pressed.connect(func():
 		is_on = not is_on
-		actualizar_visual.call()
+		actualizar_visual.call(is_on)
 		on_toggled.call(is_on)
 	)
 
 	hbox.add_child(btn_toggle)
 	row.add_child(hbox)
 	return row
+
+func _sincronizar_toggles_desde_checks() -> void:
+	for chk in _toggle_sync_callbacks:
+		if is_instance_valid(chk):
+			var cb: Callable = _toggle_sync_callbacks[chk]
+			if cb.is_valid():
+				cb.call(chk.button_pressed)
 
 func _crear_fila_slider(titulo: String, desc: String, slider_node: HSlider, val_label: Label) -> PanelContainer:
 	var row = _crear_panel_fila()
@@ -1395,6 +1434,8 @@ func _load_settings() -> void:
 	if slider_suavizado_ped:
 		slider_suavizado_ped.value = float(cfg.get_value("controles", "suavizado_pedales", 3.5))
 		if lbl_suavizado_ped_val: lbl_suavizado_ped_val.text = "%.1f" % slider_suavizado_ped.value
+	if chk_modo_pc:
+		chk_modo_pc.button_pressed = bool(cfg.get_value("controles", "modo_pc", false))
 
 	var opt_enabled = cfg.get_value("graficos", "city_optimizer_enabled", true)
 	if chk_city_opt:
@@ -1405,14 +1446,15 @@ func _load_settings() -> void:
 		if lbl_city_dist_val: lbl_city_dist_val.text = "%dm" % int(opt_dist)
 		if row_city_dist_container: row_city_dist_container.visible = opt_enabled
 
-	var ssao_val = cfg.get_value("graficos", "ssao_enabled", true)
+	var ssao_val = cfg.get_value("graficos", "ssao_enabled", false)
 	if chk_ssao: chk_ssao.button_pressed = ssao_val
-	var glow_val = cfg.get_value("graficos", "glow_enabled", true)
+	var glow_val = cfg.get_value("graficos", "glow_enabled", false)
 	if chk_glow: chk_glow.button_pressed = glow_val
 	var sdfgi_val = cfg.get_value("graficos", "sdfgi_enabled", false)
 	if chk_sdfgi: chk_sdfgi.button_pressed = sdfgi_val
 		
 	_sincronizar_pills_desde_opciones()
+	_sincronizar_toggles_desde_checks()
 	_verificar_preset_activo()
 
 func _apply_defaults() -> void:
@@ -1432,9 +1474,10 @@ func _apply_defaults() -> void:
 	if slider_suavizado_dir: slider_suavizado_dir.value = 10.0
 	if slider_retorno_vol: slider_retorno_vol.value = 3.5
 	if slider_suavizado_ped: slider_suavizado_ped.value = 3.5
+	if chk_modo_pc: chk_modo_pc.button_pressed = false
 	
 	if chk_ssao: chk_ssao.button_pressed = false
-	if chk_glow: chk_glow.button_pressed = true
+	if chk_glow: chk_glow.button_pressed = false
 	if chk_sdfgi: chk_sdfgi.button_pressed = false
 	if chk_city_opt: chk_city_opt.button_pressed = true
 	if slider_city_dist: slider_city_dist.value = 200.0
@@ -1452,12 +1495,14 @@ func _actualizar_ui_completa() -> void:
 	if slider_retorno_vol and lbl_retorno_vol_val: lbl_retorno_vol_val.text = "%.1f" % slider_retorno_vol.value
 	if slider_suavizado_ped and lbl_suavizado_ped_val: lbl_suavizado_ped_val.text = "%.1f" % slider_suavizado_ped.value
 	if slider_city_dist and lbl_city_dist_val: lbl_city_dist_val.text = "%dm" % int(slider_city_dist.value)
+	_sincronizar_toggles_desde_checks()
 	_verificar_preset_activo()
 	_actualizar_telemetria_graficos()
 	_actualizar_telemetria_opt()
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
+	cfg.load(SAVE_PATH)
 	cfg.set_value("graficos", "calidad", opt_calidad.selected)
 	cfg.set_value("graficos", "cielo_calidad", opt_cielo.selected)
 	cfg.set_value("graficos", "sombras", opt_sombras.selected)
@@ -1475,6 +1520,7 @@ func _save_settings() -> void:
 	cfg.set_value("controles", "suavizado_direccion", slider_suavizado_dir.value if slider_suavizado_dir else 10.0)
 	cfg.set_value("controles", "retorno_volante", slider_retorno_vol.value if slider_retorno_vol else 3.5)
 	cfg.set_value("controles", "suavizado_pedales", slider_suavizado_ped.value if slider_suavizado_ped else 3.5)
+	cfg.set_value("controles", "modo_pc", chk_modo_pc.button_pressed if chk_modo_pc else false)
 	
 	cfg.set_value("graficos", "city_optimizer_enabled", chk_city_opt.button_pressed if chk_city_opt else true)
 	cfg.set_value("graficos", "city_optimizer_dist", slider_city_dist.value if slider_city_dist else 200.0)
@@ -1550,8 +1596,13 @@ func _apply_settings() -> void:
 		elif dl is Light3D:
 			dl.shadow_enabled = (sombras_idx >= 2)
 
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
-	vp.scaling_3d_scale = slider_render.value / 100.0
+	var es_compat := RenderingServer.get_current_rendering_method() == "gl_compatibility"
+	var method = ProjectSettings.get_setting("rendering/renderer/rendering_method")
+	if not es_compat and method == "forward_plus" and slider_render.value >= 60:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = clampf(slider_render.value / 100.0, 0.4, 1.0)
 
 	var fps_values: Array[int] = [30, 60, 90, 120, 0]
 	Engine.max_fps = fps_values[opt_fps.selected]

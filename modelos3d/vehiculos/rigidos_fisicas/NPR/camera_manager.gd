@@ -373,9 +373,9 @@ func seleccionar_camara(indice: int, forzar: bool = false) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.is_pressed():
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_distribuir_pinch(25.0)
+			_distribuir_pinch(10.0)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_distribuir_pinch(-25.0)
+			_distribuir_pinch(-10.0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenDrag:

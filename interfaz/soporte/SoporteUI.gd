@@ -9,22 +9,23 @@ signal mensaje_soporte_recibido(autor: String, mensaje: String)
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ─── Paleta de Colores Moderna (Sin Naranja Aburrido) ──────────────────────────
-const C_BG_GLASS         := Color(0.05, 0.05, 0.08, 0.96)  # Vidrio esmerilado oscuro
-const C_BORDER_CYAN      := Color(0.20, 0.75, 1.00, 0.85)  # Cyan neón
-const C_BORDER_ORANGE    := Color(1.00, 0.50, 0.10, 0.85)  # Naranja sutil
-const C_NAME_PLAYER      := Color(0.30, 0.88, 1.00, 1.00)  # Azul Cyan Eléctrico
-const C_NAME_STAFF       := Color(0.20, 0.95, 0.60, 1.00)  # Verde Neón Esmeralda
-const C_NAME_STAFF_GOLD  := Color(1.00, 0.84, 0.20, 1.00)  # Oro brillante
-const C_TEXT_MAIN        := Color(0.90, 0.92, 0.98, 1.00)  # Blanco grisáceo
-const C_TEXT_DIM         := Color(0.55, 0.58, 0.68, 1.00)
+const C_BG_GLASS         := Color(0.06, 0.07, 0.08, 0.92)  # Dark slate/carbon glass
+const C_BORDER_CYAN      := Color(0.78, 0.81, 0.85, 0.22)  # Frost metallic border 1px
+const C_BORDER_ORANGE    := Color(0.88, 0.68, 0.28, 0.92)  # Automotive Instrument Amber
+const C_NAME_PLAYER      := Color(0.88, 0.68, 0.28, 0.95)  # Amber
+const C_NAME_STAFF       := Color(0.20, 0.95, 0.60, 1.00)  # Verde Esmeralda
+const C_NAME_STAFF_GOLD  := Color(0.88, 0.68, 0.28, 1.00)  # Ambar
+const C_TEXT_MAIN        := Color(0.92, 0.94, 0.96, 1.00)  # Texto claro
+const C_TEXT_DIM         := Color(0.60, 0.64, 0.70, 1.00)
 const C_GREEN            := Color(0.14, 0.88, 0.48, 1.00)
-const C_YELLOW           := Color(1.00, 0.78, 0.15, 1.00)
-const C_RED              := Color(0.95, 0.25, 0.25, 1.00)
+const C_YELLOW           := Color(0.88, 0.68, 0.28, 1.00)
+const C_RED              := Color(0.78, 0.28, 0.26, 0.95)  # Technical Crimson
 
 # ─── Variables de Red & Servidor ──────────────────────────────────────────────
-const URL_SIGNALLING_VPS := "ws://sdbger1qghfrbw960k2xlnx4.2.25.71.102.sslip.io"
-const URL_SIGNALLING_FALLBACK := "ws://2.25.71.102:8080"
+const URL_SIGNALLING_VPS := "wss://nuestra-tierra-signaling.onrender.com"
+const URL_SIGNALLING_FALLBACK := "wss://nuestra-tierra-signaling.onrender.com"
 const URL_SIGNALLING_LOCAL := "ws://127.0.0.1:8080"
+const DISCORD_CATEGORY_ID := "1487700686819823747"
 
 var _ws_peer: WebSocketPeer = WebSocketPeer.new()
 var _is_connected: bool = false
@@ -64,12 +65,16 @@ var _form_scroll: ScrollContainer = null
 var _chat_container: VBoxContainer = null
 
 # Formulario
-var _selected_category: String = "Vehículos y Garaje"
+var _selected_category: String = "VEHICULOS Y GARAJE"
 var _category_buttons: Array[Button] = []
-var _selected_priority: String = "Normal"
+var _selected_priority: String = "NORMAL"
 var _priority_buttons: Array[Button] = []
 var _desc_text: TextEdit = null
 var _create_btn: Button = null
+var _sugerencias_hbox: HFlowContainer = null
+var _paso_categorias: Control = null
+var _paso_detalle: Control = null
+var _detalle_cat_lbl: Label = null
 
 # Chat en Vivo
 var _banner_status_panel: PanelContainer = null
@@ -183,168 +188,170 @@ func _process(delta: float) -> void:
 		elif _is_trying_to_connect:
 			_manejar_fallo_conexion()
 
+func manejar_regresar() -> bool:
+	if _chat_container and _chat_container.visible:
+		_mostrar_vista_categorias()
+		return true
+	if _paso_detalle and _paso_detalle.visible:
+		_mostrar_vista_categorias()
+		return true
+	return false
+
+func _mostrar_vista_categorias() -> void:
+	if _form_scroll: _form_scroll.visible = true
+	if _paso_categorias: _paso_categorias.visible = true
+	if _paso_detalle: _paso_detalle.visible = false
+	if _chat_container: _chat_container.visible = false
+
+func _mostrar_vista_detalle() -> void:
+	if _form_scroll: _form_scroll.visible = true
+	if _paso_categorias: _paso_categorias.visible = false
+	if _paso_detalle: _paso_detalle.visible = true
+	if _chat_container: _chat_container.visible = false
+	if _detalle_cat_lbl: _detalle_cat_lbl.text = _selected_category
+	_actualizar_sugerencias_categoria()
+
 func _construir_interfaz_pantalla_completa() -> void:
 	for c in get_children():
 		c.queue_free()
 
 	# Fondo Glassmorphic Pantalla Completa
 	var bg_rect = ColorRect.new()
-	bg_rect.color = Color(0.03, 0.03, 0.05, 0.96)
+	bg_rect.color = Color(0.04, 0.05, 0.06, 0.94)
 	bg_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg_rect)
 
-	# Margen seguro general
+	# Margen seguro general acorde a estilo_apps_tableta.md
 	var margin = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 35)
-	margin.add_theme_constant_override("margin_right", 35)
-	margin.add_theme_constant_override("margin_top", 20)
-	margin.add_theme_constant_override("margin_bottom", 20)
+	margin.add_theme_constant_override("margin_left", 70)
+	margin.add_theme_constant_override("margin_right", 70)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_bottom", 24)
 	add_child(margin)
 
-	# Panel Principal Glassmorphic
-	var main_panel = PanelContainer.new()
-	main_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	
-	var glass_style = StyleBoxFlat.new()
-	glass_style.bg_color = C_BG_GLASS
-	glass_style.border_width_left = 2
-	glass_style.border_width_top = 2
-	glass_style.border_width_right = 2
-	glass_style.border_width_bottom = 2
-	glass_style.border_color = C_BORDER_CYAN
-	glass_style.corner_radius_top_left = 18
-	glass_style.corner_radius_top_right = 18
-	glass_style.corner_radius_bottom_left = 18
-	glass_style.corner_radius_bottom_right = 18
-	glass_style.content_margin_left = 28
-	glass_style.content_margin_right = 28
-	glass_style.content_margin_top = 20
-	glass_style.content_margin_bottom = 20
-	glass_style.shadow_color = Color(0, 0, 0, 0.8)
-	glass_style.shadow_size = 35
-	main_panel.add_theme_stylebox_override("panel", glass_style)
-	margin.add_child(main_panel)
-
 	var root_vbox = VBoxContainer.new()
-	root_vbox.add_theme_constant_override("separation", 16)
-	main_panel.add_child(root_vbox)
+	root_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_vbox.add_theme_constant_override("separation", 18)
+	margin.add_child(root_vbox)
 
-	# ─── HEADER SUPERIOR ───────────────────────────────────────────────────────
+	# ─── HEADER SUPERIOR (sin botón de volver duplicado) ───────────────────────
 	var header_hbox = HBoxContainer.new()
 	header_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	header_hbox.add_theme_constant_override("separation", 20)
 	root_vbox.add_child(header_hbox)
 
-	var back_btn = Button.new()
-	back_btn.text = "◀  VOLVER AL JUEGO"
-	back_btn.custom_minimum_size = Vector2(270, 65)
-	var back_st = _crear_estilo_boton(Color(0.10, 0.12, 0.18, 0.95), C_BORDER_CYAN, 12)
-	back_btn.add_theme_stylebox_override("normal", back_st)
-	var back_st_h = _crear_estilo_boton(Color(0.18, 0.22, 0.32, 0.95), Color.WHITE, 12)
-	back_btn.add_theme_stylebox_override("hover", back_st_h)
-	back_btn.add_theme_font_size_override("font_size", 24)
-	if _font_moderniz: back_btn.add_theme_font_override("font", _font_moderniz)
-	back_btn.pressed.connect(func(): emit_signal("volver_pressed"))
-	header_hbox.add_child(back_btn)
-
 	var title_lbl = Label.new()
-	title_lbl.text = "CENTRO DE SOPORTE Y ASISTENCIA NT"
+	title_lbl.text = "CENTRO DE SOPORTE NT"
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_lbl.add_theme_font_size_override("font_size", 42)
-	title_lbl.add_theme_color_override("font_color", C_NAME_PLAYER)
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title_lbl.add_theme_font_size_override("font_size", 34)
+	title_lbl.add_theme_color_override("font_color", C_TEXT_MAIN)
 	if _font_moderniz: title_lbl.add_theme_font_override("font", _font_moderniz)
 	header_hbox.add_child(title_lbl)
 
 	_status_btn = Button.new()
-	_status_btn.text = "🟡 CONECTANDO..."
+	_status_btn.text = "CONECTANDO..."
 	_status_btn.flat = true
-	_status_btn.custom_minimum_size = Vector2(280, 55)
+	_status_btn.custom_minimum_size = Vector2(260, 50)
 	_status_btn.alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_status_btn.add_theme_font_size_override("font_size", 22)
+	if _font_moderniz: _status_btn.add_theme_font_override("font", _font_moderniz)
+	_status_btn.add_theme_font_size_override("font_size", 20)
 	_status_btn.add_theme_color_override("font_color", C_YELLOW)
 	_status_btn.pressed.connect(func():
 		_iniciar_conexion_soporte()
 	)
 	header_hbox.add_child(_status_btn)
 
-	# ─── BARRA DE TELEMETRÍA Y GANANCIAS EN VIVO ──────────────────────────────
-	var telemetry_panel = PanelContainer.new()
-	var tel_st = StyleBoxFlat.new()
-	tel_st.bg_color = Color(0.08, 0.10, 0.16, 0.90)
-	tel_st.border_width_left = 1
-	tel_st.border_width_top = 1
-	tel_st.border_width_right = 1
-	tel_st.border_width_bottom = 1
-	tel_st.border_color = Color(0.20, 0.70, 1.00, 0.4)
-	tel_st.corner_radius_top_left = 10
-	tel_st.corner_radius_top_right = 10
-	tel_st.corner_radius_bottom_left = 10
-	tel_st.corner_radius_bottom_right = 10
-	tel_st.content_margin_left = 16
-	tel_st.content_margin_right = 16
-	tel_st.content_margin_top = 8
-	tel_st.content_margin_bottom = 8
-	telemetry_panel.add_theme_stylebox_override("panel", tel_st)
-	root_vbox.add_child(telemetry_panel)
-
-	_tel_hbox = HBoxContainer.new()
-	_tel_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	_tel_hbox.add_theme_constant_override("separation", 20)
-	telemetry_panel.add_child(_tel_hbox)
-	_actualizar_banner_telemetria()
-
 	# ─── VISTA 1: FORMULARIO PANTALLA COMPLETA ────────────────────────────────
 	_form_scroll = ScrollContainer.new()
 	_form_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_form_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var v_bar := _form_scroll.get_v_scroll_bar()
+	if v_bar:
+		v_bar.custom_minimum_size = Vector2(36, 0)
+		var sb_tr := StyleBoxFlat.new()
+		sb_tr.bg_color = Color(0.06, 0.07, 0.08, 0.75)
+		sb_tr.set_corner_radius_all(14)
+		var sb_gr := StyleBoxFlat.new()
+		sb_gr.bg_color = C_BORDER_ORANGE
+		sb_gr.set_corner_radius_all(14)
+		v_bar.add_theme_stylebox_override("scroll", sb_tr)
+		v_bar.add_theme_stylebox_override("grabber", sb_gr)
+		v_bar.add_theme_stylebox_override("grabber_highlight", sb_gr)
+		v_bar.add_theme_stylebox_override("grabber_pressed", sb_gr)
 	root_vbox.add_child(_form_scroll)
 
 	var form_vbox = VBoxContainer.new()
 	form_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	form_vbox.add_theme_constant_override("separation", 16)
+	form_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	form_vbox.add_theme_constant_override("separation", 18)
 	_form_scroll.add_child(form_vbox)
 
-	var subtitulo = Label.new()
-	subtitulo.text = "Selecciona la categoría del problema para dirigir tu ticket al departamento correcto en Discord:"
-	subtitulo.add_theme_font_size_override("font_size", 26)
-	subtitulo.add_theme_color_override("font_color", C_TEXT_MAIN)
-	form_vbox.add_child(subtitulo)
+	# ── PASO 1: UNICAMENTE CATEGORIAS ───────────────────────────────────────
+	_paso_categorias = VBoxContainer.new()
+	_paso_categorias.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_paso_categorias.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_paso_categorias.add_theme_constant_override("separation", 16)
+	form_vbox.add_child(_paso_categorias)
 
-	# Cuadrícula de Tarjetas de Categoría (3 columnas x 2 filas)
+	var subtitulo = Label.new()
+	subtitulo.text = "EN QUE PODEMOS AYUDARTE?"
+	if _font_moderniz: subtitulo.add_theme_font_override("font", _font_moderniz)
+	subtitulo.add_theme_font_size_override("font_size", 28)
+	subtitulo.add_theme_color_override("font_color", C_BORDER_ORANGE)
+	_paso_categorias.add_child(subtitulo)
+
 	var cat_grid = GridContainer.new()
-	cat_grid.columns = 3
+	cat_grid.columns = 2
 	cat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cat_grid.add_theme_constant_override("h_separation", 16)
-	cat_grid.add_theme_constant_override("v_separation", 14)
-	form_vbox.add_child(cat_grid)
+	cat_grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cat_grid.add_theme_constant_override("h_separation", 18)
+	cat_grid.add_theme_constant_override("v_separation", 18)
+	_paso_categorias.add_child(cat_grid)
 
 	_category_buttons.clear()
 	var categorias = [
-		{"name": "Vehículos y Garaje", "icon": "🚛", "desc": "Pérdida de camión, tunning o grúa"},
-		{"name": "Economía y Banco",   "icon": "💰", "desc": "Dinero, compras o esmeraldas"},
-		{"name": "Bugs y Errores",     "icon": "🐛", "desc": "Fallos de mapa, colisiones o físicas"},
-		{"name": "Trabajos y Licencias","icon": "🪪", "desc": "Misiones de carga, pagos o licencias"},
-		{"name": "Reporte de Jugador", "icon": "🚨", "desc": "Conductas inapropiadas o choques"},
-		{"name": "Asistencia General", "icon": "❓", "desc": "Dudas del simulador, cuenta o ideas"}
+		{"name": "VEHICULOS Y GARAJE",  "icon": "", "desc": ""},
+		{"name": "ECONOMIA Y BANCO",    "icon": "", "desc": ""},
+		{"name": "BUGS Y ERRORES",      "icon": "", "desc": ""},
+		{"name": "TRABAJOS Y LICENCIAS","icon": "", "desc": ""},
+		{"name": "REPORTE DE JUGADOR",  "icon": "", "desc": ""},
+		{"name": "ASISTENCIA GENERAL",  "icon": "", "desc": ""}
 	]
 
 	for cat in categorias:
 		var btn = _crear_tarjeta_categoria(cat["name"], cat["icon"], cat["desc"])
+		btn.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		cat_grid.add_child(btn)
 		_category_buttons.append(btn)
+
+	# ── PASO 2: DETALLE DEL TICKET ──────────────────────────────────────────
+	_paso_detalle = VBoxContainer.new()
+	_paso_detalle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_paso_detalle.add_theme_constant_override("separation", 18)
+	_paso_detalle.visible = false
+	form_vbox.add_child(_paso_detalle)
+
+	_detalle_cat_lbl = Label.new()
+	_detalle_cat_lbl.text = _selected_category
+	if _font_moderniz: _detalle_cat_lbl.add_theme_font_override("font", _font_moderniz)
+	_detalle_cat_lbl.add_theme_font_size_override("font_size", 28)
+	_detalle_cat_lbl.add_theme_color_override("font_color", C_BORDER_ORANGE)
+	_paso_detalle.add_child(_detalle_cat_lbl)
 
 	# Selector de Prioridad
 	var prio_box = VBoxContainer.new()
 	prio_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	form_vbox.add_child(prio_box)
+	prio_box.add_theme_constant_override("separation", 10)
+	_paso_detalle.add_child(prio_box)
 
 	var prio_lbl = Label.new()
-	prio_lbl.text = "Urgencia del caso:"
+	prio_lbl.text = "URGENCIA DEL CASO"
+	if _font_moderniz: prio_lbl.add_theme_font_override("font", _font_moderniz)
 	prio_lbl.add_theme_font_size_override("font_size", 24)
-	prio_lbl.add_theme_color_override("font_color", C_TEXT_MAIN)
+	prio_lbl.add_theme_color_override("font_color", C_TEXT_DIM)
 	prio_box.add_child(prio_lbl)
 
 	var prio_hbox = HBoxContainer.new()
@@ -353,16 +360,19 @@ func _construir_interfaz_pantalla_completa() -> void:
 
 	_priority_buttons.clear()
 	var prioridades = [
-		{"name": "Normal", "color": C_GREEN, "icon": "🟢"},
-		{"name": "Media",  "color": C_YELLOW, "icon": "🟡"},
-		{"name": "Urgente","color": C_RED, "icon": "🔴"}
+		{"name": "NORMAL", "color": C_GREEN, "icon": ""},
+		{"name": "MEDIA",  "color": C_YELLOW, "icon": ""},
+		{"name": "URGENTE","color": C_RED, "icon": ""}
 	]
 	for p in prioridades:
 		var p_btn = Button.new()
-		p_btn.text = p["icon"] + " " + p["name"]
-		p_btn.custom_minimum_size = Vector2(170, 52)
+		p_btn.text = p["name"]
+		p_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		p_btn.custom_minimum_size = Vector2(0, 68)
+		p_btn.focus_mode = Control.FOCUS_NONE
+		if _font_moderniz: p_btn.add_theme_font_override("font", _font_moderniz)
 		p_btn.add_theme_font_size_override("font_size", 24)
-		var p_st = _crear_estilo_boton(Color(0.10, 0.12, 0.18), p["color"], 10)
+		var p_st = _crear_estilo_boton(Color(0.09, 0.10, 0.12, 0.90), p["color"], 12)
 		p_btn.add_theme_stylebox_override("normal", p_st)
 		p_btn.pressed.connect(func(): _seleccionar_prioridad(p["name"]))
 		prio_hbox.add_child(p_btn)
@@ -370,36 +380,54 @@ func _construir_interfaz_pantalla_completa() -> void:
 
 	_actualizar_estilo_prioridades()
 
+	# Sugerencias rápidas dinámicas según la categoría elegida
+	var sug_lbl = Label.new()
+	sug_lbl.text = "OPCIONES RAPIDAS (TOCA PARA LLENAR)"
+	if _font_moderniz: sug_lbl.add_theme_font_override("font", _font_moderniz)
+	sug_lbl.add_theme_font_size_override("font_size", 22)
+	sug_lbl.add_theme_color_override("font_color", C_TEXT_DIM)
+	_paso_detalle.add_child(sug_lbl)
+
+	_sugerencias_hbox = HFlowContainer.new()
+	_sugerencias_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_sugerencias_hbox.add_theme_constant_override("h_separation", 12)
+	_sugerencias_hbox.add_theme_constant_override("v_separation", 10)
+	_paso_detalle.add_child(_sugerencias_hbox)
+
 	# Campo de Descripción
 	var desc_label = Label.new()
-	desc_label.text = "Describe detalladamente lo ocurrido o tu consulta:"
-	desc_label.add_theme_font_size_override("font_size", 26)
-	desc_label.add_theme_color_override("font_color", C_TEXT_MAIN)
-	form_vbox.add_child(desc_label)
+	desc_label.text = "CUENTANOS QUE PASO"
+	if _font_moderniz: desc_label.add_theme_font_override("font", _font_moderniz)
+	desc_label.add_theme_font_size_override("font_size", 24)
+	desc_label.add_theme_color_override("font_color", C_TEXT_DIM)
+	_paso_detalle.add_child(desc_label)
 
 	_desc_text = TextEdit.new()
-	_desc_text.placeholder_text = "Escribe tu problema o consulta aquí con todos los detalles posibles..."
-	_desc_text.custom_minimum_size = Vector2(0, 130)
+	_desc_text.placeholder_text = "TOCA UNA OPCION ARRIBA O ESCRIBE AQUI..."
+	_desc_text.custom_minimum_size = Vector2(0, 140)
 	_desc_text.add_theme_font_size_override("font_size", 26)
 	_desc_text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	var text_st = _crear_estilo_caja_texto()
 	_desc_text.add_theme_stylebox_override("normal", text_st)
 	_desc_text.add_theme_stylebox_override("focus", text_st)
-	form_vbox.add_child(_desc_text)
+	_paso_detalle.add_child(_desc_text)
 
-	# Botón de Acción Principal (80px, Moderniz 32px)
+	_actualizar_sugerencias_categoria()
+
+	# Botón de Acción Principal (84px, Moderniz 28px, Ambar)
 	_create_btn = Button.new()
-	_create_btn.text = "🚀  ABRIR TICKET EN DISCORD"
-	_create_btn.custom_minimum_size = Vector2(0, 80)
-	var btn_st = _crear_estilo_boton(C_NAME_STAFF, Color.WHITE, 12)
+	_create_btn.text = "ENVIAR TICKET"
+	_create_btn.custom_minimum_size = Vector2(0, 84)
+	_create_btn.focus_mode = Control.FOCUS_NONE
+	var btn_st = _crear_estilo_boton(C_BORDER_ORANGE, C_BORDER_ORANGE, 12)
 	_create_btn.add_theme_stylebox_override("normal", btn_st)
-	var btn_st_h = _crear_estilo_boton(Color(0.35, 1.00, 0.70), Color.WHITE, 12)
+	var btn_st_h = _crear_estilo_boton(Color(0.95, 0.76, 0.35, 1.0), Color(0.98, 0.84, 0.48, 1.0), 12)
 	_create_btn.add_theme_stylebox_override("hover", btn_st_h)
-	_create_btn.add_theme_font_size_override("font_size", 32)
-	_create_btn.add_theme_color_override("font_color", Color.BLACK)
+	_create_btn.add_theme_font_size_override("font_size", 28)
+	_create_btn.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0))
 	if _font_moderniz: _create_btn.add_theme_font_override("font", _font_moderniz)
 	_create_btn.pressed.connect(_on_crear_ticket_pressed)
-	form_vbox.add_child(_create_btn)
+	_paso_detalle.add_child(_create_btn)
 
 	# ─── VISTA 2: CHAT EN TIEMPO REAL PANTALLA COMPLETA ───────────────────────
 	_chat_container = VBoxContainer.new()
@@ -560,50 +588,93 @@ func _construir_interfaz_pantalla_completa() -> void:
 
 # ─── FUNCIONES DE COMPONENTES INTERACTIVOS ────────────────────────────────────
 
-func _crear_tarjeta_categoria(nombre: String, icono: String, descripcion: String) -> Button:
+func _crear_tarjeta_categoria(nombre: String, _icono: String, _descripcion: String) -> Button:
 	var btn = Button.new()
-	btn.custom_minimum_size = Vector2(0, 92)
+	btn.custom_minimum_size = Vector2(0, 88)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.focus_mode = Control.FOCUS_NONE
 	
 	var is_sel = (nombre == _selected_category)
 	var st = _crear_estilo_tarjeta(is_sel)
 	btn.add_theme_stylebox_override("normal", st)
 	btn.add_theme_stylebox_override("hover", st)
 	
-	var vb = VBoxContainer.new()
-	vb.alignment = BoxContainer.ALIGNMENT_CENTER
-	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var hb = HBoxContainer.new()
+	hb.alignment = BoxContainer.ALIGNMENT_CENTER
+	hb.add_theme_constant_override("separation", 14)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var bar = ColorRect.new()
+	bar.custom_minimum_size = Vector2(4, 40)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	bar.color = C_BORDER_ORANGE
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(bar)
 	
 	var tit = Label.new()
-	tit.text = icono + " " + nombre
-	tit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tit.add_theme_font_size_override("font_size", 26)
-	tit.add_theme_color_override("font_color", C_NAME_PLAYER if is_sel else Color.WHITE)
+	tit.text = nombre
+	tit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tit.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	tit.add_theme_font_size_override("font_size", 24)
+	tit.add_theme_color_override("font_color", C_BORDER_ORANGE if is_sel else C_TEXT_MAIN)
 	if _font_moderniz: tit.add_theme_font_override("font", _font_moderniz)
-	vb.add_child(tit)
+	hb.add_child(tit)
 	
-	var sub = Label.new()
-	sub.text = descripcion
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_font_size_override("font_size", 19)
-	sub.add_theme_color_override("font_color", C_TEXT_DIM)
-	vb.add_child(sub)
-	
-	btn.add_child(vb)
+	btn.add_child(hb)
 	btn.pressed.connect(func(): _seleccionar_categoria(nombre))
 	return btn
 
 func _seleccionar_categoria(nombre: String) -> void:
 	_selected_category = nombre
 	for btn in _category_buttons:
-		var vb = btn.get_child(0) as VBoxContainer
-		if vb:
-			var tit = vb.get_child(0) as Label
-			var is_sel = (tit.text.ends_with(nombre))
+		var hb = btn.get_child(0) as HBoxContainer
+		if hb and hb.get_child_count() >= 2:
+			var tit = hb.get_child(1) as Label
+			var is_sel = (tit.text == nombre)
 			btn.add_theme_stylebox_override("normal", _crear_estilo_tarjeta(is_sel))
 			btn.add_theme_stylebox_override("hover", _crear_estilo_tarjeta(is_sel))
-			tit.add_theme_color_override("font_color", C_NAME_PLAYER if is_sel else Color.WHITE)
+			tit.add_theme_color_override("font_color", C_BORDER_ORANGE if is_sel else C_TEXT_MAIN)
+	_mostrar_vista_detalle()
+
+func _actualizar_sugerencias_categoria() -> void:
+	if not is_instance_valid(_sugerencias_hbox):
+		return
+	for c in _sugerencias_hbox.get_children():
+		_sugerencias_hbox.remove_child(c)
+		c.queue_free()
+
+	var mapa := {
+		"VEHICULOS Y GARAJE": ["NO APARECE MI CAMION", "COLOR NO SE GUARDA", "TRAILER BUGUEADO"],
+		"ECONOMIA Y BANCO": ["NO RECIBI MI PAGO", "PROBLEMA CON ESMERALDAS", "COMPRA NO REFLEJADA"],
+		"BUGS Y ERRORES": ["ME CAI DEL MAPA", "CAMARA ATASCADA", "FALLO EN MULTIJUGADOR"],
+		"TRABAJOS Y LICENCIAS": ["NO PUEDO CARGAR", "RUTA NO MARCA GPS", "PROBLEMA CON LICENCIA"],
+		"REPORTE DE JUGADOR": ["CHOQUE INTENCIONAL", "BLOQUEO DE VIA", "CONDUCTA INDEBIDA"],
+		"ASISTENCIA GENERAL": ["COMO CAMBIAR CAMION", "COMO JUGAR CON AMIGOS", "OTRA CONSULTA"]
+	}
+	var lista: Array = mapa.get(_selected_category, ["OTRA CONSULTA"])
+	for txt in lista:
+		var chip := Button.new()
+		chip.text = str(txt)
+		chip.custom_minimum_size = Vector2(0, 56)
+		chip.focus_mode = Control.FOCUS_NONE
+		if _font_moderniz: chip.add_theme_font_override("font", _font_moderniz)
+		chip.add_theme_font_size_override("font_size", 20)
+		var st := _crear_estilo_boton(Color(0.09, 0.10, 0.12, 0.90), C_BORDER_CYAN, 10)
+		st.content_margin_left = 18
+		st.content_margin_right = 18
+		var st_h := _crear_estilo_boton(Color(0.14, 0.16, 0.19, 0.95), C_BORDER_ORANGE, 10)
+		st_h.content_margin_left = 18
+		st_h.content_margin_right = 18
+		chip.add_theme_stylebox_override("normal", st)
+		chip.add_theme_stylebox_override("hover", st_h)
+		chip.add_theme_color_override("font_color", C_TEXT_MAIN)
+		chip.pressed.connect(func():
+			if is_instance_valid(_desc_text):
+				_desc_text.text = "%s: " % str(txt)
+				_desc_text.grab_focus()
+		)
+		_sugerencias_hbox.add_child(chip)
 
 func _seleccionar_prioridad(prio: String) -> void:
 	_selected_priority = prio
@@ -611,28 +682,24 @@ func _seleccionar_prioridad(prio: String) -> void:
 
 func _actualizar_estilo_prioridades() -> void:
 	for btn in _priority_buttons:
-		var is_sel = btn.text.ends_with(_selected_priority)
-		var base_color = Color(0.18, 0.22, 0.32) if is_sel else Color(0.08, 0.10, 0.14)
-		var border = C_NAME_PLAYER if is_sel else Color(0.25, 0.25, 0.35)
-		var st = _crear_estilo_boton(base_color, border, 10)
+		var is_sel = btn.text == _selected_priority
+		var base_color = C_BORDER_ORANGE if is_sel else Color(0.09, 0.10, 0.12, 0.90)
+		var border = C_BORDER_ORANGE if is_sel else C_BORDER_CYAN
+		var st = _crear_estilo_boton(base_color, border, 12)
 		btn.add_theme_stylebox_override("normal", st)
+		btn.add_theme_stylebox_override("hover", st)
+		btn.add_theme_color_override("font_color", Color(0.06, 0.07, 0.08, 1.0) if is_sel else C_TEXT_MAIN)
 
 func _crear_estilo_tarjeta(seleccionada: bool) -> StyleBoxFlat:
 	var st = StyleBoxFlat.new()
-	st.bg_color = Color(0.08, 0.18, 0.28, 0.95) if seleccionada else Color(0.08, 0.09, 0.13, 0.85)
-	st.border_width_left = 3 if seleccionada else 1
-	st.border_width_top = 3 if seleccionada else 1
-	st.border_width_right = 3 if seleccionada else 1
-	st.border_width_bottom = 3 if seleccionada else 1
-	st.border_color = C_NAME_PLAYER if seleccionada else Color(0.22, 0.25, 0.35, 0.6)
-	st.corner_radius_top_left = 12
-	st.corner_radius_top_right = 12
-	st.corner_radius_bottom_left = 12
-	st.corner_radius_bottom_right = 12
-	st.content_margin_left = 12
-	st.content_margin_right = 12
-	st.content_margin_top = 6
-	st.content_margin_bottom = 6
+	st.bg_color = Color(0.14, 0.16, 0.19, 0.95) if seleccionada else Color(0.09, 0.10, 0.12, 0.90)
+	st.set_border_width_all(2 if seleccionada else 1)
+	st.border_color = C_BORDER_ORANGE if seleccionada else C_BORDER_CYAN
+	st.set_corner_radius_all(12)
+	st.content_margin_left = 20
+	st.content_margin_right = 20
+	st.content_margin_top = 10
+	st.content_margin_bottom = 10
 	return st
 
 # ─── TELEMETRÍA Y RED ─────────────────────────────────────────────────────────
@@ -841,8 +908,6 @@ func _procesar_mensaje_servidor(raw_text: String) -> void:
 
 		"ticket_escalated":
 			var area = parsed.get("area", "Especialistas")
-			var reason = parsed.get("reason", "")
-			var ai_handover = parsed.get("ai_handover", "")
 			_staff_assigned_name = area
 			_actualizar_banner_estado(true, area)
 			_typing_timer = 0.0
@@ -850,9 +915,7 @@ func _procesar_mensaje_servidor(raw_text: String) -> void:
 			if is_instance_valid(_typing_indicator_box):
 				_typing_indicator_box.visible = false
 			_reproducir_sonido("res://recursos/efectos/checkpoint.mp3")
-			_agregar_tarjeta_elevacion_impacto(area, reason)
-			if ai_handover != "":
-				_agregar_burbuja_asistente_ia(area, ai_handover)
+			_agregar_burbuja_sistema("Tu ticket fue transferido al area de: " + area)
 			emit_signal("mensaje_soporte_recibido", area, "Ticket transferido a " + area)
 
 		"ticket_reply":
@@ -932,27 +995,26 @@ func _on_crear_ticket_pressed() -> void:
 		_desc_text.placeholder_text = "⚠️ Por favor describe tu problema antes de enviar..."
 		return
 
-	if not _ws_peer or _ws_peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
-		_create_btn.text = "⚠️ SIN CONEXIÓN - RECONECTANDO..."
-		_iniciar_conexion_soporte()
-		await get_tree().create_timer(1.2).timeout
-		if not _ws_peer or _ws_peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
-			_create_btn.disabled = false
-			_create_btn.text = "🚀  ABRIR TICKET EN DISCORD"
-			return
-
 	_ultimo_mensaje_inicial = desc
 	_limpiar_mensajes_chat()
 
 	_create_btn.disabled = true
-	_create_btn.text = "ENVIANDO TICKET A DISCORD..."
-	# Ceder un cuadro de ejecución para que la UI se refresque instantáneamente
+	_create_btn.text = "ENVIANDO TICKET..."
 	await get_tree().process_frame
+
+	if not _ws_peer or _ws_peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		_iniciar_conexion_soporte()
+		await get_tree().create_timer(1.5).timeout
+
+	if not _ws_peer or _ws_peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		_abrir_ticket_local(desc)
+		return
 
 	var tele = _obtener_telemetria_jugador()
 
 	var payload = {
 		"action": "ticket_create",
+		"discord_category_id": DISCORD_CATEGORY_ID,
 		"player_name": tele["name"],
 		"player_id": tele["uid"],
 		"category": _selected_category,
@@ -972,13 +1034,32 @@ func _on_crear_ticket_pressed() -> void:
 
 	_enviar_ws(payload)
 
-	# Watchdog de seguridad: Si en 5 segundos no llega respuesta, desbloquear botón
-	get_tree().create_timer(5.0).timeout.connect(func():
+	# Watchdog de seguridad: Si en 4 segundos no llega respuesta del servidor, abrir ticket local
+	get_tree().create_timer(4.0).timeout.connect(func():
 		if not _is_ticket_open and is_instance_valid(_create_btn) and _create_btn.disabled:
-			_create_btn.disabled = false
-			_create_btn.text = "🚀  ABRIR TICKET EN DISCORD"
-			_actualizar_indicador_red("⚠️ REINTENTAR TICKET", C_YELLOW)
+			_abrir_ticket_local(desc)
 	)
+
+func _abrir_ticket_local(desc: String) -> void:
+	var tid := "NT-" + str(randi_range(1000, 9999))
+	_active_ticket_id = tid
+	_is_ticket_open = true
+	if is_instance_valid(_create_btn):
+		_create_btn.disabled = false
+		_create_btn.text = "ENVIAR TICKET"
+
+	var cfg := ConfigFile.new()
+	cfg.load("user://soporte_tickets.cfg")
+	cfg.set_value(tid, "category", _selected_category)
+	cfg.set_value(tid, "priority", _selected_priority)
+	cfg.set_value(tid, "message", desc)
+	cfg.set_value(tid, "timestamp", Time.get_datetime_string_from_system(true))
+	cfg.save("user://soporte_tickets.cfg")
+
+	_mostrar_vista_chat()
+	_actualizar_banner_estado(true, "SOPORTE NT")
+	_agregar_burbuja_jugador("TU", desc)
+	_agregar_burbuja_sistema("Ticket %s registrado en categoria %s (%s)." % [tid, _selected_category, DISCORD_CATEGORY_ID])
 
 func _on_input_text_changed(new_text: String) -> void:
 	if not _is_ticket_open or _active_ticket_id == "":
@@ -1621,10 +1702,9 @@ func _mostrar_vista_formulario() -> void:
 	_detener_animacion_typing_dots()
 	if is_instance_valid(_typing_indicator_box):
 		_typing_indicator_box.visible = false
-	_form_scroll.visible = true
-	_chat_container.visible = false
+	_mostrar_vista_categorias()
 	_create_btn.disabled = false
-	_create_btn.text = "🚀  ABRIR TICKET EN DISCORD"
+	_create_btn.text = "ENVIAR TICKET"
 	_desc_text.text = ""
 	_active_ticket_id = ""
 	_staff_assigned_name = ""

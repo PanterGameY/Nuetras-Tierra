@@ -68,9 +68,11 @@ func _procesar_toque(pos: Vector2) -> void:
 	if dist > max_radius:
 		dist = max_radius
 		
-	# Actualizar valores HSV
+	# Actualizar valores HSV (asegurar brillo visible al elegir en la rueda)
 	current_hue = angle / TAU
 	current_saturation = dist / max_radius
+	if current_value < 0.85:
+		current_value = 1.0
 	
 	# Actualizar posición del cursor
 	var cursor_pos = center + Vector2(cos(angle), sin(angle)) * dist

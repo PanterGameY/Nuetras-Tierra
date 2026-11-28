@@ -22,7 +22,7 @@ extends Node3D
 @export var torque_retardador: float = 16500.0
 
 @export_group("Transmisión y Embrague")
-@export var tiempo_cambio: float = 0.22
+@export var tiempo_cambio: float = 0.52
 @export var fuerza_durante_cambio: float = 0.72
 @export var acople_arranque_min: float = 0.42
 @export var auto_hold_pendiente: bool = true
@@ -411,6 +411,9 @@ func _physics_process(delta: float) -> void:
 				sonidos_nodo.call("reproducir_encender")
 			elif not encendido and sonidos_nodo.has_method("reproducir_apagar"):
 				sonidos_nodo.call("reproducir_apagar")
+	elif encendido and is_instance_valid(sonidos_nodo) and "motor_encendido" in sonidos_nodo and not bool(sonidos_nodo.get("motor_encendido")):
+		if sonidos_nodo.has_method("encender_motor"):
+			sonidos_nodo.call("encender_motor")
 
 	if is_instance_valid(_humo_dano):
 		_humo_dano.emitting = motor_danado and encendido
@@ -575,13 +578,15 @@ func _physics_process(delta: float) -> void:
 	if is_instance_valid(sonidos_nodo):
 		if sonidos_nodo.has_method("set_freno_motor"):
 			sonidos_nodo.call("set_freno_motor", freno_motor_activo)
+		if sonidos_nodo.has_method("set_freno_servicio"):
+			sonidos_nodo.call("set_freno_servicio", freno_raw > 0.08 and absf(speed_fwd_kmh) > 1.5, freno_raw)
 		if sonidos_nodo.has_method("activar_reversa"):
 			sonidos_nodo.call("activar_reversa", en_reversa)
 		if sonidos_nodo.has_method("procesar_audio"):
 			sonidos_nodo.call("procesar_audio", rpm_norm, gas_suavizado, delta)
 
 func _evaluar_subir_marcha(speed_fwd_kmh: float) -> void:
-	if _current_gear >= 9 or _time_in_gear < 0.65:
+	if _current_gear >= 9 or _time_in_gear < 1.15:
 		return
 
 	var vel_requerida = VEL_SUBIDA[_current_gear]
@@ -593,7 +598,7 @@ func _evaluar_subir_marcha(speed_fwd_kmh: float) -> void:
 		_iniciar_cambio(_current_gear + 1)
 
 func _evaluar_bajar_marcha(speed_fwd_kmh: float) -> void:
-	if _current_gear <= 0 or _time_in_gear < 0.65:
+	if _current_gear <= 0 or _time_in_gear < 1.15:
 		return
 
 	var vel_rebaje = VEL_BAJADA[_current_gear]

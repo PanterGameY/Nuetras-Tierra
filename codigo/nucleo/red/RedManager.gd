@@ -15,8 +15,8 @@ signal host_desconectado()
 const MAX_JUGADORES_SALA: int = 5
 const MULTIJUGADOR_SCENE: String = "res://mundo/principal/PrincipalMultijugador.tscn"
 
-var signaling_url_pc: String = "ws://sdbger1qghfrbw960k2xlnx4.2.25.71.102.sslip.io"
-var signaling_url_mobile: String = "ws://sdbger1qghfrbw960k2xlnx4.2.25.71.102.sslip.io"
+var signaling_url_pc: String = "wss://nuestra-tierra-signaling.onrender.com"
+var signaling_url_mobile: String = "wss://nuestra-tierra-signaling.onrender.com"
 var vps_ip: String = "2.25.71.102"
 
 var ws_peer: WebSocketPeer = WebSocketPeer.new()

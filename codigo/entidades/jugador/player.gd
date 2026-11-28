@@ -118,6 +118,8 @@ func _ready() -> void:
 		return
 
 	add_to_group("jugador")
+	if rayo_interaccion:
+		rayo_interaccion.collision_mask |= 2
 	
 	# El ratón nunca se captura, siempre visible
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -261,6 +263,9 @@ func _rotar_camara(relativo: Vector2) -> void:
 func _intentar_entrar_vehiculo() -> void:
 	if rayo_interaccion and rayo_interaccion.is_colliding():
 		var col = rayo_interaccion.get_collider()
+		if col and col.has_method("interactuar"):
+			col.interactuar()
+			return
 		if col and col.has_method("subir_jugador"):
 			entrar_al_vehiculo(col)
 			return
@@ -410,7 +415,7 @@ func puede_interactuar() -> bool:
 		return false
 	if rayo_interaccion and rayo_interaccion.is_colliding():
 		var col = rayo_interaccion.get_collider()
-		if col and col.has_method("subir_jugador"):
+		if col and (col.has_method("subir_jugador") or col.has_method("interactuar")):
 			return true
 	for v in get_tree().get_nodes_in_group("vehiculo"):
 		if v and v.get("jugador_cerca") == true:

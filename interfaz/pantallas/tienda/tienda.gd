@@ -14,13 +14,14 @@ const C_STEEL := Color(0.62, 0.72, 0.82, 1.0)
 
 const ARCHIVO_COMPRAS := "user://tienda_compras.cfg"
 const RUTA_FUENTE_CUERPO := "res://recursos/fonts/creato_display/CreatoDisplay-Medium.otf"
+const RUTA_ICONO_ESMERALDA := "res://recursos/botones/Esmeralda.png"
 
 const CATEGORIAS := [
-	{"id": "vehiculos", "nombre": "VEHICULOS"},
+	{"id": "packs", "nombre": "PASES Y PACKS"},
 	{"id": "licencias", "nombre": "LICENCIAS"},
+	{"id": "vehiculos", "nombre": "VEHICULOS"},
 	{"id": "mejoras", "nombre": "MEJORAS"},
 	{"id": "estilos", "nombre": "PERSONALIZACION"},
-	{"id": "packs", "nombre": "PACKS"},
 	{"id": "esmeraldas", "nombre": "ESMERALDAS"}
 ]
 
@@ -70,8 +71,113 @@ const CATALOGO := {
 	],
 	"mejoras": [],
 	"estilos": [],
-	"packs": [],
-	"esmeraldas": []
+	"packs": [
+		{
+			"id": "pase_mapa",
+			"codigo": "PASS-MAP",
+			"nombre": "Pase de Mapa",
+			"tipo": "Pase de Creador",
+			"desc": "Ticket oficial para publicar un mapa en la comunidad y ganar +1 Esmeralda por cada descarga.",
+			"imagen": "res://recursos/botones/PaseMapa.png",
+			"precio_monedas": 0,
+			"precio_esmeraldas": 100,
+			"consumible": true,
+			"rating": 1.0,
+			"specs": [["Uso", "1 Publicación"], ["Recompensa", "+1 Esm. / descarga"], ["Acumulable", "Sí"]]
+		}
+	],
+	"esmeraldas": [
+		{
+			"id": "esm_pack_50",
+			"codigo": "ESM-050",
+			"nombre": "50 ESMERALDAS",
+			"tipo": "Paquete Inicial",
+			"desc": "Recarga inicial de 50 esmeraldas para usar en tienda y personalizacion.",
+			"imagen": "res://recursos/iconos_tienda/esm_50.png",
+			"precio_usd": 0.99,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 50,
+			"consumible": true,
+			"rating": 0.25,
+			"specs": [["Cantidad", "50 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		},
+		{
+			"id": "esm_pack_150",
+			"codigo": "ESM-150",
+			"nombre": "150 ESMERALDAS",
+			"tipo": "Paquete Estandar",
+			"desc": "Bolsa de 150 esmeraldas ideal para adquirir pases y articulos.",
+			"imagen": "res://recursos/iconos_tienda/esm_150.png",
+			"precio_usd": 2.49,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 150,
+			"consumible": true,
+			"rating": 0.45,
+			"specs": [["Cantidad", "150 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		},
+		{
+			"id": "esm_pack_500",
+			"codigo": "ESM-500",
+			"nombre": "500 ESMERALDAS",
+			"tipo": "Paquete Popular",
+			"desc": "Cofre de 500 esmeraldas para varios pases de mapa y mejoras.",
+			"imagen": "res://recursos/iconos_tienda/esm_500.png",
+			"precio_usd": 6.99,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 500,
+			"consumible": true,
+			"rating": 0.65,
+			"specs": [["Cantidad", "500 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		},
+		{
+			"id": "esm_pack_1200",
+			"codigo": "ESM-1200",
+			"nombre": "1.200 ESMERALDAS",
+			"tipo": "Paquete Avanzado",
+			"desc": "Reserva amplia de 1.200 esmeraldas para contenido exclusivo.",
+			"imagen": "res://recursos/iconos_tienda/esm_1200.png",
+			"precio_usd": 14.99,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 1200,
+			"consumible": true,
+			"rating": 0.80,
+			"specs": [["Cantidad", "1.200 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		},
+		{
+			"id": "esm_pack_3000",
+			"codigo": "ESM-3000",
+			"nombre": "3.000 ESMERALDAS",
+			"tipo": "Paquete Elite",
+			"desc": "Boveda de 3.000 esmeraldas para toda tu flota y mapas.",
+			"imagen": "res://recursos/iconos_tienda/esm_3000.png",
+			"precio_usd": 29.99,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 3000,
+			"consumible": true,
+			"rating": 0.92,
+			"specs": [["Cantidad", "3.000 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		},
+		{
+			"id": "esm_pack_10000",
+			"codigo": "ESM-10K",
+			"nombre": "10.000 ESMERALDAS",
+			"tipo": "Boveda Suprema",
+			"desc": "Reserva maxima de 10.000 esmeraldas con entrega inmediata.",
+			"imagen": "res://recursos/iconos_tienda/esm_10000.png",
+			"precio_usd": 49.99,
+			"precio_monedas": 0,
+			"precio_esmeraldas": 0,
+			"recompensa_esmeraldas": 10000,
+			"consumible": true,
+			"rating": 1.0,
+			"specs": [["Cantidad", "10.000 Esmeraldas"], ["Entrega", "Inmediata"], ["Uso", "Tienda y Taller"]]
+		}
+	]
 }
 
 @onready var main_container: MarginContainer = $MainContainer
@@ -119,7 +225,7 @@ const CATALOGO := {
 @onready var dim: ColorRect = %Dim
 
 var _item_seleccionado: Dictionary = {}
-var _categoria_actual: String = "vehiculos"
+var _categoria_actual: String = "packs"
 var _cards: Dictionary = {}
 var _pills: Dictionary = {}
 var _compras: Dictionary = {}
@@ -128,11 +234,14 @@ var _toast_tween: Tween = null
 var _audio_compra: AudioStreamPlayer = null
 var _pago_en_curso: bool = false
 var _fuente_cuerpo: Font = null
+var _tex_esmeralda: Texture2D = null
 
 
 func _ready() -> void:
 	if ResourceLoader.exists(RUTA_FUENTE_CUERPO):
 		_fuente_cuerpo = load(RUTA_FUENTE_CUERPO) as Font
+	if ResourceLoader.exists(RUTA_ICONO_ESMERALDA):
+		_tex_esmeralda = load(RUTA_ICONO_ESMERALDA) as Texture2D
 	_aplicar_estilo_cuerpo_inspector()
 	_cargar_compras()
 	modal_compra.visible = false
@@ -146,7 +255,7 @@ func _ready() -> void:
 
 	_construir_pills()
 	_actualizar_divisas()
-	_cambiar_categoria("vehiculos")
+	_cambiar_categoria("packs")
 	_animar_entrada()
 
 
@@ -243,8 +352,10 @@ func _cargar_categoria(cat: String) -> void:
 
 	if tiene_imagenes:
 		grid_items.columns = 3
-		grid_items.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		grid_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid_items.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		grid_items.add_theme_constant_override("h_separation", 22)
+		grid_items.add_theme_constant_override("v_separation", 22)
 	else:
 		grid_items.columns = 2
 		grid_items.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -252,7 +363,7 @@ func _cargar_categoria(cat: String) -> void:
 
 	for i in range(items.size()):
 		var item: Dictionary = items[i]
-		_crear_tarjeta(item, cat, i, cat == "esmeraldas")
+		_crear_tarjeta(item, cat, i, false)
 
 	if items.is_empty():
 		var lbl_vacio := Label.new()
@@ -268,8 +379,9 @@ func _cargar_categoria(cat: String) -> void:
 		_mostrar_inspector_vacio()
 		return
 
-	_item_seleccionado = items[0]
-	_seleccionar_item(_item_seleccionado, false)
+	_item_seleccionado = {}
+	_mostrar_inspector_sin_seleccion()
+	_actualizar_tarjetas()
 	_animar_grid()
 
 
@@ -286,9 +398,9 @@ func _crear_tarjeta(item: Dictionary, cat: String, indice: int, compacto: bool =
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.clip_contents = true
 
-	var normal := _estilo_tarjeta(C_SURFACE_CARD, C_FROST, 1)
-	var hover := _estilo_tarjeta(Color(0.11, 0.12, 0.14, 0.94), Color(0.85, 0.88, 0.92, 0.40), 1)
-	var seleccionada := _estilo_tarjeta(Color(0.16, 0.15, 0.11, 0.96), Color(0.88, 0.68, 0.28, 0.80), 1)
+	var normal := _estilo_tarjeta(Color(0.08, 0.09, 0.12, 0.92), Color(0.78, 0.81, 0.85, 0.18), 1)
+	var hover := _estilo_tarjeta(Color(0.11, 0.13, 0.17, 0.96), Color(0.85, 0.88, 0.92, 0.42), 1)
+	var seleccionada := _estilo_tarjeta(Color(0.10, 0.12, 0.16, 0.98), Color(0.88, 0.68, 0.28, 0.92), 2)
 	card.add_theme_stylebox_override("normal", normal)
 	card.add_theme_stylebox_override("hover", hover)
 	card.add_theme_stylebox_override("pressed", seleccionada)
@@ -373,36 +485,39 @@ func _crear_tarjeta(item: Dictionary, cat: String, indice: int, compacto: bool =
 	var ruta_img := str(item.get("imagen", ""))
 	var tiene_img := ruta_img != "" and ResourceLoader.exists(ruta_img)
 	if tiene_img and not compacto:
-		card.custom_minimum_size = Vector2(390, 390)
-		card.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		margen.add_theme_constant_override("margin_left", 10)
-		margen.add_theme_constant_override("margin_top", 10)
-		margen.add_theme_constant_override("margin_right", 10)
-		margen.add_theme_constant_override("margin_bottom", 10)
+		card.custom_minimum_size = Vector2(260, 410)
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		margen.add_theme_constant_override("margin_left", 16)
+		margen.add_theme_constant_override("margin_top", 16)
+		margen.add_theme_constant_override("margin_right", 16)
+		margen.add_theme_constant_override("margin_bottom", 16)
 		var cont_v := VBoxContainer.new()
 		cont_v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cont_v.add_theme_constant_override("separation", 8)
+		cont_v.add_theme_constant_override("separation", 12)
 		margen.add_child(cont_v)
 
+		# Nombre arriba
 		var lbl_nombre_img := Label.new()
-		lbl_nombre_img.text = str(item.get("nombre", ""))
-		lbl_nombre_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl_nombre_img.text = str(item.get("nombre", "")).to_upper()
 		lbl_nombre_img.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl_nombre_img.clip_text = true
-		lbl_nombre_img.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		lbl_nombre_img.add_theme_font_size_override("font_size", 22)
-		lbl_nombre_img.add_theme_color_override("font_color", C_TEXT_PRIMARY)
+		lbl_nombre_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lbl_nombre_img.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl_nombre_img.add_theme_font_size_override("font_size", 24)
+		lbl_nombre_img.add_theme_color_override("font_color", Color(0.95, 0.96, 0.98, 1.0))
+		if _fuente_cuerpo:
+			lbl_nombre_img.add_theme_font_override("font", _fuente_cuerpo)
 		cont_v.add_child(lbl_nombre_img)
 
+		# Marco de imagen central
 		var preview_panel := PanelContainer.new()
 		preview_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		preview_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		preview_panel.clip_contents = true
 		var pv_sb := StyleBoxFlat.new()
-		pv_sb.bg_color = Color(0.05, 0.06, 0.08, 0.90)
+		pv_sb.bg_color = Color(0.05, 0.06, 0.08, 1.0)
 		pv_sb.set_border_width_all(1)
-		pv_sb.border_color = Color(acento.r, acento.g, acento.b, 0.28)
-		pv_sb.set_corner_radius_all(10)
+		pv_sb.border_color = Color(0.78, 0.81, 0.85, 0.14)
+		pv_sb.set_corner_radius_all(12)
 		preview_panel.add_theme_stylebox_override("panel", pv_sb)
 		var tex_rect := TextureRect.new()
 		tex_rect.texture = load(ruta_img) as Texture2D
@@ -413,12 +528,48 @@ func _crear_tarjeta(item: Dictionary, cat: String, indice: int, compacto: bool =
 		preview_panel.add_child(tex_rect)
 		cont_v.add_child(preview_panel)
 
+		# Precio abajo, destacado como elemento principal
+		var pill_precio := PanelContainer.new()
+		pill_precio.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pill_precio.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var sb_pill := StyleBoxFlat.new()
+		sb_pill.bg_color = Color(0.18, 0.13, 0.04, 0.96)
+		sb_pill.border_color = Color(0.95, 0.74, 0.28, 0.88)
+		sb_pill.set_border_width_all(2)
+		sb_pill.set_corner_radius_all(12)
+		sb_pill.content_margin_left = 16.0
+		sb_pill.content_margin_right = 16.0
+		sb_pill.content_margin_top = 10.0
+		sb_pill.content_margin_bottom = 10.0
+		sb_pill.shadow_color = Color(0.88, 0.68, 0.28, 0.22)
+		sb_pill.shadow_size = 6
+		pill_precio.add_theme_stylebox_override("panel", sb_pill)
+		cont_v.add_child(pill_precio)
+
+		var hb_precio_img := HBoxContainer.new()
+		hb_precio_img.alignment = BoxContainer.ALIGNMENT_CENTER
+		hb_precio_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hb_precio_img.add_theme_constant_override("separation", 10)
+		pill_precio.add_child(hb_precio_img)
+
+		if _tex_esmeralda and int(item.get("precio_esmeraldas", 0)) > 0:
+			var tr_esm := TextureRect.new()
+			tr_esm.texture = _tex_esmeralda
+			tr_esm.custom_minimum_size = Vector2(30, 30)
+			tr_esm.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr_esm.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr_esm.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			tr_esm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hb_precio_img.add_child(tr_esm)
+
 		var lbl_precio_img := Label.new()
 		lbl_precio_img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		lbl_precio_img.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl_precio_img.add_theme_font_size_override("font_size", 26)
-		lbl_precio_img.add_theme_color_override("font_color", C_AMBER)
-		cont_v.add_child(lbl_precio_img)
+		lbl_precio_img.add_theme_font_size_override("font_size", 32)
+		lbl_precio_img.add_theme_color_override("font_color", Color(1.0, 0.84, 0.38, 1.0))
+		if _fuente_cuerpo:
+			lbl_precio_img.add_theme_font_override("font", _fuente_cuerpo)
+		hb_precio_img.add_child(lbl_precio_img)
 
 		card.pressed.connect(_on_card_pressed.bind(item))
 		grid_items.add_child(card)
@@ -595,6 +746,7 @@ func _actualizar_inspector() -> void:
 	ins_categoria.text = _nombre_categoria(_categoria_actual).to_upper()
 	ins_nombre.text = str(item.get("nombre", ""))
 	ins_precio.text = _texto_precio(item, false)
+	_asegurar_icono_esmeralda_junto_a(ins_precio, int(item.get("precio_esmeraldas", 0)) > 0, 26)
 	ins_desc.text = str(item.get("desc", ""))
 
 	var tile_sb := StyleBoxFlat.new()
@@ -778,7 +930,8 @@ func _actualizar_estado_compra() -> void:
 
 	var paquete_usd := _es_paquete_usd(item)
 	var es_reintento := _es_licencia_reintento(item)
-	var adquirido := _esta_comprado(str(item.get("id", ""))) and not paquete_usd and not es_reintento
+	var es_consumible := bool(item.get("consumible", false))
+	var adquirido := _esta_comprado(str(item.get("id", ""))) and not paquete_usd and not es_reintento and not es_consumible
 	var puede := _puede_pagar(item)
 
 	if paquete_usd:
@@ -801,6 +954,11 @@ func _actualizar_estado_compra() -> void:
 		if es_reintento:
 			btn_comprar.text = "REINTENTAR PRUEBA"
 			ins_estado.text = "Ya tienes esta licencia. Repite la prueba con tarifa reducida."
+		elif es_consumible:
+			btn_comprar.text = "COMPRAR PASE"
+			var du_c := get_node_or_null("/root/DatosUsuario")
+			var cant := int(du_c.pases_mapa) if (du_c and "pases_mapa" in du_c) else 0
+			ins_estado.text = "En posesión: %d pases. Se consume 1 al publicar un mapa." % cant
 		elif item.has("licencia_cat"):
 			btn_comprar.text = "ADQUIRIR Y PROBAR"
 			ins_estado.text = "Ir a la pista para realizar la prueba de manejo."
@@ -808,6 +966,19 @@ func _actualizar_estado_compra() -> void:
 			btn_comprar.text = "COMPRAR AHORA"
 			ins_estado.text = "Se descuenta al confirmar la operacion."
 		ins_estado.add_theme_color_override("font_color", C_TEXT_MUTED)
+
+
+func _mostrar_inspector_sin_seleccion() -> void:
+	_mostrar_inspector_vacio()
+	ins_tipo.text = "CATALOGO"
+	ins_categoria.text = _nombre_categoria(_categoria_actual).to_upper()
+	ins_nombre.text = "Selecciona un artículo"
+	ins_desc.text = "Toca cualquier tarjeta del catalogo para ver sus detalles y comprar."
+	_asegurar_icono_esmeralda_junto_a(ins_precio, false)
+	btn_comprar.disabled = true
+	btn_comprar.text = "SELECCIONA UN ARTICULO"
+	ins_estado.text = "Toca una tarjeta para inspeccionar."
+	ins_estado.add_theme_color_override("font_color", C_TEXT_MUTED)
 
 
 func _mostrar_inspector_vacio() -> void:
@@ -894,11 +1065,46 @@ func _texto_precio(item: Dictionary, compacto: bool) -> String:
 	if monedas > 0:
 		partes.append("$ " + _formato_entero(monedas))
 	if esmeraldas > 0:
-		if compacto:
-			partes.append("%d ESM" % esmeraldas)
-		else:
-			partes.append("%d Esmeraldas" % esmeraldas)
+		partes.append(_formato_entero(esmeraldas))
 	return " + ".join(partes)
+
+func _asegurar_icono_esmeralda_junto_a(lbl: Label, mostrar: bool, tam: int = 24, a_la_derecha: bool = true) -> void:
+	if not is_instance_valid(lbl) or not _tex_esmeralda:
+		return
+	var tr: TextureRect = null
+	if lbl.has_meta("_tr_esm"):
+		tr = lbl.get_meta("_tr_esm") as TextureRect
+	if not is_instance_valid(tr):
+		var padre := lbl.get_parent()
+		if not is_instance_valid(padre):
+			return
+		tr = TextureRect.new()
+		tr.texture = _tex_esmeralda
+		tr.custom_minimum_size = Vector2(tam, tam)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if padre is HBoxContainer:
+			var idx := lbl.get_index()
+			padre.add_child(tr)
+			padre.move_child(tr, idx + 1 if a_la_derecha else idx)
+		else:
+			var idx := lbl.get_index()
+			var hb := HBoxContainer.new()
+			hb.add_theme_constant_override("separation", 8)
+			hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			padre.add_child(hb)
+			padre.move_child(hb, idx)
+			padre.remove_child(lbl)
+			if a_la_derecha:
+				hb.add_child(lbl)
+				hb.add_child(tr)
+			else:
+				hb.add_child(tr)
+				hb.add_child(lbl)
+		lbl.set_meta("_tr_esm", tr)
+	tr.visible = mostrar
 
 
 func _texto_recompensa(item: Dictionary) -> String:
@@ -986,10 +1192,11 @@ func _actualizar_tarjetas() -> void:
 		var precio: Label = datos["precio"]
 		var es_usd := _es_paquete_usd(item)
 		var es_reintento := _es_licencia_reintento(item)
+		var es_consumible := bool(item.get("consumible", false))
 		if es_reintento:
 			precio.text = "REINTENTO"
 			precio.add_theme_color_override("font_color", C_AMBER if _puede_pagar(item) else Color(0.72, 0.42, 0.40, 0.95))
-		elif _esta_comprado(str(id)) and not es_usd:
+		elif _esta_comprado(str(id)) and not es_usd and not es_consumible:
 			precio.text = "ADQUIRIDO"
 			precio.add_theme_color_override("font_color", C_AMBER)
 		else:
@@ -1007,7 +1214,7 @@ func _actualizar_tarjetas() -> void:
 func _on_btn_comprar_pressed() -> void:
 	if _item_seleccionado.is_empty():
 		return
-	if _esta_comprado(str(_item_seleccionado.get("id", ""))) and not _es_paquete_usd(_item_seleccionado) and not _es_licencia_reintento(_item_seleccionado):
+	if _esta_comprado(str(_item_seleccionado.get("id", ""))) and not _es_paquete_usd(_item_seleccionado) and not _es_licencia_reintento(_item_seleccionado) and not bool(_item_seleccionado.get("consumible", false)):
 		return
 	_mostrar_modal_compra()
 
@@ -1023,10 +1230,12 @@ func _mostrar_modal_compra() -> void:
 	modal_tipo.text = str(item.get("tipo", "")).to_upper()
 	modal_desc.text = str(item.get("desc", "")).replace("Ó", "O").replace("ó", "o")
 	modal_precio.text = _texto_precio(item, false)
+	_asegurar_icono_esmeralda_junto_a(modal_precio, int(item.get("precio_esmeraldas", 0)) > 0, 22)
 	modal_eyebrow.text = "PAGO SIMULADO" if paquete_usd else ("REINTENTAR PRUEBA" if es_reintento else "CONFIRMAR COMPRA")
 
 	if paquete_usd:
-		modal_saldo_despues.text = "%d ESM" % (_esmeraldas_actuales() + int(item.get("recompensa_esmeraldas", 0)))
+		modal_saldo_despues.text = _formato_entero(_esmeraldas_actuales() + int(item.get("recompensa_esmeraldas", 0)))
+		_asegurar_icono_esmeralda_junto_a(modal_saldo_despues, true, 22, true)
 		modal_saldo_despues.add_theme_color_override("font_color", C_AMBER)
 		modal_incluye.visible = true
 		modal_incluye.text = "INCLUYE: +%d ESMERALDAS" % int(item.get("recompensa_esmeraldas", 0))
@@ -1042,14 +1251,18 @@ func _mostrar_modal_compra() -> void:
 		var esm_final := _esmeraldas_actuales() - costo_esm + int(item.get("recompensa_esmeraldas", 0))
 		if puede:
 			if costo_esm > 0 and costo_monedas <= 0:
-				modal_saldo_despues.text = "%s ESM" % _formato_entero(esm_final)
+				modal_saldo_despues.text = _formato_entero(esm_final)
+				_asegurar_icono_esmeralda_junto_a(modal_saldo_despues, true, 22, true)
 			elif costo_esm > 0 and costo_monedas > 0:
-				modal_saldo_despues.text = "$ %s  |  %s ESM" % [_formato_entero(dinero_final), _formato_entero(esm_final)]
+				modal_saldo_despues.text = "$ %s  |  %s" % [_formato_entero(dinero_final), _formato_entero(esm_final)]
+				_asegurar_icono_esmeralda_junto_a(modal_saldo_despues, true, 22, true)
 			else:
 				modal_saldo_despues.text = "$ %s" % _formato_entero(dinero_final)
+				_asegurar_icono_esmeralda_junto_a(modal_saldo_despues, false, 22, true)
 			modal_saldo_despues.add_theme_color_override("font_color", C_AMBER)
 		else:
 			modal_saldo_despues.text = "SALDO INSUFICIENTE"
+			_asegurar_icono_esmeralda_junto_a(modal_saldo_despues, false, 22, true)
 			modal_saldo_despues.add_theme_color_override("font_color", C_CRIMSON)
 
 		var recompensa := _texto_recompensa(item)
@@ -1111,7 +1324,7 @@ func _on_confirmar_compra() -> void:
 	if _es_paquete_usd(item):
 		_procesar_compra_esmeraldas(item)
 		return
-	if _esta_comprado(str(item.get("id", ""))) and not _es_licencia_reintento(item):
+	if _esta_comprado(str(item.get("id", ""))) and not _es_licencia_reintento(item) and not bool(item.get("consumible", false)):
 		_ocultar_modal_compra()
 		return
 	if not _puede_pagar(item):
@@ -1140,7 +1353,13 @@ func _on_confirmar_compra() -> void:
 				get_tree().change_scene_to_file("res://mundo/pruebas/academia_licencias.tscn")
 			return
 		else:
+			var du_p := get_node_or_null("/root/DatosUsuario")
+			if str(item.get("id", "")) == "pase_mapa" and du_p and "pases_mapa" in du_p:
+				du_p.pases_mapa = int(du_p.pases_mapa) + 1
 			DatosUsuario.save_local()
+			var sm := get_node_or_null("/root/SupabaseManager")
+			if sm and sm.has_method("guardar_perfil") and "access_token" in sm and not str(sm.access_token).is_empty():
+				sm.guardar_perfil({"esmeraldas": int(DatosUsuario.esmeraldas)})
 
 	_registrar_compra(item)
 	compra_realizada.emit(item.duplicate(true))
@@ -1149,7 +1368,7 @@ func _on_confirmar_compra() -> void:
 	_actualizar_balance_inspector()
 	_actualizar_estado_compra()
 	_ocultar_modal_compra()
-	_mostrar_toast("COMPRA CONFIRMADA: " + str(item.get("nombre", "")))
+	_mostrar_celebracion_compra(item)
 	_reproducir_sonido_compra()
 
 
@@ -1168,7 +1387,7 @@ func _procesar_compra_esmeraldas(item: Dictionary) -> void:
 	_actualizar_balance_inspector()
 	_actualizar_estado_compra()
 	_ocultar_modal_compra()
-	_mostrar_toast("COMPRA SIMULADA: +%d ESMERALDAS" % recompensa)
+	_mostrar_celebracion_compra(item)
 	if barra_divisas:
 		barra_divisas.pulsar_esmeraldas()
 	_reproducir_sonido_compra()
@@ -1183,27 +1402,209 @@ func _pulsar_panel(panel: Control) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Celebración de compra (modal centrado móvil)
+# ---------------------------------------------------------------------------
+
+func _mostrar_celebracion_compra(item: Dictionary) -> void:
+	var overlay := ColorRect.new()
+	overlay.color = Color(0.02, 0.03, 0.05, 0.0)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(center)
+
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(720, 620)
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.08, 0.11, 0.98)
+	sb.border_color = Color(0.95, 0.74, 0.28, 0.92)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(24)
+	sb.shadow_color = Color(0.88, 0.68, 0.28, 0.28)
+	sb.shadow_size = 28
+	sb.shadow_offset = Vector2(0, 10)
+	card.add_theme_stylebox_override("panel", sb)
+	center.add_child(card)
+
+	var mc := MarginContainer.new()
+	mc.add_theme_constant_override("margin_left", 40)
+	mc.add_theme_constant_override("margin_right", 40)
+	mc.add_theme_constant_override("margin_top", 34)
+	mc.add_theme_constant_override("margin_bottom", 34)
+	card.add_child(mc)
+
+	var vb := VBoxContainer.new()
+	vb.alignment = BoxContainer.ALIGNMENT_CENTER
+	vb.add_theme_constant_override("separation", 20)
+	mc.add_child(vb)
+
+	# Pill superior de celebración (usa Moderniz por defecto)
+	var pill_top := PanelContainer.new()
+	pill_top.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var sb_top := StyleBoxFlat.new()
+	sb_top.bg_color = Color(0.22, 0.16, 0.04, 0.95)
+	sb_top.border_color = Color(0.95, 0.74, 0.28, 0.85)
+	sb_top.set_border_width_all(1)
+	sb_top.set_corner_radius_all(10)
+	sb_top.content_margin_left = 22.0
+	sb_top.content_margin_right = 22.0
+	sb_top.content_margin_top = 8.0
+	sb_top.content_margin_bottom = 8.0
+	pill_top.add_theme_stylebox_override("panel", sb_top)
+	vb.add_child(pill_top)
+
+	var lbl_top := Label.new()
+	lbl_top.text = "★  COMPRA EXITOSA  ★"
+	lbl_top.add_theme_font_size_override("font_size", 20)
+	lbl_top.add_theme_color_override("font_color", Color(1.0, 0.84, 0.38, 1.0))
+	pill_top.add_child(lbl_top)
+
+	# Imagen del producto libre, sin panel ni borde
+	var ruta_img := str(item.get("imagen", ""))
+	var tr_hero := TextureRect.new()
+	if ruta_img != "" and ResourceLoader.exists(ruta_img):
+		tr_hero.texture = load(ruta_img) as Texture2D
+	elif _tex_esmeralda:
+		tr_hero.texture = _tex_esmeralda
+	tr_hero.custom_minimum_size = Vector2(260, 260)
+	tr_hero.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	tr_hero.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr_hero.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	vb.add_child(tr_hero)
+
+	# Nombre del artículo adquirido (usa Moderniz por defecto)
+	var lbl_nom := Label.new()
+	lbl_nom.text = str(item.get("nombre", "Artículo")).to_upper()
+	lbl_nom.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_nom.add_theme_font_size_override("font_size", 40)
+	lbl_nom.add_theme_color_override("font_color", Color(0.96, 0.97, 0.99, 1.0))
+	vb.add_child(lbl_nom)
+
+	# Detalle de recompensa / inventario actual
+	var lbl_det := Label.new()
+	lbl_det.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_det.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_det.add_theme_font_size_override("font_size", 24)
+	lbl_det.add_theme_color_override("font_color", Color(0.42, 0.95, 0.62, 1.0))
+	if _fuente_cuerpo:
+		lbl_det.add_theme_font_override("font", _fuente_cuerpo)
+	var item_id := str(item.get("id", ""))
+	if item_id == "pase_mapa":
+		var du_c := get_node_or_null("/root/DatosUsuario")
+		var total_p := int(du_c.pases_mapa) if (du_c and "pases_mapa" in du_c) else 1
+		lbl_det.text = "¡+1 Pase de Mapa añadido a tu cuenta!  (Total: %d)" % total_p
+	elif int(item.get("recompensa_esmeraldas", 0)) > 0:
+		lbl_det.text = "¡+%d Esmeraldas añadidas a tu saldo!" % int(item.get("recompensa_esmeraldas", 0))
+	else:
+		lbl_det.text = "Artículo desbloqueado y listo para usar."
+	vb.add_child(lbl_det)
+
+	# Botón grande móvil para cerrar
+	var btn_ok := Button.new()
+	btn_ok.text = "CONTINUAR"
+	btn_ok.custom_minimum_size = Vector2(380, 72)
+	btn_ok.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn_ok.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	btn_ok.add_theme_font_size_override("font_size", 26)
+	btn_ok.add_theme_color_override("font_color", Color(0.07, 0.08, 0.10, 1.0))
+	if _fuente_cuerpo:
+		btn_ok.add_theme_font_override("font", _fuente_cuerpo)
+	var sb_btn := StyleBoxFlat.new()
+	sb_btn.bg_color = Color(0.95, 0.74, 0.28, 1.0)
+	sb_btn.set_corner_radius_all(12)
+	sb_btn.shadow_color = Color(0.88, 0.68, 0.28, 0.38)
+	sb_btn.shadow_size = 10
+	btn_ok.add_theme_stylebox_override("normal", sb_btn)
+	var sb_btn_h := sb_btn.duplicate() as StyleBoxFlat
+	sb_btn_h.bg_color = Color(1.0, 0.82, 0.40, 1.0)
+	btn_ok.add_theme_stylebox_override("hover", sb_btn_h)
+	btn_ok.add_theme_stylebox_override("pressed", sb_btn_h)
+	vb.add_child(btn_ok)
+
+	var cerrar := func() -> void:
+		if not is_instance_valid(overlay):
+			return
+		var tw_out := overlay.create_tween().set_parallel(true)
+		tw_out.tween_property(overlay, "color:a", 0.0, 0.18)
+		tw_out.tween_property(card, "modulate:a", 0.0, 0.18)
+		tw_out.tween_property(card, "scale", Vector2(0.92, 0.92), 0.18)
+		tw_out.chain().tween_callback(overlay.queue_free)
+
+	btn_ok.pressed.connect(cerrar)
+	overlay.gui_input.connect(func(ev: InputEvent) -> void:
+		if ev is InputEventMouseButton and ev.pressed:
+			cerrar.call()
+	)
+
+	# Animación de entrada con rebote
+	card.pivot_offset = card.custom_minimum_size * 0.5
+	card.scale = Vector2(0.84, 0.84)
+	card.modulate.a = 0.0
+	tr_hero.pivot_offset = tr_hero.custom_minimum_size * 0.5
+	tr_hero.scale = Vector2(0.75, 0.75)
+
+	var tw_in := overlay.create_tween().set_parallel(true)
+	tw_in.tween_property(overlay, "color:a", 0.78, 0.22)
+	tw_in.tween_property(card, "modulate:a", 1.0, 0.22)
+	tw_in.tween_property(card, "scale", Vector2.ONE, 0.34).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw_in.tween_property(tr_hero, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+
+# ---------------------------------------------------------------------------
 # Aviso flotante
 # ---------------------------------------------------------------------------
 
 func _mostrar_toast(mensaje: String) -> void:
-	label_toast.text = mensaje
+	if not toast.has_meta("_estilado_cockpit"):
+		toast.set_meta("_estilado_cockpit", true)
+		toast.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		toast.offset_left = -270.0
+		toast.offset_right = 270.0
+		toast.offset_top = 108.0
+		toast.offset_bottom = 172.0
+		var sb_toast := StyleBoxFlat.new()
+		sb_toast.bg_color = Color(0.06, 0.08, 0.11, 0.96)
+		sb_toast.border_color = Color(0.32, 0.85, 0.52, 0.85)
+		sb_toast.border_width_left = 4
+		sb_toast.border_width_top = 1
+		sb_toast.border_width_right = 1
+		sb_toast.border_width_bottom = 1
+		sb_toast.set_corner_radius_all(12)
+		sb_toast.content_margin_left = 24.0
+		sb_toast.content_margin_right = 24.0
+		sb_toast.content_margin_top = 14.0
+		sb_toast.content_margin_bottom = 14.0
+		sb_toast.shadow_color = Color(0.0, 0.0, 0.0, 0.55)
+		sb_toast.shadow_size = 12
+		sb_toast.shadow_offset = Vector2(0, 4)
+		toast.add_theme_stylebox_override("panel", sb_toast)
+		label_toast.add_theme_font_size_override("font_size", 21)
+		label_toast.add_theme_color_override("font_color", Color(0.95, 0.97, 0.99, 1.0))
+		if _fuente_cuerpo:
+			label_toast.add_theme_font_override("font", _fuente_cuerpo)
+
+	label_toast.text = "✓   " + mensaje
 	toast.visible = true
+	toast.pivot_offset = toast.size * 0.5
+	toast.scale = Vector2(0.92, 0.92)
 	toast.modulate.a = 0.0
-	var destino_y := toast.position.y
-	toast.position.y = destino_y + 10.0
 
 	if _toast_tween and _toast_tween.is_valid():
 		_toast_tween.kill()
 	_toast_tween = create_tween()
 	_toast_tween.set_parallel(true)
-	_toast_tween.tween_property(toast, "modulate:a", 1.0, 0.18)
-	_toast_tween.tween_property(toast, "position:y", destino_y, 0.26)\
-		.set_trans(Tween.TRANS_CUBIC)\
+	_toast_tween.tween_property(toast, "modulate:a", 1.0, 0.22)
+	_toast_tween.tween_property(toast, "scale", Vector2.ONE, 0.28)\
+		.set_trans(Tween.TRANS_BACK)\
 		.set_ease(Tween.EASE_OUT)
 	_toast_tween.set_parallel(false)
-	_toast_tween.tween_interval(2.2)
-	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.30)
+	_toast_tween.tween_interval(2.0)
+	_toast_tween.tween_property(toast, "modulate:a", 0.0, 0.28)
 	_toast_tween.tween_callback(func() -> void:
 		toast.visible = false
 	)
@@ -1214,6 +1615,8 @@ func _mostrar_toast(mensaje: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _esta_comprado(id: String) -> bool:
+	if id == "pase_mapa":
+		return false
 	if id.begins_with("licencia_"):
 		if DatosUsuario and DatosUsuario.has_method("tiene_licencia"):
 			var cat := id.trim_prefix("licencia_").to_upper()

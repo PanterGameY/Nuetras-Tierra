@@ -7,6 +7,7 @@ extends CanvasLayer
 
 const GeneradorModelosCiudad = preload("res://mundo/editor_mapas/GeneradorModelosCiudad.gd")
 const CargadorBiblioteca = preload("res://mundo/editor_mapas/CargadorBiblioteca.gd")
+const UIEditorHelpers = preload("res://mundo/editor_mapas/ui/UIEditorHelpers.gd")
 
 # ── TOKENS DE COLOR Y DISEÑO (GLASSMORPHISM AUTOMOTRIZ) ──────────────
 const COLOR_FONDO_PRINCIPAL := Color(0.090, 0.098, 0.114, 0.96) # #17191D
@@ -56,6 +57,7 @@ signal rehacer_solicitado()
 signal nivelar_terreno_vias_solicitado()
 signal alternar_modo_spawn_solicitado()
 signal guardar_mapa_solicitado()
+signal colab_online_solicitado()
 signal cargar_mapa_solicitado()
 signal iniciar_prueba_solicitado()
 signal accion_colocar_solicitada()
@@ -159,6 +161,27 @@ signal concreto_editar_puntos_solicitado()
 signal concreto_nivelar_solicitado()
 signal concreto_eliminar_solicitado()
 signal concreto_rotacion_delta_solicitada(delta: float)
+signal gasolinera_bahias_cambiado(cantidad: int)
+signal gasolinera_surtidores_cambiado(cantidad: int)
+signal gasolinera_tipo_techo_cambiado(tipo: int)
+signal gasolinera_altura_techo_cambiada(altura: float)
+signal gasolinera_colores_cambiados(primario: Color, secundario: Color, estructura: Color)
+signal gasolinera_adaptar_terreno_cambiado(activo: bool)
+signal gasolinera_agregar_punto_solicitado()
+signal gasolinera_subdividir_solicitado()
+signal gasolinera_eliminar_punto_solicitado()
+signal gasolinera_finalizar_solicitado()
+signal gasolinera_editar_puntos_solicitado()
+signal gasolinera_nivelar_solicitado()
+signal gasolinera_adaptar_base_a_terreno_solicitado()
+signal gasolinera_eliminar_solicitado()
+signal gasolinera_rotacion_delta_solicitada(delta: float)
+signal gasolinera_tipo_letrero_cambiado(tipo: int)
+signal gasolinera_letrero_rotacion_delta_solicitada(delta: float)
+signal gasolinera_lado_conexion_cambiado(lado: int)
+signal gasolinera_conectar_carretera_solicitado()
+signal gasolinera_desconectar_carretera_solicitado()
+signal editor_config_cambiada(config: Dictionary)
 signal agua_rio_limpiar_solicitado()
 signal agua_rio_finalizar_solicitado()
 signal agua_nivel_delta_solicitado(delta: float)
@@ -406,6 +429,7 @@ func _construir_interfaz_completa() -> void:
 	_construir_boton_flotante_rotonda(_contenedor_raiz)
 	_construir_boton_centrar_seleccion(_contenedor_raiz)
 	_construir_popup_sistema(_contenedor_raiz)
+	_construir_panel_config_editor(_contenedor_raiz)
 	_construir_toast_flotante(_contenedor_raiz)
 
 func _construir_panel_zonas_inferior(padre: Control) -> void:
@@ -602,8 +626,8 @@ func _asegurar_hbox_flotante_inferior(padre: Control) -> void:
 	_hbox_flotante_inferior.anchor_bottom = 1.0
 	_hbox_flotante_inferior.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_hbox_flotante_inferior.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_hbox_flotante_inferior.offset_top = -98.0
-	_hbox_flotante_inferior.offset_bottom = -32.0
+	_hbox_flotante_inferior.offset_top = -194.0
+	_hbox_flotante_inferior.offset_bottom = -126.0
 	_hbox_flotante_inferior.alignment = BoxContainer.ALIGNMENT_CENTER
 	_hbox_flotante_inferior.add_theme_constant_override("separation", 14)
 	_hbox_flotante_inferior.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -783,17 +807,77 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 		lbl_tierra.add_theme_font_override("font", _fuente_moderniz)
 	vbox_brand.add_child(lbl_tierra)
 
-	# Separador vertical
-	var sep1 := VSeparator.new()
-	sep1.add_theme_constant_override("separation", 12)
-	hbox.add_child(sep1)
+	# Espaciador flexible en la barra superior (las categorías pasan al dock inferior)
+	var spacer_top := Control.new()
+	spacer_top.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spacer_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hbox.add_child(spacer_top)
 
-	# Categorías principales (Scroll táctil horizontal para móvil)
+	# Dock inferior centrado de categorías principales (estilo móvil amplio y estilizado)
+	var panel_cats := PanelContainer.new()
+	panel_cats.name = "DockCategoriasInferior"
+	panel_cats.anchor_left = 0.5
+	panel_cats.anchor_right = 0.5
+	panel_cats.anchor_top = 1.0
+	panel_cats.anchor_bottom = 1.0
+	panel_cats.offset_left = -540.0
+	panel_cats.offset_right = 540.0
+	panel_cats.offset_top = -114.0
+	panel_cats.offset_bottom = -16.0
+	panel_cats.mouse_filter = Control.MOUSE_FILTER_STOP
+	_estilar_panel_glass(panel_cats, Color(0.06, 0.07, 0.08, 0.92), Color(0.78, 0.81, 0.85, 0.24), 18.0, 12.0)
+	padre.add_child(panel_cats)
+
+	var hbox_dock := HBoxContainer.new()
+	hbox_dock.add_theme_constant_override("separation", 8)
+	panel_cats.add_child(hbox_dock)
+
 	var scroll_cat := ScrollContainer.new()
 	scroll_cat.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_cat.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll_cat.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	hbox.add_child(scroll_cat)
+	scroll_cat.follow_focus = true
+
+	# Estilizar la barra de scroll como una línea sutil ámbar (y permitir arrastre táctil fluido)
+	var hbar := scroll_cat.get_h_scroll_bar()
+	if hbar:
+		hbar.custom_minimum_size.y = 4.0
+		var st_grab := StyleBoxFlat.new()
+		st_grab.bg_color = Color(0.88, 0.68, 0.28, 0.72)
+		st_grab.set_corner_radius_all(2)
+		var st_bg := StyleBoxFlat.new()
+		st_bg.bg_color = Color(0.78, 0.81, 0.85, 0.10)
+		st_bg.set_corner_radius_all(2)
+		hbar.add_theme_stylebox_override("grabber", st_grab)
+		hbar.add_theme_stylebox_override("grabber_highlight", st_grab)
+		hbar.add_theme_stylebox_override("grabber_pressed", st_grab)
+		hbar.add_theme_stylebox_override("scroll", st_bg)
+
+	var btn_scroll_izq := Button.new()
+	btn_scroll_izq.text = "◀"
+	btn_scroll_izq.custom_minimum_size = Vector2(48, 68)
+	btn_scroll_izq.add_theme_font_size_override("font_size", 20)
+	_estilar_boton(btn_scroll_izq, Color(0.08, 0.09, 0.11, 0.85), COLOR_BORDE, 12.0)
+	btn_scroll_izq.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	btn_scroll_izq.pressed.connect(func():
+		var tw := scroll_cat.create_tween()
+		tw.tween_property(scroll_cat, "scroll_horizontal", maxi(0, scroll_cat.scroll_horizontal - 300), 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	)
+	hbox_dock.add_child(btn_scroll_izq)
+	hbox_dock.add_child(scroll_cat)
+
+	var btn_scroll_der := Button.new()
+	btn_scroll_der.text = "▶"
+	btn_scroll_der.custom_minimum_size = Vector2(48, 68)
+	btn_scroll_der.add_theme_font_size_override("font_size", 20)
+	_estilar_boton(btn_scroll_der, Color(0.08, 0.09, 0.11, 0.85), COLOR_BORDE, 12.0)
+	btn_scroll_der.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	btn_scroll_der.pressed.connect(func():
+		var max_s := int(scroll_cat.get_h_scroll_bar().max_value) if scroll_cat.get_h_scroll_bar() else 1200
+		var tw := scroll_cat.create_tween()
+		tw.tween_property(scroll_cat, "scroll_horizontal", mini(max_s, scroll_cat.scroll_horizontal + 300), 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	)
+	hbox_dock.add_child(btn_scroll_der)
 
 	_box_categorias_hud = HBoxContainer.new()
 	_box_categorias_hud.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -808,6 +892,7 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 		{"id": "muros", "nombre": "Muros", "ico": "cat_muros"},
 		{"id": "parqueo", "nombre": "Parqueos", "ico": "cat_parqueo"},
 		{"id": "concreto", "nombre": "Concreto", "ico": "cat_ciudad"},
+		{"id": "gasolinera", "nombre": "Gasolineras", "ico": "cat_parqueo"},
 		{"id": "agua", "nombre": "Agua", "ico": "cat_agua"},
 		{"id": "spawn", "nombre": "Spawn", "ico": "cat_spawn"}
 	]
@@ -815,8 +900,8 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 	for c in cats:
 		var btn := Button.new()
 		btn.text = " " + c["nombre"]
-		btn.custom_minimum_size = Vector2(144, 52)
-		btn.add_theme_font_size_override("font_size", FONT_BOTON_MEDIO) # 21px
+		btn.custom_minimum_size = Vector2(168, 68)
+		btn.add_theme_font_size_override("font_size", 22)
 		if _fuente_ui:
 			btn.add_theme_font_override("font", _fuente_ui)
 		_estilar_boton_pildora(btn, false)
@@ -825,7 +910,7 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 		if ico:
 			btn.icon = ico
 			btn.expand_icon = true
-			btn.add_theme_constant_override("icon_max_width", 26)
+			btn.add_theme_constant_override("icon_max_width", 30)
 
 		var cat_id: String = c["id"]
 		btn.pressed.connect(func(): seleccionar_categoria(cat_id))
@@ -875,6 +960,21 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 	_btn_rehacer_hud.pressed.connect(func(): rehacer_solicitado.emit())
 	box_derecha.add_child(_btn_rehacer_hud)
 
+	# Colaboración Online en Tiempo Real
+	var btn_colab_hud := Button.new()
+	btn_colab_hud.name = "BtnColabHUD"
+	btn_colab_hud.text = " COLAB"
+	btn_colab_hud.tooltip_text = "Crear o unirse a proyecto de mapas online colaborativo"
+	btn_colab_hud.custom_minimum_size = Vector2(142, 52)
+	btn_colab_hud.add_theme_font_size_override("font_size", 18)
+	if _fuente_ui:
+		btn_colab_hud.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_colab_hud, COLOR_PANEL_SEC, COLOR_VERDE_ACTIVO, 12.0)
+	btn_colab_hud.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+	btn_colab_hud.pressed.connect(func(): colab_online_solicitado.emit())
+	box_derecha.add_child(btn_colab_hud)
+	set_meta("_btn_colab_hud", btn_colab_hud)
+
 	# Guardar Mapa directo (siempre visible en barra superior)
 	var btn_guardar_hud := Button.new()
 	btn_guardar_hud.name = "BtnGuardarMapaHUD"
@@ -894,6 +994,7 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 		btn_guardar_hud.add_theme_constant_override("icon_max_width", 24)
 	btn_guardar_hud.pressed.connect(func(): guardar_mapa_solicitado.emit())
 	box_derecha.add_child(btn_guardar_hud)
+	set_meta("_btn_guardar_hud", btn_guardar_hud)
 
 	# Opciones / Sistema (⚙)
 	_btn_menu_sistema = Button.new()
@@ -910,6 +1011,20 @@ func _construir_barra_superior_hud(padre: Control) -> void:
 		_btn_menu_sistema.add_theme_font_size_override("font_size", 24)
 	_btn_menu_sistema.pressed.connect(_alternar_popup_sistema)
 	box_derecha.add_child(_btn_menu_sistema)
+
+	# Configuración exclusiva del Editor (Rendimiento y Resolución)
+	var btn_cfg_editor := Button.new()
+	btn_cfg_editor.name = "BtnConfigEditorHUD"
+	btn_cfg_editor.text = " ⚙ Config"
+	btn_cfg_editor.tooltip_text = "Rendimiento, resolución y ajustes exclusivos del Editor de Mapas"
+	btn_cfg_editor.custom_minimum_size = Vector2(138, 52)
+	btn_cfg_editor.add_theme_font_size_override("font_size", 18)
+	if _fuente_ui:
+		btn_cfg_editor.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_cfg_editor, COLOR_PANEL_SEC, COLOR_BORDE, 12.0)
+	btn_cfg_editor.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+	btn_cfg_editor.pressed.connect(_alternar_panel_config_editor)
+	box_derecha.add_child(btn_cfg_editor)
 
 	# Salir (Botón con icono y etiqueta en amarillo ámbar o crimson)
 	var btn_salir := Button.new()
@@ -1219,12 +1334,14 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 		var mostrar_btn_parqueo: bool = (categoria == "parqueo") and (subherramienta in ["parqueo_crear", "parqueo_nivelar", "parqueo_borrar"]) and (not mostrar_btn_fin_parqueo)
 		var mostrar_btn_fin_concreto: bool = (categoria == "concreto") and _concreto_hay_seleccion and (not _concreto_finalizado)
 		var mostrar_btn_concreto: bool = (categoria == "concreto") and (subherramienta in ["concreto_crear", "concreto_nivelar", "concreto_borrar"]) and (not mostrar_btn_fin_concreto)
+		var mostrar_btn_fin_gasolinera: bool = (categoria == "gasolinera") and _gasolinera_hay_seleccion and (not _gasolinera_finalizado)
+		var mostrar_btn_gasolinera: bool = (categoria == "gasolinera") and (subherramienta in ["gasolinera_crear", "gasolinera_nivelar", "gasolinera_borrar"]) and (not mostrar_btn_fin_gasolinera)
 		var mostrar_btn_agua: bool = (categoria == "agua")
 		var mostrar_btn_fin_rio: bool = (categoria == "agua") and (subherramienta == "rio")
 		var mostrar_btn_auto_casas: bool = (categoria == "ciudad") and (subherramienta == "auto_casas")
-		_btn_flotante_rotonda.visible = mostrar_btn_via or mostrar_btn_muro or mostrar_btn_parqueo or mostrar_btn_concreto or mostrar_btn_agua or mostrar_btn_auto_casas
+		_btn_flotante_rotonda.visible = mostrar_btn_via or mostrar_btn_muro or mostrar_btn_parqueo or mostrar_btn_concreto or mostrar_btn_gasolinera or mostrar_btn_agua or mostrar_btn_auto_casas
 		if _btn_flotante_finalizar_muro:
-			_btn_flotante_finalizar_muro.visible = mostrar_btn_muro or mostrar_btn_fin_parqueo or mostrar_btn_fin_concreto or mostrar_btn_fin_rio
+			_btn_flotante_finalizar_muro.visible = mostrar_btn_muro or mostrar_btn_fin_parqueo or mostrar_btn_fin_concreto or mostrar_btn_fin_gasolinera or mostrar_btn_fin_rio
 			_btn_flotante_finalizar_muro.text = "✓ FINALIZAR"
 		if _hbox_flotante_inferior:
 			_hbox_flotante_inferior.visible = _btn_flotante_rotonda.visible or (_btn_flotante_finalizar_muro != null and _btn_flotante_finalizar_muro.visible)
@@ -1248,6 +1365,16 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 			var ico_a := _cargar_icono_svg("cat_agua")
 			if ico_a:
 				_btn_flotante_rotonda.icon = ico_a
+		elif mostrar_btn_gasolinera:
+			if subherramienta == "gasolinera_nivelar":
+				_btn_flotante_rotonda.text = "⫶ NIVELAR"
+			elif subherramienta == "gasolinera_borrar":
+				_btn_flotante_rotonda.text = "✕ BORRAR"
+			else:
+				_btn_flotante_rotonda.text = "＋ CREAR GASOLINERA"
+			var ico_g := _cargar_icono_svg("cat_parqueo")
+			if ico_g:
+				_btn_flotante_rotonda.icon = ico_g
 		elif mostrar_btn_concreto:
 			if subherramienta == "concreto_nivelar":
 				_btn_flotante_rotonda.text = "⫶ NIVELAR"
@@ -1341,6 +1468,9 @@ func _actualizar_panel_contextual(categoria: String, subherramienta: String) -> 
 		"concreto":
 			_construir_vista_concreto()
 			mostrar_boton_centrar_seleccion(_concreto_hay_seleccion)
+		"gasolinera":
+			_construir_vista_gasolinera()
+			mostrar_boton_centrar_seleccion(_gasolinera_hay_seleccion)
 		"agua":
 			match subherramienta:
 				"rio": _construir_vista_rio()
@@ -2571,10 +2701,57 @@ func _construir_vista_ciudad() -> void:
 		)
 		grid_filtros.add_child(btn_s)
 
+	# Buscador rápido y filtro de Recientes (UIEditorHelpers)
+	var h_busq := HBoxContainer.new()
+	h_busq.add_theme_constant_override("separation", 8)
+	_box_prop_contenido.add_child(h_busq)
+
+	var le_busq := LineEdit.new()
+	le_busq.text = str(get_meta("_busqueda_objetos", ""))
+	le_busq.placeholder_text = "Buscar objeto..."
+	le_busq.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	le_busq.custom_minimum_size = Vector2(0, 44)
+	if _fuente_ui: le_busq.add_theme_font_override("font", _fuente_ui)
+	le_busq.add_theme_font_size_override("font_size", 16)
+	le_busq.text_submitted.connect(func(txt: String):
+		set_meta("_busqueda_objetos", txt)
+		_actualizar_panel_contextual("ciudad", _subherramienta_activa)
+	)
+	h_busq.add_child(le_busq)
+
+	var btn_rec := Button.new()
+	var solo_rec := bool(get_meta("_solo_recientes", false))
+	btn_rec.text = "Recientes"
+	btn_rec.custom_minimum_size = Vector2(110, 44)
+	if _fuente_ui: btn_rec.add_theme_font_override("font", _fuente_ui)
+	btn_rec.add_theme_font_size_override("font_size", 15)
+	_estilar_boton(btn_rec, Color(0.18, 0.14, 0.07, 0.94) if solo_rec else COLOR_PANEL_SEC, COLOR_AMARILLO_SEL if solo_rec else COLOR_BORDE, 10.0, 2 if solo_rec else 1)
+	btn_rec.pressed.connect(func():
+		set_meta("_solo_recientes", not solo_rec)
+		_actualizar_panel_contextual("ciudad", _subherramienta_activa)
+	)
+	h_busq.add_child(btn_rec)
+
 	CargadorBiblioteca.inicializar()
 	var items = CargadorBiblioteca.obtener_items_filtrados("01_Edificaciones", _seccion_biblioteca_activa, "todos")
 	if items.is_empty():
 		items = CargadorBiblioteca.obtener_items_por_categoria("01_Edificaciones")
+	if solo_rec:
+		var rec_ids := UIEditorHelpers.obtener_objetos_recientes()
+		if not rec_ids.is_empty():
+			var rec_items: Array = []
+			for rid in rec_ids:
+				for it_r in CargadorBiblioteca.obtener_items_por_categoria("01_Edificaciones"):
+					if str(it_r.get("id", "")) == rid:
+						rec_items.append(it_r)
+						break
+			if not rec_items.is_empty():
+				items = rec_items
+	var q_busq := str(get_meta("_busqueda_objetos", "")).strip_edges()
+	if not q_busq.is_empty():
+		var filtrados := UIEditorHelpers.filtrar_catalogo(items, q_busq)
+		if not filtrados.is_empty():
+			items = filtrados
 
 	# Tarjeta de previsualización del elemento seleccionado
 	var item_activo_info: Dictionary = {}
@@ -3662,6 +3839,554 @@ func _construir_vista_concreto() -> void:
 	btn_del.pressed.connect(func(): concreto_eliminar_solicitado.emit())
 	hbox_acc.add_child(btn_del)
 
+var _gasolinera_hay_seleccion: bool = false
+var _gasolinera_finalizado: bool = false
+var _gasolinera_num_puntos: int = 8
+var _gasolinera_bahias_sel: int = 2
+var _gasolinera_surtidores_sel: int = 4
+var _gasolinera_tipo_techo_sel: int = 0
+var _gasolinera_altura_techo_sel: float = 5.2
+var _gasolinera_tipo_letrero_sel: int = 0
+var _gasolinera_color_pri: Color = Color(0.86, 0.14, 0.14)
+var _gasolinera_color_sec: Color = Color(0.95, 0.72, 0.12)
+var _gasolinera_color_est: Color = Color(0.88, 0.90, 0.92)
+var _gasolinera_adaptar_terreno_sel: bool = true
+var _gasolinera_lado_conexion_sel: int = 0
+var _gasolinera_conectada_via: bool = false
+var _gasolinera_seccion_abierta: String = ""
+
+func actualizar_estado_gasolinera_ui(hay_sel: bool, datos: Dictionary) -> void:
+	_gasolinera_hay_seleccion = hay_sel
+	if hay_sel:
+		_gasolinera_finalizado = bool(datos.get("finalizado", false))
+		_gasolinera_num_puntos = int(datos.get("num_puntos", 8))
+		_gasolinera_bahias_sel = int(datos.get("cantidad_bahias", 2))
+		_gasolinera_surtidores_sel = int(datos.get("cantidad_surtidores", 4))
+		_gasolinera_tipo_techo_sel = int(datos.get("tipo_techo", 0))
+		_gasolinera_altura_techo_sel = float(datos.get("altura_techo", 5.2))
+		_gasolinera_tipo_letrero_sel = int(datos.get("tipo_letrero", 0))
+		_gasolinera_color_pri = datos.get("color_primario", _gasolinera_color_pri)
+		_gasolinera_color_sec = datos.get("color_secundario", _gasolinera_color_sec)
+		_gasolinera_color_est = datos.get("color_estructura", _gasolinera_color_est)
+		_gasolinera_adaptar_terreno_sel = bool(datos.get("adaptar_terreno", _gasolinera_adaptar_terreno_sel))
+		_gasolinera_lado_conexion_sel = int(datos.get("lado_conexion", 0))
+		_gasolinera_conectada_via = bool(datos.get("conectada_via", false))
+	else:
+		_gasolinera_finalizado = false
+		_gasolinera_num_puntos = 8
+	if _categoria_activa == "gasolinera":
+		_actualizar_panel_contextual(_categoria_activa, _subherramienta_activa)
+
+func _construir_vista_gasolinera() -> void:
+	# 1. Tarjeta de Estado (Automotive Glassmorphism)
+	var card_info := PanelContainer.new()
+	var borde_estado := Color(0.35, 0.90, 0.52, 0.85) if (_gasolinera_hay_seleccion and _gasolinera_finalizado) else (COLOR_AMARILLO_SEL if _gasolinera_hay_seleccion else COLOR_BORDE)
+	_estilar_panel_glass(card_info, Color(0.06, 0.07, 0.08, 0.94), borde_estado, 14.0, 16.0)
+	_box_prop_contenido.add_child(card_info)
+
+	var vbox_info := VBoxContainer.new()
+	vbox_info.add_theme_constant_override("separation", 8)
+	card_info.add_child(vbox_info)
+
+	var lbl_tit := Label.new()
+	if _gasolinera_hay_seleccion:
+		lbl_tit.text = ("✓ GASOLINERA ACTIVA (%d pts)" % _gasolinera_num_puntos) if _gasolinera_finalizado else ("✎ EDITANDO BASE (%d pts)" % _gasolinera_num_puntos)
+		lbl_tit.add_theme_color_override("font_color", Color(0.42, 0.94, 0.58) if _gasolinera_finalizado else COLOR_AMARILLO_SEL)
+	else:
+		lbl_tit.text = "⛽ GASOLINERA PROCEDURAL"
+		lbl_tit.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	lbl_tit.add_theme_font_size_override("font_size", 25)
+	if _fuente_ui:
+		lbl_tit.add_theme_font_override("font", _fuente_ui)
+	vbox_info.add_child(lbl_tit)
+
+	var lbl_desc := Label.new()
+	if _gasolinera_hay_seleccion and not _gasolinera_finalizado:
+		lbl_desc.text = "Moldea la base de concreto con los puntos y personaliza bahías, surtidores, techo y colores."
+	elif _gasolinera_hay_seleccion:
+		lbl_desc.text = "Estación lista para vehículos. Puedes ajustar bahías, techo o colores en tiempo real."
+	else:
+		lbl_desc.text = "Toca el terreno o pulsa + CREAR GASOLINERA para colocar la base de concreto."
+	lbl_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_desc.add_theme_font_size_override("font_size", 19)
+	lbl_desc.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+	if _fuente_ui:
+		lbl_desc.add_theme_font_override("font", _fuente_ui)
+	vbox_info.add_child(lbl_desc)
+
+	if not _gasolinera_hay_seleccion:
+		return
+
+	# 2. Botón principal de Finalizar / Editar Puntos (siempre accesible)
+	if not _gasolinera_finalizado:
+		var btn_fin := Button.new()
+		btn_fin.text = "✓ FINALIZAR Y ACTIVAR"
+		btn_fin.custom_minimum_size = Vector2(0, 68)
+		btn_fin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn_fin.add_theme_font_size_override("font_size", 23)
+		if _fuente_ui:
+			btn_fin.add_theme_font_override("font", _fuente_ui)
+		_estilar_boton(btn_fin, Color(0.14, 0.58, 0.32, 0.96), Color(0.38, 0.92, 0.56, 0.95), 12.0)
+		btn_fin.add_theme_color_override("font_color", Color.WHITE)
+		btn_fin.pressed.connect(func(): gasolinera_finalizar_solicitado.emit())
+		_box_prop_contenido.add_child(btn_fin)
+	else:
+		var btn_ed := Button.new()
+		btn_ed.text = "✎ EDITAR PUNTOS DE BASE"
+		btn_ed.custom_minimum_size = Vector2(0, 64)
+		btn_ed.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn_ed.add_theme_font_size_override("font_size", 22)
+		if _fuente_ui:
+			btn_ed.add_theme_font_override("font", _fuente_ui)
+		_estilar_boton(btn_ed, Color(0.16, 0.14, 0.08, 0.92), COLOR_AMARILLO_SEL, 12.0)
+		btn_ed.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+		btn_ed.pressed.connect(func(): gasolinera_editar_puntos_solicitado.emit())
+		_box_prop_contenido.add_child(btn_ed)
+
+	var crear_toggle := func(id_sec: String, titulo: String) -> bool:
+		var abierta: bool = (_gasolinera_seccion_abierta == id_sec)
+		var btn_tog := Button.new()
+		btn_tog.text = ("%s  %s" % ["▼" if abierta else "▶", titulo])
+		btn_tog.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		btn_tog.custom_minimum_size = Vector2(0, 62)
+		btn_tog.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn_tog.add_theme_font_size_override("font_size", 21)
+		if _fuente_ui:
+			btn_tog.add_theme_font_override("font", _fuente_ui)
+		_estilar_boton(btn_tog, Color(0.16, 0.13, 0.07, 0.94) if abierta else Color(0.08, 0.09, 0.11, 0.88), COLOR_AMARILLO_SEL if abierta else COLOR_BORDE, 12.0)
+		btn_tog.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if abierta else COLOR_TEXTO_PRI)
+		btn_tog.pressed.connect(func():
+			_gasolinera_seccion_abierta = "" if abierta else id_sec
+			_actualizar_panel_contextual(_categoria_activa, _subherramienta_activa)
+		)
+		_box_prop_contenido.add_child(btn_tog)
+		return abierta
+
+	# Sección A: Puntos de Base y Rotación
+	if crear_toggle.call("puntos", "📐 Base de Concreto (%d pts)" % _gasolinera_num_puntos):
+		var card_flujo := PanelContainer.new()
+		_estilar_panel_glass(card_flujo, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_flujo)
+
+		var vbox_flujo := VBoxContainer.new()
+		vbox_flujo.add_theme_constant_override("separation", 12)
+		card_flujo.add_child(vbox_flujo)
+
+		var hbox_pts := HBoxContainer.new()
+		hbox_pts.add_theme_constant_override("separation", 10)
+		vbox_flujo.add_child(hbox_pts)
+
+		for pt_cfg in [
+			{"txt": "＋ Punto", "cb": func(): gasolinera_agregar_punto_solicitado.emit(), "b": COLOR_BORDE},
+			{"txt": "÷ Dividir", "cb": func(): gasolinera_subdividir_solicitado.emit(), "b": COLOR_BORDE},
+			{"txt": "－ Quitar", "cb": func(): gasolinera_eliminar_punto_solicitado.emit(), "b": COLOR_CRIMSON_SALIR}
+		]:
+			var b := Button.new()
+			b.text = pt_cfg["txt"]
+			b.custom_minimum_size = Vector2(0, 56)
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.add_theme_font_size_override("font_size", 20)
+			if _fuente_ui:
+				b.add_theme_font_override("font", _fuente_ui)
+			_estilar_boton(b, Color(0.08, 0.09, 0.11, 0.85), pt_cfg["b"], 10.0)
+			b.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+			b.pressed.connect(pt_cfg["cb"])
+			hbox_pts.add_child(b)
+
+		var hbox_rot := HBoxContainer.new()
+		hbox_rot.add_theme_constant_override("separation", 8)
+		vbox_flujo.add_child(hbox_rot)
+		for delta_r: float in [-90.0, -15.0, 15.0, 90.0]:
+			var btn_r := Button.new()
+			btn_r.text = ("%+d°" % int(delta_r))
+			btn_r.custom_minimum_size = Vector2(0, 54)
+			btn_r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn_r.add_theme_font_size_override("font_size", 20)
+			if _fuente_ui:
+				btn_r.add_theme_font_override("font", _fuente_ui)
+			_estilar_boton(btn_r, Color(0.08, 0.09, 0.11, 0.85), COLOR_BORDE, 10.0)
+			btn_r.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+			var dr: float = delta_r
+			btn_r.pressed.connect(func(): gasolinera_rotacion_delta_solicitada.emit(dr))
+			hbox_rot.add_child(btn_r)
+
+		var btn_t_a_b := Button.new()
+		btn_t_a_b.text = "⫶ Nivelar Terreno a Gasolinera"
+		btn_t_a_b.custom_minimum_size = Vector2(0, 56)
+		btn_t_a_b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn_t_a_b.add_theme_font_size_override("font_size", 19)
+		if _fuente_ui:
+			btn_t_a_b.add_theme_font_override("font", _fuente_ui)
+		_estilar_boton(btn_t_a_b, Color(0.08, 0.09, 0.11, 0.88), COLOR_AMARILLO_SEL, 10.0)
+		btn_t_a_b.pressed.connect(func(): gasolinera_nivelar_solicitado.emit())
+		vbox_flujo.add_child(btn_t_a_b)
+
+	# Sección B: Bahías y Surtidores
+	if crear_toggle.call("bahias", "⛽ Bahías (%d) y Surtidores (%d)" % [_gasolinera_bahias_sel, _gasolinera_surtidores_sel]):
+		var card_bs := PanelContainer.new()
+		_estilar_panel_glass(card_bs, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_bs)
+
+		var vbox_bs := VBoxContainer.new()
+		vbox_bs.add_theme_constant_override("separation", 14)
+		card_bs.add_child(vbox_bs)
+
+		var cb_bahias := func(nv: int):
+			_gasolinera_bahias_sel = nv
+			gasolinera_bahias_cambiado.emit(nv)
+		var cb_surtidores := func(nv: int):
+			_gasolinera_surtidores_sel = nv
+			gasolinera_surtidores_cambiado.emit(nv)
+
+		for stp in [
+			{"tit": "BAHÍAS / ISLAS", "val": _gasolinera_bahias_sel, "min": 1, "max": 4, "unit": "bahías", "cb": cb_bahias},
+			{"tit": "SURTIDORES", "val": _gasolinera_surtidores_sel, "min": 1, "max": 8, "unit": "bombas", "cb": cb_surtidores}
+		]:
+			var lbl_s := Label.new()
+			lbl_s.text = str(stp["tit"])
+			lbl_s.add_theme_font_size_override("font_size", 20)
+			lbl_s.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+			if _fuente_ui:
+				lbl_s.add_theme_font_override("font", _fuente_ui)
+			vbox_bs.add_child(lbl_s)
+
+			var hbox_stp := HBoxContainer.new()
+			hbox_stp.add_theme_constant_override("separation", 10)
+			vbox_bs.add_child(hbox_stp)
+
+			var cur_v: int = int(stp["val"])
+			var min_v: int = int(stp["min"])
+			var max_v: int = int(stp["max"])
+			var cb_fn: Callable = stp["cb"]
+
+			var btn_menos := Button.new()
+			btn_menos.text = "－"
+			btn_menos.custom_minimum_size = Vector2(74, 64)
+			btn_menos.add_theme_font_size_override("font_size", 28)
+			if _fuente_ui:
+				btn_menos.add_theme_font_override("font", _fuente_ui)
+			_estilar_boton(btn_menos, Color(0.08, 0.09, 0.11, 0.90), COLOR_AMARILLO_SEL if cur_v > min_v else COLOR_BORDE, 12.0)
+			btn_menos.disabled = (cur_v <= min_v)
+			btn_menos.pressed.connect(func(): cb_fn.call(maxi(min_v, cur_v - 1)))
+			hbox_stp.add_child(btn_menos)
+
+			var badge := PanelContainer.new()
+			badge.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			badge.custom_minimum_size = Vector2(0, 64)
+			_estilar_panel_glass(badge, Color(0.06, 0.07, 0.08, 0.95), Color(0.88, 0.68, 0.28, 0.45), 12.0, 8.0)
+			var lbl_val := Label.new()
+			lbl_val.text = "%d %s" % [cur_v, str(stp["unit"])]
+			lbl_val.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			lbl_val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			lbl_val.add_theme_font_size_override("font_size", 24)
+			lbl_val.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+			if _fuente_ui:
+				lbl_val.add_theme_font_override("font", _fuente_ui)
+			badge.add_child(lbl_val)
+			hbox_stp.add_child(badge)
+
+			var btn_mas := Button.new()
+			btn_mas.text = "＋"
+			btn_mas.custom_minimum_size = Vector2(74, 64)
+			btn_mas.add_theme_font_size_override("font_size", 28)
+			if _fuente_ui:
+				btn_mas.add_theme_font_override("font", _fuente_ui)
+			_estilar_boton(btn_mas, Color(0.08, 0.09, 0.11, 0.90), COLOR_AMARILLO_SEL if cur_v < max_v else COLOR_BORDE, 12.0)
+			btn_mas.disabled = (cur_v >= max_v)
+			btn_mas.pressed.connect(func(): cb_fn.call(mini(max_v, cur_v + 1)))
+			hbox_stp.add_child(btn_mas)
+
+	# Sección C: Techo Procedural
+	if crear_toggle.call("techo", "🏠 Techo Procedural"):
+		var card_techo := PanelContainer.new()
+		_estilar_panel_glass(card_techo, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_techo)
+
+		var vbox_techo := VBoxContainer.new()
+		vbox_techo.add_theme_constant_override("separation", 12)
+		card_techo.add_child(vbox_techo)
+
+		var grid_techo := GridContainer.new()
+		grid_techo.columns = 2
+		grid_techo.add_theme_constant_override("h_separation", 10)
+		grid_techo.add_theme_constant_override("v_separation", 10)
+		vbox_techo.add_child(grid_techo)
+
+		for tt in [
+			{"id": 0, "nom": "▭ Plano Moderno"},
+			{"id": 1, "nom": "⌂ Dos Aguas"},
+			{"id": 2, "nom": "⌒ Curvo Arco"},
+			{"id": 3, "nom": "⌵ Voladizo Ala"}
+		]:
+			var btn_t := Button.new()
+			btn_t.text = tt["nom"]
+			btn_t.custom_minimum_size = Vector2(0, 64)
+			btn_t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn_t.add_theme_font_size_override("font_size", 20)
+			if _fuente_ui:
+				btn_t.add_theme_font_override("font", _fuente_ui)
+			var act_t: bool = (_gasolinera_tipo_techo_sel == int(tt["id"]))
+			_estilar_boton(btn_t, Color(0.18, 0.15, 0.08, 0.95) if act_t else Color(0.08, 0.09, 0.11, 0.85), COLOR_AMARILLO_SEL if act_t else COLOR_BORDE, 12.0)
+			btn_t.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if act_t else COLOR_TEXTO_PRI)
+			var id_t: int = int(tt["id"])
+			btn_t.pressed.connect(func():
+				_gasolinera_tipo_techo_sel = id_t
+				gasolinera_tipo_techo_cambiado.emit(id_t)
+			)
+			grid_techo.add_child(btn_t)
+
+		_crear_fila_slider("Altura Techo", "act_nivelar", 4.0, 7.5, _gasolinera_altura_techo_sel, "m", 0.1, func(v):
+			_gasolinera_altura_techo_sel = v
+			gasolinera_altura_techo_cambiada.emit(v)
+		)
+
+	# Sección D: Letrero de Precios
+	if crear_toggle.call("letrero", "🪧 Letrero de Precios"):
+		var card_let := PanelContainer.new()
+		_estilar_panel_glass(card_let, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_let)
+
+		var vbox_let := VBoxContainer.new()
+		vbox_let.add_theme_constant_override("separation", 10)
+		card_let.add_child(vbox_let)
+
+		var lbl_let_tip := Label.new()
+		lbl_let_tip.text = "Toca el punto cian para mover el letrero y arrastra su aro dorado para rotarlo."
+		lbl_let_tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lbl_let_tip.add_theme_font_size_override("font_size", 17)
+		lbl_let_tip.add_theme_color_override("font_color", Color(0.45, 0.88, 0.98))
+		vbox_let.add_child(lbl_let_tip)
+
+		var grid_let := GridContainer.new()
+		grid_let.columns = 2
+		grid_let.add_theme_constant_override("h_separation", 10)
+		grid_let.add_theme_constant_override("v_separation", 10)
+		vbox_let.add_child(grid_let)
+
+		for tl in [
+			{"id": 0, "nom": "Monolito Clásico"},
+			{"id": 1, "nom": "Torre Moderna"},
+			{"id": 2, "nom": "Doble Poste"},
+			{"id": 3, "nom": "Tótem Curvo"}
+		]:
+			var btn_l := Button.new()
+			btn_l.text = tl["nom"]
+			btn_l.custom_minimum_size = Vector2(0, 60)
+			btn_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn_l.add_theme_font_size_override("font_size", 19)
+			if _fuente_ui:
+				btn_l.add_theme_font_override("font", _fuente_ui)
+			var act_l: bool = (_gasolinera_tipo_letrero_sel == int(tl["id"]))
+			_estilar_boton(btn_l, Color(0.18, 0.15, 0.08, 0.95) if act_l else Color(0.08, 0.09, 0.11, 0.85), COLOR_AMARILLO_SEL if act_l else COLOR_BORDE, 12.0)
+			btn_l.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if act_l else COLOR_TEXTO_PRI)
+			var id_l: int = int(tl["id"])
+			btn_l.pressed.connect(func():
+				_gasolinera_tipo_letrero_sel = id_l
+				gasolinera_tipo_letrero_cambiado.emit(id_l)
+			)
+			grid_let.add_child(btn_l)
+
+	# Sección E: Tonos de Color
+	if crear_toggle.call("colores", "🎨 Tonos de Color y Marca"):
+		var card_col := PanelContainer.new()
+		_estilar_panel_glass(card_col, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_col)
+
+		var vbox_col := VBoxContainer.new()
+		vbox_col.add_theme_constant_override("separation", 12)
+		card_col.add_child(vbox_col)
+
+		var grid_pal := GridContainer.new()
+		grid_pal.columns = 2
+		grid_pal.add_theme_constant_override("h_separation", 10)
+		grid_pal.add_theme_constant_override("v_separation", 10)
+		vbox_col.add_child(grid_pal)
+
+		for pal in [
+			{"nom": "Rojo / Oro",    "p": Color(0.76, 0.12, 0.12), "s": Color(0.88, 0.66, 0.14), "e": Color(0.84, 0.86, 0.88)},
+			{"nom": "Naranja / Graf","p": Color(0.85, 0.36, 0.08), "s": Color(0.20, 0.22, 0.26), "e": Color(0.82, 0.84, 0.86)},
+			{"nom": "Verde / Blanco","p": Color(0.10, 0.52, 0.26), "s": Color(0.90, 0.92, 0.94), "e": Color(0.20, 0.22, 0.25)},
+			{"nom": "Azul / Plata",  "p": Color(0.12, 0.34, 0.72), "s": Color(0.80, 0.84, 0.88), "e": Color(0.18, 0.20, 0.24)}
+		]:
+			var btn_pal := Button.new()
+			btn_pal.custom_minimum_size = Vector2(0, 60)
+			btn_pal.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_estilar_boton(btn_pal, Color(0.08, 0.09, 0.11, 0.88), pal["p"], 12.0)
+
+			var hb_p := HBoxContainer.new()
+			hb_p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			hb_p.offset_left = 10; hb_p.offset_right = -10
+			hb_p.add_theme_constant_override("separation", 8)
+			hb_p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			btn_pal.add_child(hb_p)
+
+			var sw1 := ColorRect.new()
+			sw1.color = pal["p"]
+			sw1.custom_minimum_size = Vector2(20, 28)
+			sw1.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			sw1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hb_p.add_child(sw1)
+
+			var sw2 := ColorRect.new()
+			sw2.color = pal["s"]
+			sw2.custom_minimum_size = Vector2(14, 28)
+			sw2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			sw2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hb_p.add_child(sw2)
+
+			var lbl_p := Label.new()
+			lbl_p.text = str(pal["nom"])
+			lbl_p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			lbl_p.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			lbl_p.add_theme_font_size_override("font_size", 18)
+			lbl_p.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+			if _fuente_ui:
+				lbl_p.add_theme_font_override("font", _fuente_ui)
+			lbl_p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hb_p.add_child(lbl_p)
+
+			var cp: Color = pal["p"]; var cs: Color = pal["s"]; var ce: Color = pal["e"]
+			btn_pal.pressed.connect(func():
+				_gasolinera_color_pri = cp
+				_gasolinera_color_sec = cs
+				_gasolinera_color_est = ce
+				gasolinera_colores_cambiados.emit(cp, cs, ce)
+			)
+			grid_pal.add_child(btn_pal)
+
+		var hbox_pick := HBoxContainer.new()
+		hbox_pick.add_theme_constant_override("separation", 10)
+		vbox_col.add_child(hbox_pick)
+		for pk in [
+			{"lbl": "Primario", "col": _gasolinera_color_pri, "idx": 0},
+			{"lbl": "Acento", "col": _gasolinera_color_sec, "idx": 1},
+			{"lbl": "Estructura", "col": _gasolinera_color_est, "idx": 2}
+		]:
+			var vb := VBoxContainer.new()
+			vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			vb.add_theme_constant_override("separation", 4)
+			var l := Label.new()
+			l.text = pk["lbl"]
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.add_theme_font_size_override("font_size", 17)
+			l.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+			vb.add_child(l)
+			var cpb := ColorPickerButton.new()
+			cpb.color = pk["col"]
+			cpb.custom_minimum_size = Vector2(0, 56)
+			var idx_pk: int = int(pk["idx"])
+			cpb.color_changed.connect(func(nc: Color):
+				if idx_pk == 0: _gasolinera_color_pri = nc
+				elif idx_pk == 1: _gasolinera_color_sec = nc
+				else: _gasolinera_color_est = nc
+				gasolinera_colores_cambiados.emit(_gasolinera_color_pri, _gasolinera_color_sec, _gasolinera_color_est)
+			)
+			vb.add_child(cpb)
+			hbox_pick.add_child(vb)
+
+	# Sección F: Conectar a Carretera (eligiendo el lado)
+	if crear_toggle.call("carretera", "🛣 Conectar a Carretera" + (" ✓" if _gasolinera_conectada_via else "")):
+		var card_via := PanelContainer.new()
+		_estilar_panel_glass(card_via, Color(0.09, 0.10, 0.12, 0.92), COLOR_BORDE, 14.0, 16.0)
+		_box_prop_contenido.add_child(card_via)
+
+		var vbox_via := VBoxContainer.new()
+		vbox_via.add_theme_constant_override("separation", 10)
+		card_via.add_child(vbox_via)
+
+		var lbl_lado := Label.new()
+		lbl_lado.text = "ELIGE DESDE QUÉ LADO CONECTAR:"
+		lbl_lado.add_theme_font_size_override("font_size", 18)
+		lbl_lado.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+		if _fuente_ui:
+			lbl_lado.add_theme_font_override("font", _fuente_ui)
+		vbox_via.add_child(lbl_lado)
+
+		var grid_lados := GridContainer.new()
+		grid_lados.columns = 2
+		grid_lados.add_theme_constant_override("h_separation", 10)
+		grid_lados.add_theme_constant_override("v_separation", 10)
+		vbox_via.add_child(grid_lados)
+
+		for ld in [
+			{"id": 0, "nom": "↑ Frontal"},
+			{"id": 1, "nom": "→ Derecho"},
+			{"id": 2, "nom": "↓ Trasero"},
+			{"id": 3, "nom": "← Izquierdo"}
+		]:
+			var btn_ld := Button.new()
+			btn_ld.text = ld["nom"]
+			btn_ld.custom_minimum_size = Vector2(0, 56)
+			btn_ld.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn_ld.add_theme_font_size_override("font_size", 19)
+			if _fuente_ui:
+				btn_ld.add_theme_font_override("font", _fuente_ui)
+			var act_ld: bool = (_gasolinera_lado_conexion_sel == int(ld["id"]))
+			_estilar_boton(btn_ld, Color(0.18, 0.15, 0.08, 0.95) if act_ld else Color(0.08, 0.09, 0.11, 0.85), COLOR_AMARILLO_SEL if act_ld else COLOR_BORDE, 10.0)
+			btn_ld.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if act_ld else COLOR_TEXTO_PRI)
+			var id_ld: int = int(ld["id"])
+			btn_ld.pressed.connect(func():
+				_gasolinera_lado_conexion_sel = id_ld
+				gasolinera_lado_conexion_cambiado.emit(id_ld)
+			)
+			grid_lados.add_child(btn_ld)
+
+		var hbox_cv := HBoxContainer.new()
+		hbox_cv.add_theme_constant_override("separation", 10)
+		vbox_via.add_child(hbox_cv)
+
+		var btn_con := Button.new()
+		btn_con.text = "🛣 Conectar Carretera"
+		btn_con.custom_minimum_size = Vector2(0, 62)
+		btn_con.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn_con.add_theme_font_size_override("font_size", 20)
+		if _fuente_ui:
+			btn_con.add_theme_font_override("font", _fuente_ui)
+		_estilar_boton(btn_con, Color(0.14, 0.56, 0.30, 0.95), Color(0.35, 0.90, 0.52, 0.95), 12.0)
+		btn_con.add_theme_color_override("font_color", Color.WHITE)
+		btn_con.pressed.connect(func(): gasolinera_conectar_carretera_solicitado.emit())
+		hbox_cv.add_child(btn_con)
+
+		if _gasolinera_conectada_via:
+			var btn_desc := Button.new()
+			btn_desc.text = "✕ Quitar"
+			btn_desc.custom_minimum_size = Vector2(125, 62)
+			btn_desc.add_theme_font_size_override("font_size", 19)
+			if _fuente_ui:
+				btn_desc.add_theme_font_override("font", _fuente_ui)
+			_estilar_boton(btn_desc, COLOR_CRIMSON_SALIR, Color(1.0, 0.45, 0.45, 0.70), 12.0)
+			btn_desc.add_theme_color_override("font_color", Color.WHITE)
+			btn_desc.pressed.connect(func(): gasolinera_desconectar_carretera_solicitado.emit())
+			hbox_cv.add_child(btn_desc)
+
+	# 6. Nivelar y Eliminar (Botones amplios de acción final)
+	var hbox_acc := HBoxContainer.new()
+	hbox_acc.add_theme_constant_override("separation", 12)
+	_box_prop_contenido.add_child(hbox_acc)
+
+	var btn_niv := Button.new()
+	btn_niv.text = "⫶ Nivelar"
+	btn_niv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_niv.custom_minimum_size = Vector2(0, 64)
+	btn_niv.add_theme_font_size_override("font_size", 22)
+	if _fuente_ui:
+		btn_niv.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_niv, Color(0.08, 0.09, 0.11, 0.88), COLOR_AMARILLO_SEL, 12.0)
+	btn_niv.pressed.connect(func(): gasolinera_nivelar_solicitado.emit())
+	hbox_acc.add_child(btn_niv)
+
+	var btn_del := Button.new()
+	btn_del.text = "✕ Eliminar"
+	btn_del.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_del.custom_minimum_size = Vector2(0, 64)
+	btn_del.add_theme_font_size_override("font_size", 22)
+	if _fuente_ui:
+		btn_del.add_theme_font_override("font", _fuente_ui)
+	_estilar_boton(btn_del, COLOR_CRIMSON_SALIR, Color(1.0, 0.45, 0.45, 0.70), 12.0)
+	btn_del.add_theme_color_override("font_color", Color.WHITE)
+	btn_del.pressed.connect(func(): gasolinera_eliminar_solicitado.emit())
+	hbox_acc.add_child(btn_del)
+
 func _construir_vista_spawn() -> void:
 	var lbl_info := Label.new()
 	lbl_info.text = "Selecciona el punto y orientación de inicio para vehículos o peatones al comenzar la simulación."
@@ -3974,6 +4699,13 @@ func _refrescar_grid_herramientas(cat_id: String) -> void:
 				{"id": "concreto_editar", "nombre": "Puntos", "ico": "cat_ciudad"},
 				{"id": "concreto_nivelar", "nombre": "Nivelar", "ico": "act_nivelar"},
 				{"id": "concreto_borrar", "nombre": "Borrar", "ico": "act_demoler"}
+			]
+		"gasolinera":
+			lista_tools = [
+				{"id": "gasolinera_crear", "nombre": "Crear", "ico": "act_colocar"},
+				{"id": "gasolinera_editar", "nombre": "Puntos", "ico": "cat_parqueo"},
+				{"id": "gasolinera_nivelar", "nombre": "Nivelar", "ico": "act_nivelar"},
+				{"id": "gasolinera_borrar", "nombre": "Borrar", "ico": "act_demoler"}
 			]
 		"agua":
 			lista_tools = [
@@ -4459,6 +5191,197 @@ func _construir_popup_sistema(padre: Control) -> void:
 func _alternar_popup_sistema() -> void:
 	_popup_sistema.visible = not _popup_sistema.visible
 
+var _panel_config_editor: PanelContainer = null
+var _vbox_cfg_editor: VBoxContainer = null
+var _cfg_editor_escala_res: float = 0.75
+var _cfg_editor_max_fps: int = 60
+var _cfg_editor_distancia: float = 600.0
+var _cfg_editor_sombras: bool = false
+var _cfg_editor_msaa: int = 0
+var _cfg_editor_modo_ligero: bool = true
+
+func aplicar_estado_config_editor_ui(cfg: Dictionary) -> void:
+	_cfg_editor_escala_res = float(cfg.get("escala_resolucion", _cfg_editor_escala_res))
+	_cfg_editor_max_fps = int(cfg.get("max_fps", _cfg_editor_max_fps))
+	_cfg_editor_distancia = float(cfg.get("distancia_render", _cfg_editor_distancia))
+	_cfg_editor_sombras = bool(cfg.get("sombras", _cfg_editor_sombras))
+	_cfg_editor_msaa = int(cfg.get("msaa", _cfg_editor_msaa))
+	_cfg_editor_modo_ligero = bool(cfg.get("modo_ligero", _cfg_editor_modo_ligero))
+	if is_instance_valid(_panel_config_editor) and _panel_config_editor.visible:
+		_reconstruir_contenido_config_editor()
+
+func _construir_panel_config_editor(padre: Control) -> void:
+	_panel_config_editor = PanelContainer.new()
+	_panel_config_editor.name = "PanelConfigEditor"
+	_panel_config_editor.visible = false
+	_panel_config_editor.anchor_left = 0.5
+	_panel_config_editor.anchor_right = 0.5
+	_panel_config_editor.anchor_top = 0.5
+	_panel_config_editor.anchor_bottom = 0.5
+	_panel_config_editor.offset_left = -360.0
+	_panel_config_editor.offset_right = 360.0
+	_panel_config_editor.offset_top = -310.0
+	_panel_config_editor.offset_bottom = 310.0
+	_panel_config_editor.mouse_filter = Control.MOUSE_FILTER_STOP
+	_estilar_panel_glass(_panel_config_editor, Color(0.06, 0.07, 0.08, 0.94), Color(0.78, 0.81, 0.85, 0.25), 16.0, 18.0)
+	padre.add_child(_panel_config_editor)
+
+	var vbox_root := VBoxContainer.new()
+	vbox_root.add_theme_constant_override("separation", 12)
+	_panel_config_editor.add_child(vbox_root)
+
+	var hbox_hdr := HBoxContainer.new()
+	vbox_root.add_child(hbox_hdr)
+
+	var lbl_tit := Label.new()
+	lbl_tit.text = "⚙ CONFIGURACIÓN DEL EDITOR"
+	lbl_tit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl_tit.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl_tit.add_theme_font_size_override("font_size", 26)
+	lbl_tit.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	if _fuente_ui:
+		lbl_tit.add_theme_font_override("font", _fuente_ui)
+	hbox_hdr.add_child(lbl_tit)
+
+	var btn_cerrar := Button.new()
+	btn_cerrar.text = "✕"
+	btn_cerrar.custom_minimum_size = Vector2(54, 48)
+	btn_cerrar.add_theme_font_size_override("font_size", 22)
+	_estilar_boton(btn_cerrar, COLOR_CRIMSON_SALIR, Color(1.0, 0.45, 0.45, 0.65), 10.0)
+	btn_cerrar.add_theme_color_override("font_color", Color.WHITE)
+	btn_cerrar.pressed.connect(func(): _panel_config_editor.visible = false)
+	hbox_hdr.add_child(btn_cerrar)
+
+	var lbl_sub := Label.new()
+	lbl_sub.text = "Estos ajustes aplican únicamente al Editor de Mapas (no modifican el juego ni el modo prueba)."
+	lbl_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl_sub.add_theme_font_size_override("font_size", 17)
+	lbl_sub.add_theme_color_override("font_color", COLOR_TEXTO_SEC)
+	vbox_root.add_child(lbl_sub)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vbox_root.add_child(scroll)
+
+	_vbox_cfg_editor = VBoxContainer.new()
+	_vbox_cfg_editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vbox_cfg_editor.add_theme_constant_override("separation", 14)
+	scroll.add_child(_vbox_cfg_editor)
+
+func _alternar_panel_config_editor() -> void:
+	if not is_instance_valid(_panel_config_editor):
+		return
+	if _panel_config_editor.visible:
+		_panel_config_editor.visible = false
+		return
+	if is_instance_valid(_popup_sistema):
+		_popup_sistema.visible = false
+	_reconstruir_contenido_config_editor()
+	_panel_config_editor.visible = true
+	_panel_config_editor.pivot_offset = _panel_config_editor.size * 0.5
+	_panel_config_editor.scale = Vector2(0.92, 0.92)
+	_panel_config_editor.modulate.a = 0.0
+	var tw := create_tween().set_parallel(true)
+	tw.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_panel_config_editor, "scale", Vector2.ONE, 0.25)
+	tw.tween_property(_panel_config_editor, "modulate:a", 1.0, 0.22)
+
+func _emitir_config_editor() -> void:
+	editor_config_cambiada.emit({
+		"escala_resolucion": _cfg_editor_escala_res,
+		"max_fps": _cfg_editor_max_fps,
+		"distancia_render": _cfg_editor_distancia,
+		"sombras": _cfg_editor_sombras,
+		"msaa": _cfg_editor_msaa,
+		"modo_ligero": _cfg_editor_modo_ligero
+	})
+	_reconstruir_contenido_config_editor()
+
+func _reconstruir_contenido_config_editor() -> void:
+	if not is_instance_valid(_vbox_cfg_editor):
+		return
+	for ch in _vbox_cfg_editor.get_children():
+		_vbox_cfg_editor.remove_child(ch)
+		ch.queue_free()
+
+	# 1. Resolución 3D del Editor
+	_agregar_grupo_botones_cfg("ESCALA DE RESOLUCIÓN 3D", [
+		{"nom": "50% Fluido", "act": absf(_cfg_editor_escala_res - 0.50) < 0.05, "cb": func(): _cfg_editor_escala_res = 0.50; _emitir_config_editor()},
+		{"nom": "75% Óptimo", "act": absf(_cfg_editor_escala_res - 0.75) < 0.05, "cb": func(): _cfg_editor_escala_res = 0.75; _emitir_config_editor()},
+		{"nom": "100% Nativo","act": absf(_cfg_editor_escala_res - 1.00) < 0.05, "cb": func(): _cfg_editor_escala_res = 1.00; _emitir_config_editor()}
+	])
+
+	# 2. Límite de FPS del Editor
+	_agregar_grupo_botones_cfg("LÍMITE DE FPS EN EDITOR", [
+		{"nom": "30 FPS", "act": _cfg_editor_max_fps == 30, "cb": func(): _cfg_editor_max_fps = 30; _emitir_config_editor()},
+		{"nom": "45 FPS", "act": _cfg_editor_max_fps == 45, "cb": func(): _cfg_editor_max_fps = 45; _emitir_config_editor()},
+		{"nom": "60 FPS", "act": _cfg_editor_max_fps == 60, "cb": func(): _cfg_editor_max_fps = 60; _emitir_config_editor()},
+		{"nom": "Libre",  "act": _cfg_editor_max_fps == 0,  "cb": func(): _cfg_editor_max_fps = 0;  _emitir_config_editor()}
+	])
+
+	# 3. Distancia de Renderizado
+	_agregar_grupo_botones_cfg("DISTANCIA DE RENDERIZADO", [
+		{"nom": "250 m", "act": absf(_cfg_editor_distancia - 250.0) < 20.0, "cb": func(): _cfg_editor_distancia = 250.0; _emitir_config_editor()},
+		{"nom": "450 m", "act": absf(_cfg_editor_distancia - 450.0) < 20.0, "cb": func(): _cfg_editor_distancia = 450.0; _emitir_config_editor()},
+		{"nom": "600 m", "act": absf(_cfg_editor_distancia - 600.0) < 20.0, "cb": func(): _cfg_editor_distancia = 600.0; _emitir_config_editor()},
+		{"nom": "900 m", "act": absf(_cfg_editor_distancia - 900.0) < 20.0, "cb": func(): _cfg_editor_distancia = 900.0; _emitir_config_editor()}
+	])
+
+	# 4. Antialiasing MSAA 3D
+	_agregar_grupo_botones_cfg("ANTIALIASING (MSAA 3D)", [
+		{"nom": "Desactivado", "act": _cfg_editor_msaa == 0, "cb": func(): _cfg_editor_msaa = 0; _emitir_config_editor()},
+		{"nom": "2x MSAA",     "act": _cfg_editor_msaa == 1, "cb": func(): _cfg_editor_msaa = 1; _emitir_config_editor()},
+		{"nom": "4x MSAA",     "act": _cfg_editor_msaa == 2, "cb": func(): _cfg_editor_msaa = 2; _emitir_config_editor()}
+	])
+
+	# 5. Sombras y Entorno Ligero
+	_agregar_grupo_botones_cfg("SOMBRAS DEL SOL EN EDITOR", [
+		{"nom": "Desactivadas (Más FPS)", "act": not _cfg_editor_sombras, "cb": func(): _cfg_editor_sombras = false; _emitir_config_editor()},
+		{"nom": "Activadas",              "act": _cfg_editor_sombras,     "cb": func(): _cfg_editor_sombras = true;  _emitir_config_editor()}
+	])
+
+	_agregar_grupo_botones_cfg("POSTPROCESADO / CIELO EN EDITOR", [
+		{"nom": "Ligero (Recomendado)", "act": _cfg_editor_modo_ligero,     "cb": func(): _cfg_editor_modo_ligero = true;  _emitir_config_editor()},
+		{"nom": "Completo",             "act": not _cfg_editor_modo_ligero, "cb": func(): _cfg_editor_modo_ligero = false; _emitir_config_editor()}
+	])
+
+func _agregar_grupo_botones_cfg(titulo: String, opciones: Array) -> void:
+	var card := PanelContainer.new()
+	_estilar_panel_glass(card, Color(0.09, 0.10, 0.12, 0.90), COLOR_BORDE, 12.0, 12.0)
+	_vbox_cfg_editor.add_child(card)
+
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	card.add_child(vb)
+
+	var lbl := Label.new()
+	lbl.text = titulo
+	lbl.add_theme_font_size_override("font_size", 18)
+	lbl.add_theme_color_override("font_color", COLOR_AMARILLO_SEL)
+	if _fuente_ui:
+		lbl.add_theme_font_override("font", _fuente_ui)
+	vb.add_child(lbl)
+
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	vb.add_child(hb)
+
+	for op in opciones:
+		var btn := Button.new()
+		btn.text = str(op["nom"])
+		btn.custom_minimum_size = Vector2(0, 52)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.add_theme_font_size_override("font_size", 18)
+		if _fuente_ui:
+			btn.add_theme_font_override("font", _fuente_ui)
+		var act: bool = bool(op["act"])
+		_estilar_boton(btn, Color(0.18, 0.15, 0.08, 0.95) if act else Color(0.08, 0.09, 0.11, 0.85), COLOR_AMARILLO_SEL if act else COLOR_BORDE, 10.0)
+		btn.add_theme_color_override("font_color", COLOR_AMARILLO_SEL if act else COLOR_TEXTO_PRI)
+		var cb: Callable = op["cb"]
+		btn.pressed.connect(cb)
+		hb.add_child(btn)
+
 # ── 7. TOAST NOTIFICACIONES FLOTANTES ────────────────────────────────
 func _construir_toast_flotante(padre: Control) -> void:
 	_panel_toast_flotante = PanelContainer.new()
@@ -4518,6 +5441,7 @@ func seleccionar_categoria(cat_id: String) -> void:
 		"muros": sub_defecto = "muro_colocar"
 		"parqueo": sub_defecto = "parqueo_crear"
 		"concreto": sub_defecto = "concreto_crear"
+		"gasolinera": sub_defecto = "gasolinera_crear"
 		"agua": sub_defecto = "lago"
 		"spawn": sub_defecto = "vehiculo"
 
@@ -5662,9 +6586,39 @@ func _obtener_metadatos_herramienta(categoria: String, subherramienta: String) -
 		"concreto_editar": {"titulo": "Editar Puntos", "icono": "cat_ciudad"},
 		"concreto_nivelar": {"titulo": "Nivelar Concreto", "icono": "act_nivelar"},
 		"concreto_borrar": {"titulo": "Borrar Concreto", "icono": "act_demoler"},
+		"gasolinera_crear": {"titulo": "Crear Gasolinera", "icono": "cat_parqueo"},
+		"gasolinera_editar": {"titulo": "Editar Puntos", "icono": "cat_parqueo"},
+		"gasolinera_nivelar": {"titulo": "Nivelar Gasolinera", "icono": "act_nivelar"},
+		"gasolinera_borrar": {"titulo": "Borrar Gasolinera", "icono": "act_demoler"},
 		"vehiculo": {"titulo": "Spawn Vehículo", "icono": "cat_spawn"},
 		"jugador": {"titulo": "Spawn Jugador", "icono": "cat_spawn"}
 	}
 	if dict_nombres.has(subherramienta):
 		return dict_nombres[subherramienta]
 	return {"titulo": subherramienta.capitalize() + " (" + categoria.capitalize() + ")", "icono": "cat_" + categoria}
+
+func actualizar_estado_colab_ui(activo: bool, codigo: String, num_editores: int) -> void:
+	if not has_meta("_btn_colab_hud"):
+		return
+	var btn = get_meta("_btn_colab_hud")
+	if not (btn is Button) or not is_instance_valid(btn):
+		return
+	if activo:
+		btn.text = "● %s (%d)" % [codigo, num_editores]
+		btn.tooltip_text = "Sesión colaborativa activa · Código %s (%d editores)" % [codigo, num_editores]
+		_estilar_boton(btn, Color(0.10, 0.24, 0.16, 0.95), COLOR_VERDE_ACTIVO, 12.0)
+		btn.add_theme_color_override("font_color", COLOR_VERDE_ACTIVO.lightened(0.25))
+	else:
+		btn.text = " COLAB"
+		btn.tooltip_text = "Crear o unirse a proyecto de mapas online colaborativo"
+		_estilar_boton(btn, COLOR_PANEL_SEC, COLOR_VERDE_ACTIVO, 12.0)
+		btn.add_theme_color_override("font_color", COLOR_TEXTO_PRI)
+
+func actualizar_estado_guardado(sin_guardar: bool) -> void:
+	if not has_meta("_btn_guardar_hud"):
+		return
+	var btn = get_meta("_btn_guardar_hud")
+	if not (btn is Button) or not is_instance_valid(btn):
+		return
+	btn.text = " Guardar •" if sin_guardar else " Guardar"
+	btn.tooltip_text = "Hay cambios sin guardar" if sin_guardar else "Mapa guardado"

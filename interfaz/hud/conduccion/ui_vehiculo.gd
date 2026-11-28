@@ -97,6 +97,8 @@ var _tween_toast: Tween = null
 @onready var selector_marchas = find_child("PanelMarchas", true, false)
 @onready var boton_centrar    = find_child("BotonCentrar", true, false)
 @onready var volante_control  = find_child("Volante", true, false)
+@onready var zona_direccion: Control = find_child("ZonaDireccion", true, false) as Control
+@onready var zona_pedales: Control   = find_child("ZonaPedales", true, false) as Control
 
 # Shader para botones
 @export var color_boton_activo: Color = Color.YELLOW
@@ -259,9 +261,36 @@ func _ready() -> void:
 	# Configurar opacidad y modo cine
 	_configurar_opacidad_hud()
 
+	# Conectar Modo PC desde SettingsManager
+	var sm := get_node_or_null("/root/SettingsManager")
+	if sm:
+		if sm.has_signal("modo_pc_cambiado") and not sm.modo_pc_cambiado.is_connected(aplicar_modo_pc):
+			sm.modo_pc_cambiado.connect(aplicar_modo_pc)
+		aplicar_modo_pc(bool(sm.get("modo_pc")))
+
+func aplicar_modo_pc(activo: bool) -> void:
+	if activo:
+		if zona_direccion:
+			zona_direccion.visible = false
+			zona_direccion.process_mode = Node.PROCESS_MODE_DISABLED
+		if zona_pedales:
+			zona_pedales.visible = false
+			zona_pedales.process_mode = Node.PROCESS_MODE_DISABLED
+		_apagar_bocina()
+	else:
+		if zona_direccion:
+			zona_direccion.visible = true
+			zona_direccion.process_mode = Node.PROCESS_MODE_INHERIT
+		if zona_pedales:
+			zona_pedales.visible = true
+			zona_pedales.process_mode = Node.PROCESS_MODE_INHERIT
+
 func _on_visibility_changed() -> void:
 	if visible:
 		_desactivar_ui_pie()
+		var sm := get_node_or_null("/root/SettingsManager")
+		if sm:
+			aplicar_modo_pc(bool(sm.get("modo_pc")))
 	else:
 		_reactivar_ui_pie()
 		_apagar_bocina()
@@ -1099,6 +1128,10 @@ func _on_crucero_toggled(activo: bool) -> void:
 
 func _on_plumillas_toggled(activo: bool) -> void:
 	_plumillas_activas = activo
+	if InputVehiculo:
+		InputVehiculo.plumillas = activo
+	if is_instance_valid(vehiculo) and vehiculo.has_method("set_plumillas"):
+		vehiculo.call("set_plumillas", activo)
 	if boton_plumillas:
 		boton_plumillas.text = "PLUMILLAS: ON" if activo else "PLUMILLAS"
 

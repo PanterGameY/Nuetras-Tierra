@@ -77,34 +77,22 @@ func _distancia_caja_redondeada(p: Vector2, b: Vector2, r: float) -> float:
 	return min(max(q.x, q.y), 0.0) + Vector2(max(q.x, 0.0), max(q.y, 0.0)).length() - r
 
 func _generar_textura_marco_neon() -> ImageTexture:
-	var tam: int = 256
+	var tam: int = 128
 	var img = Image.create(tam, tam, false, Image.FORMAT_RGBA8)
-	var centro = Vector2(tam / 2.0, tam / 2.0)
-	var tam_caja = Vector2(104.0, 104.0)
-	var radio_esquina: float = 30.0
-	var grosor_borde: float = 4.0
-	var alcance_glow: float = 14.0
-	
+	img.fill(Color(0, 0, 0, 0))
+	var centro := Vector2((tam - 1) * 0.5, (tam - 1) * 0.5)
+	var r_ext: float = 56.0
+	var r_int: float = 44.0
+
 	for y in range(tam):
 		for x in range(tam):
-			var p = Vector2(x + 0.5, y + 0.5) - centro
-			var d = _distancia_caja_redondeada(p, tam_caja, radio_esquina)
-			var col: Color = Color(0, 0, 0, 0)
-			
-			if d <= -grosor_borde:
-				# Fondo oscuro interno tipo cristal ahumado
-				col = COLOR_FONDO_VIDRIO
-			elif d <= 0.0:
-				# Borde sólido Neón Naranja de alto contraste
-				col = COLOR_BORDE_NEON
-			elif d <= alcance_glow:
-				# Halo difuso resplandeciente exterior
-				var factor = 1.0 - (d / alcance_glow)
-				var alpha = factor * factor * COLOR_BORDE_NEON.a
-				col = Color(COLOR_BORDE_NEON.r, COLOR_BORDE_NEON.g, COLOR_BORDE_NEON.b, alpha)
-			
-			img.set_pixel(x, y, col)
-			
+			var d := Vector2(x, y).distance_to(centro)
+			if d <= r_ext:
+				if d >= r_int:
+					img.set_pixel(x, y, Color(0.88, 0.68, 0.28, 0.95))
+				else:
+					img.set_pixel(x, y, Color(0.06, 0.07, 0.09, 0.88))
+
 	return ImageTexture.create_from_image(img)
 
 func _crear_componentes_visuales() -> void:
@@ -115,7 +103,7 @@ func _crear_componentes_visuales() -> void:
 	col_shape.shape = esfera
 	add_child(col_shape)
 	
-	# 2. Marco/Placa con Borde Neón Naranja y resplandor estilo glassmorphic del juego
+	# 2. Punto circular estilo glassmorphic igual que mangueras y capo
 	fondo_borde_sprite = Sprite3D.new()
 	fondo_borde_sprite.name = "BordeNeon"
 	fondo_borde_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -123,40 +111,26 @@ func _crear_componentes_visuales() -> void:
 	fondo_borde_sprite.render_priority = 10
 	fondo_borde_sprite.shaded = false
 	fondo_borde_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	fondo_borde_sprite.pixel_size = 0.0020
+	fondo_borde_sprite.pixel_size = 0.0042
 	fondo_borde_sprite.texture = _generar_textura_marco_neon()
 	add_child(fondo_borde_sprite)
-	
-	# 3. Icono principal con la textura oficial conducir.png (superpuesto con relieve)
-	if ResourceLoader.exists(RUTA_TEXTURA_ICONO):
-		icono_sprite = Sprite3D.new()
-		icono_sprite.name = "IconoConducir"
-		icono_sprite.texture = load(RUTA_TEXTURA_ICONO)
-		icono_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		icono_sprite.no_depth_test = true
-		icono_sprite.render_priority = 11
-		icono_sprite.shaded = false
-		icono_sprite.modulate = Color.WHITE
-		icono_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		icono_sprite.pixel_size = 0.00175
-		add_child(icono_sprite)
-	else:
-		# Fallback de texto si faltase la textura
-		label_texto = Label3D.new()
-		label_texto.name = "LabelSubir"
-		label_texto.text = "CONDUCIR"
-		label_texto.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label_texto.no_depth_test = true
-		label_texto.render_priority = 12
-		label_texto.shaded = false
-		label_texto.font_size = 28
-		label_texto.outline_size = 8
-		label_texto.outline_modulate = Color(0.04, 0.04, 0.06, 0.95)
-		label_texto.modulate = COLOR_BORDE_NEON
-		label_texto.position = Vector3(0.0, -0.34, 0.0)
-		if ResourceLoader.exists(RUTA_FUENTE):
-			label_texto.font = load(RUTA_FUENTE)
-		add_child(label_texto)
+
+	# 3. Etiqueta limpia "CONDUCIR" sobre el punto
+	label_texto = Label3D.new()
+	label_texto.name = "LabelSubir"
+	label_texto.text = "CONDUCIR"
+	label_texto.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label_texto.no_depth_test = true
+	label_texto.render_priority = 12
+	label_texto.shaded = false
+	label_texto.font_size = 34
+	label_texto.outline_size = 8
+	label_texto.outline_modulate = Color(0.04, 0.04, 0.06, 0.95)
+	label_texto.modulate = Color(0.96, 0.88, 0.65, 1.0)
+	label_texto.position = Vector3(0.0, 0.36, 0.0)
+	if ResourceLoader.exists(RUTA_FUENTE):
+		label_texto.font = load(RUTA_FUENTE)
+	add_child(label_texto)
 
 func configurar(p_vehiculo: Node3D, p_zona: Area3D) -> void:
 	vehiculo = p_vehiculo
@@ -173,6 +147,7 @@ func configurar(p_vehiculo: Node3D, p_zona: Area3D) -> void:
 		
 		if manija and is_instance_valid(manija):
 			_posicion_anclaje_original = zona_entrada.to_local(manija.global_position)
+			offset_posicion = Vector3.ZERO
 		else:
 			# 2. Si no hay marcador explícito, anclar respecto a ZonaEntrada
 			var cs = zona_entrada.find_child("CollisionShape3D*", true, false)
@@ -182,9 +157,8 @@ func configurar(p_vehiculo: Node3D, p_zona: Area3D) -> void:
 				_posicion_anclaje_original = cs.position
 			else:
 				_posicion_anclaje_original = Vector3.ZERO
-		
-		# Cargar offsets si existiesen guardados localmente
-		_cargar_offsets_guardados()
+			# Cargar offsets si existiesen guardados localmente
+			_cargar_offsets_guardados()
 		_actualizar_posicion_con_offset()
 
 func _obtener_escala_padre_segura() -> Vector3:
@@ -404,6 +378,12 @@ func intentar_subir() -> void:
 	if not is_instance_valid(jugador_cerca):
 		jugador_cerca = get_tree().get_first_node_in_group("jugador")
 	if not is_instance_valid(jugador_cerca):
+		return
+	if jugador_cerca.get_meta("llevando_pistola_gasolina", false):
+		if has_node("/root/NotificationManager"):
+			var nm := get_node("/root/NotificationManager")
+			if nm.has_method("notificar_error"):
+				nm.call("notificar_error", "Cuelga el surtidor antes de subir al vehículo.")
 		return
 		
 	# Reproducir sonido de apertura de puerta / subida al vehículo

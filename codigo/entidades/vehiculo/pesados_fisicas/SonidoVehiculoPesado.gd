@@ -18,9 +18,9 @@ enum TipoPesado {
 		_aplicar_perfil_vehiculo()
 
 @export_range(0.5, 1.5, 0.05) var multiplicador_tono_global: float = 0.85
-@export_range(-20.0, 15.0, 0.5) var volumen_maestro_db: float = 2.0
-@export_range(1.0, 100.0, 0.5) var alcance_sonido: float = 45.0
-@export_range(5.0, 300.0, 1.0) var distancia_maxima: float = 140.0
+@export_range(-20.0, 15.0, 0.5) var volumen_maestro_db: float = 7.5
+@export_range(1.0, 200.0, 0.5) var alcance_sonido: float = 135.0
+@export_range(5.0, 500.0, 1.0) var distancia_maxima: float = 360.0
 
 # --- RUTAS DE LOS SONIDOS (Organizados en camion_pesado) ---
 @export_group("Sonidos de Motor Diésel")
@@ -33,6 +33,7 @@ enum TipoPesado {
 @export_group("Sonidos de Turbo y Válvulas")
 @export var audio_turbo: AudioStream = preload("res://recursos/sonidos_vehiculo/motor/camion_pesado/default_turbo.wav")
 @export var audio_wastegate: AudioStream = preload("res://recursos/sonidos_vehiculo/motor/camion_pesado/default_wastegate_flutter.wav")
+@export var audio_turbo_bov: AudioStream = preload("res://recursos/sonidos_vehiculo/motor/camion_pesado/default_turbo_bov.wav")
 @export var audio_aire_valvula: AudioStream = preload("res://recursos/sonidos_vehiculo/motor/camion_pesado/default_valve.wav")
 @export var audio_cambio_marcha: AudioStream = preload("res://recursos/sonidos_vehiculo/motor/camion_pesado/default_shift.wav")
 
@@ -63,6 +64,8 @@ var _p_sfx_arranque: AudioStreamPlayer3D
 var _p_sfx_apagar: AudioStreamPlayer3D
 var _p_sfx_bocina: AudioStreamPlayer3D
 var _p_sfx_flutter: AudioStreamPlayer3D
+var _p_sfx_bov: AudioStreamPlayer3D
+var _freno_servicio_activo: bool = false
 
 # --- ESTADO EN TIEMPO REAL ---
 var motor_encendido: bool = true
@@ -141,6 +144,11 @@ func _inicializar_canales_audio() -> void:
 	_p_sfx_apagar = _instanciar_player("SFX_Apagar", audio_apagar, 0.0, false)
 	_p_sfx_bocina = _instanciar_player("SFX_Bocina", audio_bocina, 2.0, false)
 	_p_sfx_flutter = _instanciar_player("SFX_Flutter", audio_wastegate, -1.0, false)
+	_p_sfx_bov = _instanciar_player("SFX_TurboBOV", audio_turbo_bov, 2.5, false)
+	if _p_jake:
+		_p_jake.unit_size = alcance_sonido * 1.4
+	if _p_brakes:
+		_p_brakes.unit_size = alcance_sonido * 1.3
 
 func _iniciar_reproduccion_bucles() -> void:
 	if _p_idle and not _p_idle.playing: _p_idle.play(0.0)
@@ -153,13 +161,13 @@ func _iniciar_reproduccion_bucles() -> void:
 func _aplicar_perfil_vehiculo() -> void:
 	match tipo_vehiculo:
 		TipoPesado.TRACTOMULA_15L:
-			multiplicador_tono_global = 0.84
+			multiplicador_tono_global = 0.68
 		TipoPesado.VOLQUETA_PESADA:
-			multiplicador_tono_global = 0.94
+			multiplicador_tono_global = 0.82
 		TipoPesado.CAMION_MEDIANO:
-			multiplicador_tono_global = 1.08
+			multiplicador_tono_global = 0.96
 		TipoPesado.AUTOBUS_URBANO:
-			multiplicador_tono_global = 1.16
+			multiplicador_tono_global = 1.04
 
 # --- API PRINCIPAL DE AUDIO ---
 func procesar_audio(rpm_norm: float, gas_suavizado: float, delta: float) -> void:
@@ -178,44 +186,42 @@ func procesar_audio(rpm_norm: float, gas_suavizado: float, delta: float) -> void
 	gas_actual = gas_suavizado
 	var gas_efectivo: float = 0.0 if en_cambio else gas_suavizado
 
-	# 1. Modulación de Tono (Pitch Bending Analítico Dinámico)
-	var factor_rpm: float = lerpf(0.82, 1.46, rpm_norm) * multiplicador_tono_global
-	_p_idle.pitch_scale = factor_rpm * 0.92
-	_p_low.pitch_scale = factor_rpm * 0.98
-	_p_medium.pitch_scale = factor_rpm * 1.02
-	_p_high.pitch_scale = factor_rpm * 1.08
-	_p_force.pitch_scale = factor_rpm
+	# 1. Modulación de Tono grave y progresiva (evita tono agudo en tractomula diésel)
+	var factor_rpm: float = lerpf(0.76, 1.20, rpm_norm) * multiplicador_tono_global
+	_p_idle.pitch_scale = factor_rpm * 0.90
+	_p_low.pitch_scale = factor_rpm * 0.94
+	_p_medium.pitch_scale = factor_rpm * 0.96
+	_p_high.pitch_scale = factor_rpm * 0.98
+	_p_force.pitch_scale = factor_rpm * 0.92
 
-	# 2. Fundido Cruzado Multicapa estilo Rigs of Rods (Crossfading con amplio solapamiento)
-	# Esto erradica zonas muertas o caídas de volumen al acelerar
-	var ganancia_idle: float = clampf(1.0 - (rpm_norm / 0.42), 0.0, 1.0)
-	var ganancia_low: float = clampf(1.0 - absf((rpm_norm - 0.28) / 0.28), 0.0, 1.0)
-	var ganancia_med: float = clampf(1.0 - absf((rpm_norm - 0.58) / 0.32), 0.0, 1.0)
-	var ganancia_high: float = clampf((rpm_norm - 0.48) / 0.52, 0.0, 1.0)
+	# 2. Fundido Cruzado Multicapa estilo Rigs of Rods (Crossfading con énfasis en graves)
+	var ganancia_idle: float = clampf(1.0 - (rpm_norm / 0.45), 0.0, 1.0)
+	var ganancia_low: float = clampf(1.0 - absf((rpm_norm - 0.30) / 0.30), 0.0, 1.0)
+	var ganancia_med: float = clampf(1.0 - absf((rpm_norm - 0.60) / 0.34), 0.0, 1.0)
+	var ganancia_high: float = clampf((rpm_norm - 0.52) / 0.48, 0.0, 1.0)
 
-	_p_idle.volume_db = linear_to_db(maxf(ganancia_idle * 0.90, 0.0001)) + volumen_maestro_db - 1.0
-	_p_low.volume_db = linear_to_db(maxf(ganancia_low * 0.95, 0.0001)) + volumen_maestro_db
-	_p_medium.volume_db = linear_to_db(maxf(ganancia_med * 1.00, 0.0001)) + volumen_maestro_db + 1.0
-	_p_high.volume_db = linear_to_db(maxf(ganancia_high * 1.05, 0.0001)) + volumen_maestro_db + 1.5
+	_p_idle.volume_db = linear_to_db(maxf(ganancia_idle * 0.95, 0.0001)) + volumen_maestro_db + 1.0
+	_p_low.volume_db = linear_to_db(maxf(ganancia_low * 1.00, 0.0001)) + volumen_maestro_db + 1.5
+	_p_medium.volume_db = linear_to_db(maxf(ganancia_med * 0.92, 0.0001)) + volumen_maestro_db
+	_p_high.volume_db = linear_to_db(maxf(ganancia_high * 0.78, 0.0001)) + volumen_maestro_db - 2.0
 
 	# 3. Capa de Combustión e Inyector Diésel bajo Esfuerzo (default_diesel_force)
-	# Aporta el estruendo mecánico pesado cuando se pisa el acelerador
-	var factor_carga: float = clampf(gas_efectivo * lerpf(0.55, 1.25, rpm_norm), 0.0, 1.0)
-	_p_force.volume_db = linear_to_db(maxf(factor_carga, 0.0001)) + volumen_maestro_db + 2.0
+	var factor_carga: float = clampf(gas_efectivo * lerpf(0.60, 1.20, rpm_norm), 0.0, 1.0)
+	_p_force.volume_db = linear_to_db(maxf(factor_carga, 0.0001)) + volumen_maestro_db + 2.8
 
-	# 4. Spooling Analítico del Turbo de Geometría Variable
-	var turbo_target: float = gas_efectivo * lerpf(0.30, 1.0, rpm_norm)
+	# 4. Spooling Analítico del Turbo (sutil, presente sin tapar el motor)
+	var turbo_target: float = gas_efectivo * lerpf(0.25, 1.0, rpm_norm)
 	turbo_psi_simulado = move_toward(turbo_psi_simulado, turbo_target, delta * 1.2)
-	_p_turbo.pitch_scale = lerpf(0.85, 1.70, turbo_psi_simulado)
-	_p_turbo.volume_db = linear_to_db(maxf(turbo_psi_simulado * 0.85, 0.0001)) + volumen_maestro_db - 2.0
+	_p_turbo.pitch_scale = lerpf(0.68, 1.18, turbo_psi_simulado)
+	_p_turbo.volume_db = linear_to_db(maxf(turbo_psi_simulado * 0.42, 0.0001)) + volumen_maestro_db - 8.5
 
-	# 5. Freno de Compresión (Jake Brake)
-	if freno_motor_activo and gas_suavizado < 0.10 and rpm_norm > 0.15:
+	# 5. Freno de Compresión (Jake Brake - FrenoM1.wav con presencia fuerte)
+	if freno_motor_activo and gas_suavizado < 0.10 and rpm_norm > 0.12:
 		if not _p_jake.playing:
 			_p_jake.play(0.0)
-		var vol_jake: float = clampf(lerpf(0.5, 1.0, rpm_norm), 0.1, 1.0)
-		_p_jake.pitch_scale = lerpf(0.80, 1.25, rpm_norm) * multiplicador_tono_global
-		_p_jake.volume_db = linear_to_db(vol_jake) + volumen_maestro_db + 3.0
+		var vol_jake: float = clampf(lerpf(0.75, 1.0, rpm_norm), 0.30, 1.0)
+		_p_jake.pitch_scale = lerpf(0.78, 1.18, rpm_norm) * multiplicador_tono_global
+		_p_jake.volume_db = linear_to_db(vol_jake) + volumen_maestro_db + 9.0
 	else:
 		_p_jake.volume_db = -80.0
 		if _p_jake.playing:
@@ -229,14 +235,32 @@ func procesar_audio(rpm_norm: float, gas_suavizado: float, delta: float) -> void
 
 func reproducir_cambio(marcha: int, total_marchas: int = 10, gas: float = 0.0, rpm_norm: float = 0.0) -> void:
 	if _p_sfx_cambio:
-		_p_sfx_cambio.pitch_scale = randf_range(0.96, 1.04)
+		_p_sfx_cambio.pitch_scale = randf_range(0.94, 1.04)
+		_p_sfx_cambio.volume_db = volumen_maestro_db + 2.0
 		_p_sfx_cambio.play()
+
+	# Descarga BOV del turbo (default_turbo_bov.wav) al meter cambios
+	if _p_sfx_bov and (turbo_psi_simulado > 0.12 or rpm_norm > 0.25):
+		_p_sfx_bov.pitch_scale = randf_range(0.92, 1.05)
+		_p_sfx_bov.volume_db = linear_to_db(clampf(maxf(turbo_psi_simulado, 0.45), 0.35, 1.0)) + volumen_maestro_db - 1.5
+		_p_sfx_bov.play()
 		
-	# Si había carga previa de turbo y se corta gas durante el cambio, aleteo wastegate
-	if turbo_psi_simulado > 0.35 and _p_sfx_flutter:
+	# Si había carga alta de turbo, complementar con aleteo wastegate sutil
+	if turbo_psi_simulado > 0.50 and _p_sfx_flutter:
 		_p_sfx_flutter.pitch_scale = randf_range(0.95, 1.05)
-		_p_sfx_flutter.volume_db = linear_to_db(clampf(turbo_psi_simulado, 0.3, 1.0)) + volumen_maestro_db
+		_p_sfx_flutter.volume_db = linear_to_db(clampf(turbo_psi_simulado, 0.3, 1.0)) + volumen_maestro_db - 6.0
 		_p_sfx_flutter.play()
+
+func set_freno_servicio(aplicando: bool, intensidad: float = 1.0) -> void:
+	if not _p_brakes:
+		return
+	if aplicando and not _freno_servicio_activo:
+		_freno_servicio_activo = true
+		_p_brakes.pitch_scale = randf_range(0.90, 1.02)
+		_p_brakes.volume_db = linear_to_db(clampf(intensidad, 0.55, 1.0)) + volumen_maestro_db + 6.5
+		_p_brakes.play(0.0)
+	elif not aplicando:
+		_freno_servicio_activo = false
 
 func set_shifting(shifting: bool) -> void:
 	en_cambio = shifting
